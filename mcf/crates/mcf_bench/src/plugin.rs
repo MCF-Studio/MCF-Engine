@@ -9,7 +9,7 @@ use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::PrimaryWindow;
 
-use crate::{aggregate_render, frames_csv, CameraPath, FrameSample, FrameStats, SeriesStats};
+use crate::{CameraPath, FrameSample, FrameStats, SeriesStats, aggregate_render, frames_csv};
 
 /// Réglages d'une mesure.
 #[derive(Resource, Debug, Clone)]
@@ -87,7 +87,13 @@ fn latest(store: Option<&DiagnosticsStore>, path: &bevy::diagnostic::DiagnosticP
 
 /// Ajoute au résumé les moyenne / p99 / pic d'une série (`n/d` si la mesure est indisponible : les colonnes de
 /// `summary.csv` doivent rester identiques d'une mesure à l'autre).
-fn push_series(info: &mut Vec<(String, String)>, key: &str, unit: &str, stats: Option<SeriesStats>, prec: usize) {
+fn push_series(
+    info: &mut Vec<(String, String)>,
+    key: &str,
+    unit: &str,
+    stats: Option<SeriesStats>,
+    prec: usize,
+) {
     let fmt = |v: Option<f64>| v.map_or_else(|| "n/d".to_owned(), |x| format!("{x:.prec$}"));
     info.push((format!("{key}_moyen{unit}"), fmt(stats.map(|s| s.mean))));
     info.push((format!("{key}_p99{unit}"), fmt(stats.map(|s| s.p99))));
@@ -215,9 +221,21 @@ fn record(
     push_series(&mut info, "rendu_cpu", "_ms", series(|f| f.render.cpu_ms), 3);
     push_series(&mut info, "rendu_gpu", "_ms", series(|f| f.render.gpu_ms), 3);
     push_series(&mut info, "triangles", "", series(|f| f.render.triangles), 0);
-    push_series(&mut info, "mem_processus", "_gib", series(|f| f.process_mem_gib), 3);
+    push_series(
+        &mut info,
+        "mem_processus",
+        "_gib",
+        series(|f| f.process_mem_gib),
+        3,
+    );
     push_series(&mut info, "mem_systeme", "_pct", series(|f| f.system_mem_pct), 1);
-    push_series(&mut info, "cpu_processus", "_pct", series(|f| f.process_cpu_pct), 1);
+    push_series(
+        &mut info,
+        "cpu_processus",
+        "_pct",
+        series(|f| f.process_cpu_pct),
+        1,
+    );
     push_series(&mut info, "cpu_systeme", "_pct", series(|f| f.system_cpu_pct), 1);
     // Bevy 0.20.1 n'expose aucun compteur d'appels de dessin : on l'écrit plutôt que de l'inventer.
     info.push(("appels_dessin".into(), "non exposé par Bevy 0.20.1".into()));

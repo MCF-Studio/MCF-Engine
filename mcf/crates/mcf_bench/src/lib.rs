@@ -9,7 +9,7 @@ mod path;
 mod plugin;
 mod stats;
 
-pub use metrics::{aggregate_render, frames_csv, FrameSample, RenderTotals, FRAMES_CSV_HEADER};
+pub use metrics::{FRAMES_CSV_HEADER, FrameSample, RenderTotals, aggregate_render, frames_csv};
 pub use path::{CameraKey, CameraPath};
 pub use plugin::{BenchCamera, BenchPlugin, BenchSettings};
 pub use stats::{FrameStats, SeriesStats};
