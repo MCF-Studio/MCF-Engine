@@ -1,0 +1,70 @@
+# cargo deny pour le workspace MCF. Base : deny.toml de Bevy 0.20.1 (mêmes exceptions, justifiées par Bevy).
+# Toute nouvelle exception est commentée avec sa raison et un lien.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+ignore = [
+  # Exception reprise de Bevy (dépendance indirecte, sans correctif disponible en 0.20.1).
+  # Les autres exceptions de Bevy ne concernent pas notre arbre de dépendances : non reprises.
+  "RUSTSEC-2026-0192", # ttf-parser non maintenu
+]
+
+[licenses]
+version = 2
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unlicense",
+  "Zlib",
+  "Unicode-3.0",
+  "BSL-1.0",
+]
+exceptions = [
+  { name = "unicode-ident", allow = ["Unicode-DFS-2016", "Unicode-3.0"] },
+  # Décodeurs audio de Bevy (MPL-2.0 : copyleft par fichier, compatible avec un binaire propriétaire).
+  { name = "symphonia", allow = ["MPL-2.0"] },
+  { name = "symphonia-bundle-flac", allow = ["MPL-2.0"] },
+  { name = "symphonia-bundle-mp3", allow = ["MPL-2.0"] },
+  { name = "symphonia-codec-aac", allow = ["MPL-2.0"] },
+  { name = "symphonia-codec-pcm", allow = ["MPL-2.0"] },
+  { name = "symphonia-codec-vorbis", allow = ["MPL-2.0"] },
+  { name = "symphonia-core", allow = ["MPL-2.0"] },
+  { name = "symphonia-format-isomp4", allow = ["MPL-2.0"] },
+  { name = "symphonia-format-ogg", allow = ["MPL-2.0"] },
+  { name = "symphonia-format-riff", allow = ["MPL-2.0"] },
+  { name = "symphonia-metadata", allow = ["MPL-2.0"] },
+  { name = "symphonia-utils-xiph", allow = ["MPL-2.0"] },
+]
+
+# Nos crates (publish = false) ne sont pas soumises à la liste des licences.
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  { name = "ahash", deny-multiple-versions = true },
+  { name = "accesskit", deny-multiple-versions = true },
+  { name = "parley", deny-multiple-versions = true },
+  { name = "glam", deny-multiple-versions = true },
+  { name = "raw-window-handle", deny-multiple-versions = true },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

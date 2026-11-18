@@ -1,0 +1,14 @@
+# Réglages de compilation partagés, actifs quand cargo est lancé depuis mcf/.
+
+# Windows : linker LLVM fourni par rustup, bien plus rapide que link.exe.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+
+# Linux : rust-lld est déjà le linker par défaut sur x86_64 avec les versions récentes de Rust.
+
+[alias]
+# `cargo editor` / `cargo server` / `cargo client` : lancement en mode dev (liaison dynamique de Bevy).
+editor = "run -p mcf_editor --features dev"
+client = "run -p mcf_client --features dev"
+server = "run -p mcf_server"
+bench-scene = "run -p mcf_bench --bin mcf_bench_scene --profile bench-release"

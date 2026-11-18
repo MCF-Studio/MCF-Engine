@@ -1,0 +1,16 @@
+[package]
+name = "mcf_core"
+description = "Briques communes au jeu, à l'éditeur et au serveur MCF (identifiants, catalogue, calques)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pas de rendu ici : le serveur dédié dépend de ce crate.
+bevy = { workspace = true, features = ["std"] }
+mcf_map.workspace = true
+
+[lints]
+workspace = true

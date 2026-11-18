@@ -1,0 +1,57 @@
+# Workspace MCF : séparé de celui de Bevy (racine du dépôt) pour
+# - ne pas modifier le Cargo.toml de Bevy (synchronisation amont sans conflit) ;
+# - avoir nos propres profils de compilation et notre Cargo.lock.
+# Bevy est utilisé en dépendance par chemin (`..`) : ses éventuels patches `[bevy-patch]` sont donc pris en compte.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "LicenseRef-MCF-Studio-Proprietary"
+publish = false
+
+[workspace.dependencies]
+bevy = { path = "..", version = "0.20.1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+mcf_bench = { path = "crates/mcf_bench" }
+mcf_core = { path = "crates/mcf_core" }
+mcf_map = { path = "crates/mcf_map" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+# Les systèmes Bevy prennent souvent beaucoup de paramètres et des types de requêtes complexes.
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+# Développement : notre code un peu optimisé (compilation rapide), les dépendances (Bevy) à fond (jeu fluide).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+# Infos de débogage complètes pour Bevy = des Go de fichiers et de mémoire à l'édition de liens (erreur 1455
+# « fichier de pagination insuffisant » constatée sur un PC à 16 Go). Les numéros de ligne suffisent pour les
+# backtraces ; notre propre code garde les infos complètes.
+debug = "line-tables-only"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# Mesures (bancs d'essai) : comme la release, mais avec les symboles pour profiler.
+[profile.bench-release]
+inherits = "release"
+debug = "line-tables-only"
