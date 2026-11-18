@@ -3541,7 +3541,7 @@ dependencies = [
 [[package]]
 name = "mcf-config"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "mcf-diagnostics",
 ]
@@ -3549,7 +3549,7 @@ dependencies = [
 [[package]]
 name = "mcf-diagnostics"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "serde",
  "serde_json",
@@ -3558,7 +3558,7 @@ dependencies = [
 [[package]]
 name = "mcf-runtime"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "mcf-config",
  "mcf-diagnostics",
@@ -3569,7 +3569,7 @@ dependencies = [
 [[package]]
 name = "mcf-semantic"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "mcf-config",
  "mcf-diagnostics",
@@ -3579,7 +3579,7 @@ dependencies = [
 [[package]]
 name = "mcf-syntax"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "mcf-diagnostics",
  "serde",
@@ -3588,7 +3588,7 @@ dependencies = [
 [[package]]
 name = "mcf-view"
 version = "0.1.0"
-source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=80341acefa3198674e03fb431e254c5dd91401cf#80341acefa3198674e03fb431e254c5dd91401cf"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
 dependencies = [
  "serde",
 ]
