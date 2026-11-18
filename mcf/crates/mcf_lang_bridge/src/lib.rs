@@ -152,10 +152,10 @@ impl McfUi {
                         }
                         Kind::Window | Kind::Box => {}
                     }
-                    if let Some(p) = parent {
-                        if let Some(pe) = self.elems.get(&p).map(|e| e.entity) {
-                            commands.entity(pe).insert_children(index, &[entity]);
-                        }
+                    if let Some(p) = parent
+                        && let Some(pe) = self.elems.get(&p).map(|e| e.entity)
+                    {
+                        commands.entity(pe).insert_children(index, &[entity]);
                     }
                     self.elems.insert(
                         id,
@@ -213,10 +213,11 @@ impl McfUi {
                     }
                 }
                 Change::Unlisten { id, event } => {
-                    if let Some(e) = self.elems.get(&id) {
-                        if event == Event::Click && e.kind != Kind::Button {
-                            commands.entity(e.entity).remove::<(Button, Hovered)>();
-                        }
+                    if let Some(e) = self.elems.get(&id)
+                        && event == Event::Click
+                        && e.kind != Kind::Button
+                    {
+                        commands.entity(e.entity).remove::<(Button, Hovered)>();
                     }
                 }
             }
@@ -307,11 +308,11 @@ fn submit_on_enter(
     if !keys.just_pressed(KeyCode::Enter) {
         return;
     }
-    if let Some(e) = focus.get() {
-        if let Ok((node, text)) = inputs.get(e) {
-            ui.pending
-                .push((node.0, Event::Submit, Some(text.value().to_string())));
-        }
+    if let Some(e) = focus.get()
+        && let Ok((node, text)) = inputs.get(e)
+    {
+        ui.pending
+            .push((node.0, Event::Submit, Some(text.value().to_string())));
     }
 }
 
