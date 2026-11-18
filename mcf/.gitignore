@@ -1,0 +1,8 @@
+# Le .gitignore de Bevy (racine) ignore Cargo.lock et .cargo/config.toml : nous les versionnons
+# (binaires = dépendances figées ; réglages de compilation partagés).
+!Cargo.lock
+!.cargo/config.toml
+
+target/
+# Résultats bruts des bancs d'essai : le résumé va dans mcf/docs/bancs-essai.md
+bench/results/

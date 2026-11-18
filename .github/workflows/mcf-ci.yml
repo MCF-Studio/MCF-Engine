@@ -1,0 +1,77 @@
+# CI de MCF Engine : uniquement notre workspace (mcf/). La CI de Bevy a été retirée (énorme, et payante en
+# dépôt privé). Actions épinglées sur un commit (chaîne d'approvisionnement), version en commentaire.
+name: MCF CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["mcf/**", "crates/**", "Cargo.toml", ".github/workflows/mcf-ci.yml"]
+  pull_request:
+    paths: ["mcf/**", "crates/**", "Cargo.toml", ".github/workflows/mcf-ci.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcf-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+defaults:
+  run:
+    working-directory: mcf
+
+jobs:
+  verifications:
+    name: Format, clippy, tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Dépendances système de Bevy
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: mcf -> target
+      - name: Format
+        run: cargo fmt --check  # sans --all : --all reformaterait aussi Bevy (dépendance par chemin)
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  dependances:
+    name: cargo deny (failles, licences, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9 # v2.1.2
+        with:
+          manifest-path: mcf/Cargo.toml
+          command: check
+
+  windows:
+    name: Build Windows
+    # Les minutes Windows comptent double en dépôt privé : seulement sur main.
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: mcf -> target
+      - name: Build
+        run: cargo build --workspace --locked

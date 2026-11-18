@@ -1,0 +1,19 @@
+[package]
+name = "mcf_client"
+description = "Client du jeu RP MCF"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Développement : Bevy en bibliothèque dynamique (recompilation bien plus rapide) + rechargement des assets.
+dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
+
+[dependencies]
+bevy = { workspace = true, features = ["3d", "ui", "audio"] }
+mcf_core.workspace = true
+
+[lints]
+workspace = true
