@@ -14,6 +14,12 @@ Puis enchaîne normalement sur sa demande. (Blague assumée d'Aroun 😄 — une
 1. Lire `ROADMAP.md` (phase en cours, critères de fin).
 2. Lire `mcf/README.md` et la spec de la phase en cours dans `mcf/docs/` si elle existe.
 
+## Cap
+Le but est de **migrer le jeu RP** (Godot) vers ce moteur, sans précipitation : moteur d'abord, transition
+ensuite. Les **bancs d'essai grosse carte + réseau** (`mcf/docs/bancs-essai.md`) décident. Cible : **mid poly**,
+le plus optimisé possible (budgets dans `mcf/docs/rendu-lod-objets.md`). Résultats de mesure : toujours bruts et
+honnêtes, même mauvais.
+
 ## Règles
 - Français partout : réponses, commentaires, docs, commits.
 - **Notre code va dans `mcf/`.** Ne pas modifier `crates/bevy_*`, `examples/`, `assets/` de Bevy, sauf patch
