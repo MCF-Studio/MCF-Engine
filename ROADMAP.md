@@ -17,7 +17,7 @@
 | Phase | Objectif | État |
 |---|---|---|
 | 0 | Fondations : fork, dépôt, règles, synchro amont | ✅ fork 0.20.1, dépôt privé, CI amont retirée |
-| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | 🟡 critères atteints ; reste CI sur l'état final + fusion PR #1 |
+| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | ✅ fenêtre, CI verte (Windows compris), recompilation ≈ 1,8 s |
 | 2 | **🎯 Bancs d'essai décisifs : grosse carte + réseau** (comparés à Godot) | ⬜ |
 | — | **Décision : on continue vers la migration, on réoriente, ou on arrête** | ⬜ |
 | 3 | **Éditeur MCF** : scènes, scripts, animations, carte | ⬜ |
@@ -71,7 +71,7 @@ cargo check --workspace && cargo test -p mcf_*   # puis PR vers main
 
 ---
 
-## Phase 1 — Squelette MCF
+## Phase 1 — Squelette MCF ✅
 
 | Livrable | Détail |
 |---|---|
@@ -110,7 +110,8 @@ modification d'un fichier de `mcf_editor` prend **< 10 s** sur le PC d'Aroun (ch
   Le « rendu CPU » relevé (0,07 ms) ne couvre que l'encodage des passes de rendu, pas tout le monde de rendu :
   il ne faut pas le lire comme le coût CPU du rendu. CPU système jusqu'à 97 % pendant la mesure : d'autres
   programmes tournaient, à refaire machine au repos pour le test A. Appels de dessin non exposés par Bevy 0.20.1.
-- ⬜ Pousser les 4 derniers commits, CI verte sur l'état final, fusionner la PR #1 → phase 1 ✅.
+- ✅ PR #1 fusionnée dans `main` (`25ea93547`) ; CI de `main` verte, **Build Windows compris** (exécution
+  44341704135). Critère de fin vérifié : phase 1 terminée le 2026-11-18.
 - Constaté : erreur Windows 1455 (« fichier de pagination insuffisant ») avec 16 compilations en parallèle →
   infos de débogage de Bevy réduites dans le profil `dev`, et `-j 6` conseillé sur 16 Go.
 
