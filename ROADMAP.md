@@ -17,7 +17,7 @@
 | Phase | Objectif | État |
 |---|---|---|
 | 0 | Fondations : fork, dépôt, règles, synchro amont | ✅ fork 0.20.1, dépôt privé, CI amont retirée |
-| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | ⬜ |
+| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | 🟡 code + CI verte ; reste 2 mesures |
 | 2 | **🎯 Bancs d'essai décisifs : grosse carte + réseau** (comparés à Godot) | ⬜ |
 | — | **Décision : on continue vers la migration, on réoriente, ou on arrête** | ⬜ |
 | 3 | **Éditeur MCF** : scènes, scripts, animations, carte | ⬜ |
@@ -84,6 +84,17 @@ cargo check --workspace && cargo test -p mcf_*   # puis PR vers main
 
 Critère de fin : `cargo run -p mcf_editor` ouvre une fenêtre, la CI est verte, une recompilation après
 modification d'un fichier de `mcf_editor` prend **< 10 s** sur le PC d'Aroun (chiffre noté ici).
+
+**État (2026-11-18)** :
+- ✅ Workspace `mcf/`, crates `mcf_map` / `mcf_core` / `mcf_bench` / `mcf_editor` / `mcf_client` / `mcf_server`.
+- ✅ `.mcfmap` porté de l'éditeur Godot à l'identique (mêmes champs, bornes, messages) ; 32 tests au total.
+- ✅ CI verte (PR #1) : format, clippy `-D warnings`, tests Linux, `cargo deny`.
+- ✅ Serveur headless : 59,1 ticks/s mesurés pour 60 visés (première fenêtre de 10 s, démarrage compris).
+- ⬜ Recompilation < 10 s en mode dev : **pas encore mesurée**. La compilation de Bevy en bibliothèque dynamique
+  a été arrêtée deux fois par manque de mémoire sur le PC d'Aroun (16 Go, ~9 Go de mémoire virtuelle libre).
+- ⬜ Première exécution de la scène de calibrage (`cargo bench-scene`).
+- Constaté : erreur Windows 1455 (« fichier de pagination insuffisant ») avec 16 compilations en parallèle →
+  infos de débogage de Bevy réduites dans le profil `dev`, et `-j 6` conseillé sur 16 Go.
 
 ---
 
