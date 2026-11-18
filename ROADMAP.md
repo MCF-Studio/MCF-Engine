@@ -17,7 +17,7 @@
 | Phase | Objectif | État |
 |---|---|---|
 | 0 | Fondations : fork, dépôt, règles, synchro amont | ✅ fork 0.20.1, dépôt privé, CI amont retirée |
-| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | 🟡 code + CI verte ; reste 2 mesures |
+| 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | 🟡 critères atteints ; reste CI sur l'état final + fusion PR #1 |
 | 2 | **🎯 Bancs d'essai décisifs : grosse carte + réseau** (comparés à Godot) | ⬜ |
 | — | **Décision : on continue vers la migration, on réoriente, ou on arrête** | ⬜ |
 | 3 | **Éditeur MCF** : scènes, scripts, animations, carte | ⬜ |
@@ -96,7 +96,21 @@ modification d'un fichier de `mcf_editor` prend **< 10 s** sur le PC d'Aroun (ch
   virtuelle libre, contre ~9 Go lors des deux échecs précédents).
 - ✅ `cargo editor` ouvre la fenêtre « MCF Editor » (RTX 3060 Ti, Vulkan). Erreurs Vulkan sans conséquence au
   démarrage : couche Vulkan de TikTok LIVE Studio déclarée mais introuvable sur le disque.
-- ⬜ Première exécution de la scène de calibrage (`cargo bench-scene`).
+- ✅ Scène de calibrage exécutée (`cargo bench-scene`, réglages par défaut, commit `56de9fb11`, 2026-11-18) :
+  100 000 objets (20 modèles, 8 matériaux), 200 lampes sans ombre, zone de 2 km, soleil sans ombre, 1920×1080,
+  sans vsync, 40 s de parcours après 5 s de chauffe. Ryzen 7 3700X, 16 Go, RTX 3060 Ti (pilote 610.88, Vulkan).
+  | Mesure | Moyenne | p99 | Pic |
+  |---|---|---|---|
+  | Image (ms) | 5,59 (179 FPS) | 9,06 | 13,4 |
+  | Rendu GPU (ms) | 3,83 | 7,54 | 8,27 |
+  | Triangles | 21,9 M | 40,7 M | 41,0 M |
+  | Mémoire du processus (Gio) | 0,68 | 0,69 | 0,69 |
+  1 % low : 103,7 FPS ; 0 image au-delà de 33 ms. Build `bench-release` complet : 11 min 55 s (`-j 6`).
+  Lecture honnête : ordre de grandeur seulement (formes simples, **aucun LOD**, d'où jusqu'à 41 M triangles).
+  Le « rendu CPU » relevé (0,07 ms) ne couvre que l'encodage des passes de rendu, pas tout le monde de rendu :
+  il ne faut pas le lire comme le coût CPU du rendu. CPU système jusqu'à 97 % pendant la mesure : d'autres
+  programmes tournaient, à refaire machine au repos pour le test A. Appels de dessin non exposés par Bevy 0.20.1.
+- ⬜ Pousser les 4 derniers commits, CI verte sur l'état final, fusionner la PR #1 → phase 1 ✅.
 - Constaté : erreur Windows 1455 (« fichier de pagination insuffisant ») avec 16 compilations en parallèle →
   infos de débogage de Bevy réduites dans le profil `dev`, et `-j 6` conseillé sur 16 Go.
 
