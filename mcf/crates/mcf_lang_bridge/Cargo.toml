@@ -1,0 +1,28 @@
+[package]
+name = "mcf_lang_bridge"
+description = "Pont MCF Engine ↔ langage MCF : affiche les interfaces .uimcf avec bevy_ui (expérimental)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Développement : Bevy en bibliothèque dynamique (même réglage que l'éditeur, pour partager la compilation).
+dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
+
+[dependencies]
+# Mêmes fonctionnalités que `mcf_editor` : les dépendances de Bevy compilées sont réutilisées.
+bevy = { workspace = true, features = ["3d", "ui"] }
+
+# ⚠️ Compilateur MCF (GPL-3.0-only) : lier ces crates dans un binaire distribué le soumet à la GPL.
+# À trancher avant toute distribution (D67, voir `mcf/lang/README.md`). Épinglé sur un commit, jamais de
+# copie du code du compilateur dans ce dépôt.
+mcf-diagnostics = { git = "https://github.com/MCF-Studio/MCF-MyLangage", rev = "76c4a01c68b14015a328e25a961f2ca9209c752b" }
+mcf-syntax = { git = "https://github.com/MCF-Studio/MCF-MyLangage", rev = "76c4a01c68b14015a328e25a961f2ca9209c752b" }
+mcf-semantic = { git = "https://github.com/MCF-Studio/MCF-MyLangage", rev = "76c4a01c68b14015a328e25a961f2ca9209c752b" }
+mcf-runtime = { git = "https://github.com/MCF-Studio/MCF-MyLangage", rev = "76c4a01c68b14015a328e25a961f2ca9209c752b" }
+mcf-view = { git = "https://github.com/MCF-Studio/MCF-MyLangage", rev = "76c4a01c68b14015a328e25a961f2ca9209c752b" }
+
+[lints]
+workspace = true

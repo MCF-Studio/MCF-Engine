@@ -1,6 +1,6 @@
 # 🧪 `mcf/lang/` — lecture du langage MCF (garé)
 
-> **Statut : garé.** Rien n'est branché au moteur. Ce dossier garde l'idée au chaud et fixe les règles pour le
+> **Statut : prototype sur la branche `lang/pont-bevy`** (crate `mcf_lang_bridge`, exemple `lang_demo`), à la demande d'Aroun le 2026-11-18. Pas dans `main`, licence (D67) non tranchée. Avant : « garé ». Rien n'est branché au jeu. Ce dossier garde l'idée au chaud et fixe les règles pour le
 > jour où on s'y met.
 
 ## L'idée
