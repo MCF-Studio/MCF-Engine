@@ -50,10 +50,71 @@ impl FrameStats {
     }
 }
 
+/// Résumé d'une série de mesures quelconques (mémoire, temps GPU…) dont certaines images peuvent manquer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeriesStats {
+    /// Nombre de valeurs réellement présentes.
+    pub count: usize,
+    /// Moyenne.
+    pub mean: f64,
+    /// Minimum.
+    pub min: f64,
+    /// Médiane.
+    pub p50: f64,
+    /// 99e centile.
+    pub p99: f64,
+    /// Pic (maximum).
+    pub max: f64,
+}
+
+impl SeriesStats {
+    /// Ignore les images sans valeur (`None`) et les valeurs non finies.
+    /// `None` si aucune valeur exploitable (mesure non disponible sur cette machine).
+    pub fn from_optional(samples: &[Option<f64>]) -> Option<Self> {
+        let mut v: Vec<f64> = samples
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|x| x.is_finite())
+            .collect();
+        if v.is_empty() {
+            return None;
+        }
+        v.sort_by(f64::total_cmp);
+        let n = v.len();
+        // Centile par rang le plus proche (même définition que `FrameStats`).
+        let pct = |p: f64| v[((p * n as f64).ceil() as usize).clamp(1, n) - 1];
+        Some(Self {
+            count: n,
+            mean: v.iter().sum::<f64>() / n as f64,
+            min: v[0],
+            p50: pct(0.50),
+            p99: pct(0.99),
+            max: v[n - 1],
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serie_optionnelle() {
+        let s = SeriesStats::from_optional(&[Some(1.0), None, Some(3.0), Some(f64::NAN), Some(2.0)]).unwrap();
+        assert_eq!(s.count, 3);
+        assert!((s.mean - 2.0).abs() < 1e-9);
+        assert_eq!(s.min, 1.0);
+        assert_eq!(s.p50, 2.0);
+        assert_eq!(s.max, 3.0);
+    }
+
+    #[test]
+    fn serie_optionnelle_absente() {
+        assert!(SeriesStats::from_optional(&[]).is_none());
+        assert!(SeriesStats::from_optional(&[None, None]).is_none());
+    }
 
     #[test]
     fn serie_reguliere() {
