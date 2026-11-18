@@ -90,8 +90,12 @@ modification d'un fichier de `mcf_editor` prend **< 10 s** sur le PC d'Aroun (ch
 - ✅ `.mcfmap` porté de l'éditeur Godot à l'identique (mêmes champs, bornes, messages) ; 32 tests au total.
 - ✅ CI verte (PR #1) : format, clippy `-D warnings`, tests Linux, `cargo deny`.
 - ✅ Serveur headless : 59,1 ticks/s mesurés pour 60 visés (première fenêtre de 10 s, démarrage compris).
-- ⬜ Recompilation < 10 s en mode dev : **pas encore mesurée**. La compilation de Bevy en bibliothèque dynamique
-  a été arrêtée deux fois par manque de mémoire sur le PC d'Aroun (16 Go, ~9 Go de mémoire virtuelle libre).
+- ✅ Recompilation en mode dev (Bevy en bibliothèque dynamique) : **≈ 1,8 s** après modification du contenu de
+  `mcf_editor/src/main.rs` (3 essais : 1,88 / 1,80 / 1,80 s, `-j 6`). Première recompilation après le build
+  complet : 11,2 s. Build complet initial : 11 min 45 s, réussi après redémarrage du PC (17 Go de mémoire
+  virtuelle libre, contre ~9 Go lors des deux échecs précédents).
+- ✅ `cargo editor` ouvre la fenêtre « MCF Editor » (RTX 3060 Ti, Vulkan). Erreurs Vulkan sans conséquence au
+  démarrage : couche Vulkan de TikTok LIVE Studio déclarée mais introuvable sur le disque.
 - ⬜ Première exécution de la scène de calibrage (`cargo bench-scene`).
 - Constaté : erreur Windows 1455 (« fichier de pagination insuffisant ») avec 16 compilations en parallèle →
   infos de débogage de Bevy réduites dans le profil `dev`, et `-j 6` conseillé sur 16 Go.
