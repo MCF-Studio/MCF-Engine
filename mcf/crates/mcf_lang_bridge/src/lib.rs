@@ -56,7 +56,10 @@ impl Plugin for McfLangPlugin {
             }
         }
         app.add_systems(Startup, load_font)
-            .add_systems(Update, (submit_on_enter, process, apply_input_values).chain())
+            .add_systems(
+                Update,
+                (submit_on_enter, hover_events, process, apply_input_values).chain(),
+            )
             .add_observer(on_activate)
             .add_observer(on_text_change);
     }
@@ -73,6 +76,10 @@ struct Elem {
     style: BTreeMap<Style, StyleValue>,
     /// `Button` : l'entité du texte.
     label: Option<Entity>,
+    /// Événements que l'élément écoute.
+    events: HashSet<Event>,
+    /// Dernier état de survol transmis (`Hovered` est réécrit à chaque image touchée).
+    hovered: bool,
 }
 
 #[derive(Resource)]
@@ -165,6 +172,8 @@ impl McfUi {
                             props: BTreeMap::new(),
                             style: BTreeMap::new(),
                             label,
+                            events: HashSet::new(),
+                            hovered: false,
                         },
                     );
                     touch(id, &mut touched);
@@ -205,19 +214,33 @@ impl McfUi {
                     }
                 }
                 Change::Listen { id, event } => {
-                    if let Some(e) = self.elems.get(&id) {
-                        // Un élément cliquable devient un `Button` (focus, état pressé, `Activate`).
-                        if event == Event::Click && e.kind != Kind::Button {
-                            commands.entity(e.entity).insert((Button, Hovered::default()));
+                    if let Some(e) = self.elems.get_mut(&id) {
+                        e.events.insert(event);
+                        match event {
+                            // Un élément cliquable devient un `Button` (focus, état pressé, `Activate`).
+                            Event::Click if e.kind != Kind::Button => {
+                                commands.entity(e.entity).insert((Button, Hovered::default()));
+                            }
+                            // `Hovered` suit le pointeur, descendants compris (comme `mouseenter`).
+                            Event::Enter | Event::Leave if e.kind != Kind::Button => {
+                                commands.entity(e.entity).insert(Hovered::default());
+                            }
+                            _ => {}
                         }
                     }
                 }
                 Change::Unlisten { id, event } => {
-                    if let Some(e) = self.elems.get(&id)
-                        && event == Event::Click
-                        && e.kind != Kind::Button
-                    {
-                        commands.entity(e.entity).remove::<(Button, Hovered)>();
+                    if let Some(e) = self.elems.get_mut(&id) {
+                        e.events.remove(&event);
+                        if event == Event::Click
+                            && e.kind != Kind::Button
+                            && !e.events.contains(&Event::Enter)
+                            && !e.events.contains(&Event::Leave)
+                        {
+                            commands.entity(e.entity).remove::<(Button, Hovered)>();
+                        } else if event == Event::Click && e.kind != Kind::Button {
+                            commands.entity(e.entity).remove::<Button>();
+                        }
                     }
                 }
             }
@@ -295,6 +318,23 @@ fn on_text_change(ev: On<TextEditChange>, inputs: Query<(&McfNode, &EditableText
     if elem.props.get(&Prop::Value) != Some(&value) {
         elem.props.insert(Prop::Value, value.clone());
         ui.pending.push((node.0, Event::Change, Some(value)));
+    }
+}
+
+/// Le pointeur entre ou sort d'un élément qui écoute `onEnter` / `onLeave`.
+fn hover_events(hovered: Query<(&McfNode, &Hovered), Changed<Hovered>>, mut ui: ResMut<McfUi>) {
+    for (node, hover) in &hovered {
+        let Some(elem) = ui.elems.get_mut(&node.0) else {
+            continue;
+        };
+        if elem.hovered == hover.get() {
+            continue;
+        }
+        elem.hovered = hover.get();
+        let event = if elem.hovered { Event::Enter } else { Event::Leave };
+        if elem.events.contains(&event) {
+            ui.pending.push((node.0, event, None));
+        }
     }
 }
 
