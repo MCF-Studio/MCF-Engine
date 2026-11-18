@@ -18,7 +18,7 @@
 |---|---|---|
 | 0 | Fondations : fork, dépôt, règles, synchro amont | ✅ fork 0.20.1, dépôt privé, CI amont retirée |
 | 1 | Squelette MCF, CI légère, builds rapides, outils de mesure | ✅ fenêtre, CI verte (Windows compris), recompilation ≈ 1,8 s |
-| 2 | **🎯 Bancs d'essai décisifs : grosse carte + réseau** (comparés à Godot) | ⬜ |
+| 2 | **🎯 Bancs d'essai décisifs : grosse carte + réseau** (comparés à Godot) | 🟡 générateur de la grosse carte |
 | — | **Décision : on continue vers la migration, on réoriente, ou on arrête** | ⬜ |
 | 3 | **Éditeur MCF** : scènes, scripts, animations, carte | ⬜ |
 | 4 | Terrain, sol, routes, végétation | ⬜ |
@@ -127,6 +127,10 @@ Protocole complet, scènes, paliers et seuils : [`mcf/docs/bancs-essai.md`](mcf/
   **streaming** simple, car ce sont eux qui feront la différence.
 - **Test B — réseau** : serveur dédié headless + 32 → 256 bots, réseau dégradé simulé ; `lightyear` contre
   `bevy_replicon` + `renet` ; comparaison avec le réseau actuel du jeu Godot.
+
+**État (2026-11-18)** : générateur déterministe de la grosse carte (`cargo big-map`) fait et testé, détail dans
+`bancs-essai.md`. Suivant : terrain, chargeur Bevy des calques + modèles mid poly, parcours caméra du test A.
+À fixer par Aroun : la machine de référence (et une config « joueur moyen » si disponible).
 
 Critère de fin : les deux rapports sont écrits dans `bancs-essai.md` (bruts + conclusion), et Aroun prend la
 **décision** : continuer, réorienter ou arrêter.

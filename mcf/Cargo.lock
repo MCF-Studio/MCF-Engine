@@ -3546,6 +3546,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf_big_map"
+version = "0.1.0"
+dependencies = [
+ "mcf_map",
+ "serde_json",
+]
+
+[[package]]
 name = "mcf_client"
 version = "0.1.0"
 dependencies = [

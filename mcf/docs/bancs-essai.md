@@ -13,7 +13,9 @@ RTX 3060 / Ryzen 5 / 16 Go). Les deux sont mesurées.
 
 ### La scène (générée, identique pour Bevy et Godot)
 
-Un générateur (`mcf/bench/big_map`) produit un fichier `.mcfmap` déterministe (graine fixe) :
+Un générateur (`mcf/crates/mcf_big_map`, commande `cargo big-map`) produit des calques `.mcfmap` déterministes
+(graine fixe ; mêmes octets à chaque génération), un par cellule de 500 m, plus `manifest.json` et
+`catalogue.json`. Les quantités ci-dessous sont celles des paliers `depart` et `stress` du générateur :
 
 | Élément | Quantité de départ | Palier « stress » |
 |---|---|---|
@@ -47,6 +49,22 @@ rue la plus dense à pied, entrée dans un intérieur, conduite rapide (streamin
 
 Seuil de réussite proposé : ≥ 60 FPS en 1 % low sur la config « joueur moyen » au palier de départ, aucune
 saccade > 50 ms en conduite, et **au moins aussi bien que Godot** sur la même scène.
+
+### Générateur : état (2026-11-18)
+
+- ✅ Éléments posés : bâtiments (dont intérieurs), objets, arbres, lampes (dont 50 avec ombre), points
+  d'apparition des personnages, véhicules. Ville carrée au centre (30 % du côté), îlots de 100 m, rues de 20 m,
+  bâtiments sur des parcelles de 20 m distinctes ; arbres hors de la ville, 70 % en forêts.
+- Mesuré (Ryzen 7 3700X, profil `release`) : palier `depart` = 113 100 éléments, 72 fichiers, 40,4 Mio, 1,2 s ;
+  palier `stress` = 307 800 éléments, 272 fichiers, 110,2 Mio, 3,8 s. Plus gros fichier : 1,78 Mio (limite
+  du format : 8 Mio).
+- ⬜ Terrain (heightmap 4097², 8 matériaux) : toutes les hauteurs valent 0 pour l'instant.
+- ⬜ Routes en `.mcfmap` (les rues existent dans la disposition, pas encore comme `roads`).
+- ⬜ Modèles mid poly derrière les identifiants `bench_*` (catalogue du banc) et chargeur Bevy.
+- ⬜ Même carte chargée sous Godot 4.7 (le format `.mcfmap` est commun : seul le catalogue est à brancher).
+
+Les objets « en ville » sont tirés dans les îlots, donc parfois dans l'emprise d'un bâtiment (comme du
+mobilier intérieur) : acceptable pour mesurer le rendu, à revoir si le test l'exige.
 
 ## Test B — Réseau
 

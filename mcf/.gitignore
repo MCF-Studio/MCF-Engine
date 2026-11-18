@@ -6,3 +6,4 @@
 target/
 # Résultats bruts des bancs d'essai : le résumé va dans mcf/docs/bancs-essai.md
 bench/results/
+bench/maps/

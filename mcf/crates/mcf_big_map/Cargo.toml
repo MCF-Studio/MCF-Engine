@@ -1,0 +1,16 @@
+[package]
+name = "mcf_big_map"
+description = "Générateur déterministe de la grosse carte du test A (calques .mcfmap découpés par cellule)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Sans Bevy : génération en quelques secondes, utilisable aussi pour préparer la même scène sous Godot.
+[dependencies]
+mcf_map.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
