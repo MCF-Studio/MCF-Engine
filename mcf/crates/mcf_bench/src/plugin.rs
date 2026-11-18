@@ -3,12 +3,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bevy::diagnostic::{SystemInfo, SystemInformationDiagnosticsPlugin};
+use bevy::diagnostic::{DiagnosticsStore, SystemInfo, SystemInformationDiagnosticsPlugin};
 use bevy::prelude::*;
+use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::PrimaryWindow;
 
-use crate::{CameraPath, FrameStats};
+use crate::{aggregate_render, frames_csv, CameraPath, FrameSample, FrameStats, SeriesStats};
 
 /// Réglages d'une mesure.
 #[derive(Resource, Debug, Clone)]
@@ -60,6 +61,11 @@ impl Plugin for BenchPlugin {
         if !app.is_plugin_added::<SystemInformationDiagnosticsPlugin>() {
             app.add_plugins(SystemInformationDiagnosticsPlugin);
         }
+        // Temps CPU/GPU et statistiques de pipeline par passe de rendu. Bevy ne l'ajoute lui-même que
+        // avec la feature `tracing-tracy` : on l'ajoute ici s'il manque (sans doublon).
+        if !app.is_plugin_added::<RenderDiagnosticsPlugin>() {
+            app.add_plugins(RenderDiagnosticsPlugin);
+        }
         app.insert_resource(self.0.clone())
             .init_resource::<Recording>()
             .add_systems(Update, (drive_camera, record).chain());
@@ -70,8 +76,22 @@ impl Plugin for BenchPlugin {
 struct Recording {
     /// Instant réel (s) du début de la mesure, après la chauffe.
     start: Option<f64>,
-    frames: Vec<(f32, f64)>,
+    frames: Vec<FrameSample>,
     done: bool,
+}
+
+/// Dernière valeur connue d'un diagnostic (chemin donné), s'il existe.
+fn latest(store: Option<&DiagnosticsStore>, path: &bevy::diagnostic::DiagnosticPath) -> Option<f64> {
+    store?.get(path)?.value()
+}
+
+/// Ajoute au résumé les moyenne / p99 / pic d'une série (`n/d` si la mesure est indisponible : les colonnes de
+/// `summary.csv` doivent rester identiques d'une mesure à l'autre).
+fn push_series(info: &mut Vec<(String, String)>, key: &str, unit: &str, stats: Option<SeriesStats>, prec: usize) {
+    let fmt = |v: Option<f64>| v.map_or_else(|| "n/d".to_owned(), |x| format!("{x:.prec$}"));
+    info.push((format!("{key}_moyen{unit}"), fmt(stats.map(|s| s.mean))));
+    info.push((format!("{key}_p99{unit}"), fmt(stats.map(|s| s.p99))));
+    info.push((format!("{key}_pic{unit}"), fmt(stats.map(|s| s.max))));
 }
 
 fn measure_duration(settings: &BenchSettings, cams: &Query<&BenchCamera>) -> f32 {
@@ -96,6 +116,7 @@ fn record(
     windows: Query<&Window, With<PrimaryWindow>>,
     sys: Option<Res<SystemInfo>>,
     gpu: Option<Res<RenderAdapterInfo>>,
+    store: Option<Res<DiagnosticsStore>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if rec.done {
@@ -110,12 +131,29 @@ fn record(
         return;
     };
     let t = (now - start) as f32;
-    rec.frames.push((t, time.delta_secs_f64() * 1000.0));
+    // Diagnostics : dernière valeur connue. Le GPU et le système sont en retard d'une ou deux images
+    // (lecture asynchrone), et la mémoire système n'est rafraîchie qu'environ une fois par seconde.
+    let store = store.as_deref();
+    let render = aggregate_render(
+        store
+            .into_iter()
+            .flat_map(DiagnosticsStore::iter)
+            .filter_map(|d| Some((d.path().as_str(), d.value()?))),
+    );
+    rec.frames.push(FrameSample {
+        t_s: t,
+        frame_ms: time.delta_secs_f64() * 1000.0,
+        render,
+        process_mem_gib: latest(store, &SystemInformationDiagnosticsPlugin::PROCESS_MEM_USAGE),
+        system_mem_pct: latest(store, &SystemInformationDiagnosticsPlugin::SYSTEM_MEM_USAGE),
+        process_cpu_pct: latest(store, &SystemInformationDiagnosticsPlugin::PROCESS_CPU_USAGE),
+        system_cpu_pct: latest(store, &SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE),
+    });
     if t < measure_duration(&settings, &cams) {
         return;
     }
     rec.done = true;
-    let samples: Vec<f64> = rec.frames.iter().map(|f| f.1).collect();
+    let samples: Vec<f64> = rec.frames.iter().map(|f| f.frame_ms).collect();
     let Some(stats) = FrameStats::from_samples(&samples) else {
         error!("mesure « {} » : aucune image valide", settings.name);
         exit.write(AppExit::error());
@@ -169,6 +207,20 @@ fn record(
         ("images_sup_50ms", s.over_50ms.to_string()),
     ];
     info.extend(results.iter().map(|(k, v)| ((*k).to_owned(), v.clone())));
+    // Séries supplémentaires : moyenne, p99, pic.
+    let series = |f: fn(&FrameSample) -> Option<f64>| {
+        let v: Vec<Option<f64>> = rec.frames.iter().map(f).collect();
+        SeriesStats::from_optional(&v)
+    };
+    push_series(&mut info, "rendu_cpu", "_ms", series(|f| f.render.cpu_ms), 3);
+    push_series(&mut info, "rendu_gpu", "_ms", series(|f| f.render.gpu_ms), 3);
+    push_series(&mut info, "triangles", "", series(|f| f.render.triangles), 0);
+    push_series(&mut info, "mem_processus", "_gib", series(|f| f.process_mem_gib), 3);
+    push_series(&mut info, "mem_systeme", "_pct", series(|f| f.system_mem_pct), 1);
+    push_series(&mut info, "cpu_processus", "_pct", series(|f| f.process_cpu_pct), 1);
+    push_series(&mut info, "cpu_systeme", "_pct", series(|f| f.system_cpu_pct), 1);
+    // Bevy 0.20.1 n'expose aucun compteur d'appels de dessin : on l'écrit plutôt que de l'inventer.
+    info.push(("appels_dessin".into(), "non exposé par Bevy 0.20.1".into()));
 
     match write_results(&settings, unix, &info, &rec.frames) {
         Ok(dir) => {
@@ -196,7 +248,7 @@ fn write_results(
     settings: &BenchSettings,
     unix: u64,
     info: &[(String, String)],
-    frames: &[(f32, f64)],
+    frames: &[FrameSample],
 ) -> std::io::Result<PathBuf> {
     let safe: String = settings
         .name
@@ -211,11 +263,7 @@ fn write_results(
         .collect();
     let dir = settings.out_dir.join(format!("{unix}_{safe}"));
     fs::create_dir_all(&dir)?;
-    let mut csv = String::from("t_s,frame_ms\n");
-    for (t, ms) in frames {
-        let _ = writeln!(csv, "{t:.4},{ms:.4}");
-    }
-    fs::write(dir.join("frames.csv"), csv)?;
+    fs::write(dir.join("frames.csv"), frames_csv(frames))?;
     let mut summary = String::new();
     for (k, v) in info {
         let _ = writeln!(summary, "{k} = {v}");
