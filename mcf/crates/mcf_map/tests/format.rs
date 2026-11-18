@@ -80,6 +80,22 @@ fn assert_refused(v: &Value, contains: &str) {
     );
 }
 
+/// Relecture exacte des nombres : sans l'option `float_roundtrip` de serde_json, un nombre à 17 chiffres
+/// significatifs (`-1806.6100000000001`) était relu `-1806.61`, et réenregistrer un calque le modifiait.
+#[test]
+fn nombres_relus_au_bit_pres() {
+    let mut m = sample();
+    m.items[0].transform.origin = [-1806.6100000000001, 0.07707599999999999, -1821.0900000000001];
+    let text = m.to_json_pretty().unwrap();
+    let back = load_str(&text, Some(&catalog())).unwrap();
+    assert_eq!(back.map, m);
+    assert_eq!(
+        back.map.to_json_pretty().unwrap(),
+        text,
+        "réenregistrer ne doit rien changer"
+    );
+}
+
 #[test]
 fn aller_retour_identique() {
     let m = sample();
