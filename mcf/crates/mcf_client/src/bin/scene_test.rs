@@ -179,9 +179,7 @@ fn lancer_animation(
     for e in enfants.iter_descendants(pret.entity) {
         if let Ok(mut j) = joueurs.get_mut(e) {
             j.play(a.idle).repeat();
-            commands
-                .entity(e)
-                .insert(AnimationGraphHandle(a.graphe.clone()));
+            commands.entity(e).insert(AnimationGraphHandle(a.graphe.clone()));
         }
     }
 }
@@ -209,11 +207,7 @@ fn deplacer_perso(
         return;
     }
     let course = clavier.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    **allure = if course {
-        Allure::Course
-    } else {
-        Allure::Marche
-    };
+    **allure = if course { Allure::Course } else { Allure::Marche };
     let v = if course { VITESSE_COURSE } else { VITESSE_MARCHE };
     // Avant de la caméra (−Z tourné du lacet), projeté sur le sol.
     let rot = Quat::from_rotation_y(camera.lacet);
