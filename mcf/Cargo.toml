@@ -17,7 +17,9 @@ publish = false
 [workspace.dependencies]
 bevy = { path = "..", version = "0.20.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# float_roundtrip : relecture exacte des nombres à 17 chiffres significatifs (sinon -1806.6100000000001
+# est relu -1806.61, et un calque ouvert puis réenregistré change sans raison).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 thiserror = "2"
 
 mcf_bench = { path = "crates/mcf_bench" }

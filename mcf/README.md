@@ -10,10 +10,12 @@ mcf/
 │   ├── mcf_map      format .mcfmap : lecture, écriture atomique, validation stricte (sans Bevy)
 │   ├── mcf_core     briques communes jeu / éditeur / serveur, passage .mcfmap ↔ Transform
 │   ├── mcf_bench    mesures : temps par image, 1 % low, parcours caméra rejouable, CSV
+│   ├── mcf_big_map  générateur déterministe de la grosse carte du test A (calques .mcfmap par cellule)
 │   ├── mcf_editor   éditeur (squelette ; interface en phase 3)
 │   ├── mcf_client   jeu (squelette)
 │   └── mcf_server   serveur dédié headless (squelette)
 ├── bench/results/   résultats bruts des mesures (non versionnés)
+├── bench/maps/      cartes générées par mcf_big_map (non versionnées, régénérables à l'identique)
 ├── lang/            🅿️ lecture du langage .mcf / .uimcf (garé)
 └── docs/
     ├── rendu-lod-objets.md   comment Bevy gère objets / culling / LOD, budgets mid poly
@@ -30,6 +32,7 @@ Toutes les commandes se lancent **depuis `mcf/`** (c'est là qu'est `.cargo/conf
 | `cargo client` | Lance le jeu en mode dev |
 | `cargo server` | Lance le serveur dédié (`MCF_TICK_RATE=60 cargo server` pour changer la fréquence) |
 | `cargo bench-scene -- --objets 100000` | Scène de calibrage, mesure puis écrit `bench/results/` |
+| `cargo big-map -- --palier stress` | Génère la grosse carte du test A dans `bench/maps/` (`depart` par défaut ; `--graine`, `--cellule`, `--sortie`) |
 | `cargo test --workspace` | Tous les tests |
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lints (comme la CI) |
 | `cargo fmt` | Mise en forme (sans `--all`, qui toucherait aussi Bevy) |

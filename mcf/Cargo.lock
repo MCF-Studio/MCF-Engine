@@ -3601,6 +3601,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf_big_map"
+version = "0.1.0"
+dependencies = [
+ "mcf_map",
+ "serde_json",
+]
+
+[[package]]
 name = "mcf_client"
 version = "0.1.0"
 dependencies = [
@@ -3650,6 +3658,17 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "mcf_core",
+]
+
+[[package]]
+name = "mcf_test_a"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "mcf_big_map",
+ "mcf_core",
+ "mcf_map",
+ "serde_json",
 ]
 
 [[package]]
