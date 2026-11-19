@@ -49,12 +49,18 @@ const LOTS_PER_SIDE: usize = ((BLOCK - STREET) / LOT) as usize;
 /// Espacement des lampes le long d'une rue, en mètres.
 const LAMP_SPACING: f64 = 25.0;
 
-const MODELS_BUILDING: usize = 30;
-const MODELS_INTERIOR: usize = 10;
-const MODELS_OBJECT: usize = 200;
-const MODELS_TREE: usize = 8;
-const MODELS_CHARACTER: usize = 10;
-const MODELS_VEHICLE: usize = 12;
+/// Modèles de bâtiments sans intérieur (`bench_batiment_00` à `_29`).
+pub const MODELS_BUILDING: usize = 30;
+/// Modèles de bâtiments avec intérieur (`bench_batiment_int_00` à `_09`).
+pub const MODELS_INTERIOR: usize = 10;
+/// Modèles d'objets posés (`bench_objet_000` à `_199`).
+pub const MODELS_OBJECT: usize = 200;
+/// Modèles d'arbres (`bench_arbre_00` à `_07`).
+pub const MODELS_TREE: usize = 8;
+/// Modèles de personnages (`bench_personnage_00` à `_09`).
+pub const MODELS_CHARACTER: usize = 10;
+/// Modèles de véhicules (`bench_vehicule_00` à `_11`).
+pub const MODELS_VEHICLE: usize = 12;
 
 /// Couleurs des véhicules (réglage `color`).
 const VEHICLE_COLORS: &[&str] = &["#b01e23", "#1d3f8f", "#e6e6e6", "#202020", "#7a7f85", "#2f6b3a"];
@@ -320,7 +326,7 @@ fn catalog_families() -> [(&'static str, usize, &'static [&'static str]); 6] {
 }
 
 /// Identifiant du modèle `i` d'une famille de `n` modèles (`bench_objet_007`).
-fn model_id(prefix: &str, i: usize, n: usize) -> String {
+pub fn model_id(prefix: &str, i: usize, n: usize) -> String {
     let width = n.saturating_sub(1).to_string().len().max(2);
     format!("{prefix}_{i:0width$}")
 }
