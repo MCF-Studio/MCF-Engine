@@ -214,7 +214,7 @@ fn deplacer_perso(
     let monde = rot * Vec3::new(dir.x, 0.0, -dir.y).normalize();
     tr.translation += monde * v * temps.delta_secs();
     // Le modèle regarde vers −Z : on le tourne vers la direction de marche.
-    let cible = Quat::from_rotation_y((-monde.x).atan2(-monde.z));
+    let cible = Quat::from_rotation_y(bevy::math::ops::atan2(-monde.x, -monde.z));
     tr.rotation = tr.rotation.slerp(cible, (temps.delta_secs() * 12.0).min(1.0));
 }
 
