@@ -67,4 +67,5 @@ deny = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# Compilateur MCF (MyLangage, bibliothèques MIT OR Apache-2.0, D67) : dépendance épinglée sur un commit.
+allow-git = ["https://github.com/MCF-Studio/MCF-MyLangage"]

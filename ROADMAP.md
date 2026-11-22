@@ -25,7 +25,7 @@
 | 5 | Monde ouvert de production : streaming, LOD, HLOD, occlusion | ⬜ |
 | 6 | Réseau de production et serveur dédié | ⬜ |
 | 7 | Briques RP (personnages, véhicules, intérieurs, voix) | ⬜ |
-| 8 | 🧪 La petite folie : lecture du langage `.mcf` / `.uimcf` | 🅿️ garé (voir `mcf/lang/`) |
+| 8 | 🧪 La petite folie : lecture du langage `.mcf` / `.uimcf` | 🟡 prototype fusionné (PR #2) : `mcf_lang_bridge` affiche un `.uimcf` (clic, saisie, survol) ; licence D67 tranchée ; pas branché au jeu (voir `mcf/lang/`) |
 | 9 | Production : pipeline d'assets, packaging, launcher | ⬜ |
 | 10 | **Transition du jeu** Godot → MCF Engine | ⬜ |
 

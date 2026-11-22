@@ -3797,6 +3797,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf-config"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "mcf-diagnostics",
+]
+
+[[package]]
+name = "mcf-diagnostics"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mcf-runtime"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "mcf-config",
+ "mcf-diagnostics",
+ "mcf-syntax",
+ "mcf-view",
+]
+
+[[package]]
+name = "mcf-semantic"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "mcf-config",
+ "mcf-diagnostics",
+ "mcf-syntax",
+]
+
+[[package]]
+name = "mcf-syntax"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "mcf-diagnostics",
+ "serde",
+]
+
+[[package]]
+name = "mcf-view"
+version = "0.1.0"
+source = "git+https://github.com/MCF-Studio/MCF-MyLangage?rev=2abf6216c766c915042a81a7762ee324eda34d6b#2abf6216c766c915042a81a7762ee324eda34d6b"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "mcf_bench"
 version = "0.1.0"
 dependencies = [
@@ -3835,6 +3890,18 @@ dependencies = [
  "bevy_egui",
  "egui_dock",
  "mcf_core",
+]
+
+[[package]]
+name = "mcf_lang_bridge"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "mcf-diagnostics",
+ "mcf-runtime",
+ "mcf-semantic",
+ "mcf-syntax",
+ "mcf-view",
 ]
 
 [[package]]
