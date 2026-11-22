@@ -26,6 +26,7 @@ bevy_egui = "0.43.1"
 egui_dock = "0.21.0"
 
 mcf_bench = { path = "crates/mcf_bench" }
+mcf_carte = { path = "crates/mcf_carte" }
 mcf_core = { path = "crates/mcf_core" }
 mcf_geo = { path = "crates/mcf_geo" }
 mcf_map = { path = "crates/mcf_map" }

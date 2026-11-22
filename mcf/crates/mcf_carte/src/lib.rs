@@ -1,0 +1,26 @@
+//! Projet de carte MCF (ADR-0001, `docs/SPEC_CONCEPTION_CARTE_2D_3D.md`) : sources (manifeste, relief, réseau,
+//! quartiers, bâti, calques d'objets), dérivés (géométrie, îlots, terrain terrassé), historique, fichiers validés
+//! et exports. Sans Bevy : l'éditeur, le serveur et les outils en ligne de commande partagent ce crate.
+
+pub mod batiments;
+pub mod carte;
+pub mod export;
+pub mod gabarits;
+pub mod geometrie;
+pub mod ids;
+pub mod ilots;
+pub mod io;
+pub mod lotissement;
+pub mod manifeste;
+pub mod quartiers;
+pub mod relief;
+pub mod reseau;
+
+pub use batiments::{Batiment, Origine};
+pub use carte::{Carte, Derive, Revisions, Sale, Transaction};
+pub use gabarits::{Densite, Famille, Gabarit, TableGabarits};
+pub use geometrie::GeoReseau;
+pub use ids::Id;
+pub use manifeste::Manifeste;
+pub use relief::{Pinceau, Relief};
+pub use reseau::Reseau;

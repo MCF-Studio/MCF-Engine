@@ -3867,6 +3867,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf_carte"
+version = "0.1.0"
+dependencies = [
+ "mcf_geo",
+ "mcf_map",
+ "png",
+ "serde",
+ "serde_json",
+ "tiny-skia",
+]
+
+[[package]]
 name = "mcf_client"
 version = "0.1.0"
 dependencies = [
