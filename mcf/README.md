@@ -8,6 +8,7 @@ profils de compilation et notre `Cargo.lock`. Bevy est une dépendance par chemi
 mcf/
 ├── crates/
 │   ├── mcf_map      format .mcfmap : lecture, écriture atomique, validation stricte (sans Bevy)
+│   ├── mcf_geo      noyau de géométrie de carte (tracés, profils de route, rubans) : seule source du Plan et de la 3D (sans Bevy)
 │   ├── mcf_core     briques communes jeu / éditeur / serveur, passage .mcfmap ↔ Transform
 │   ├── mcf_bench    mesures : temps par image, 1 % low, parcours caméra rejouable, CSV
 │   ├── mcf_big_map  générateur déterministe de la grosse carte du test A (calques .mcfmap par cellule)

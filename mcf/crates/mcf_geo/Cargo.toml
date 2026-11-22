@@ -1,0 +1,18 @@
+[package]
+name = "mcf_geo"
+description = "Noyau de géométrie de carte (routes, emprises, maillages) partagé par la vue Plan, la 3D, le jeu et le serveur"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Volontairement sans Bevy ni rendu : le serveur et les outils en ligne de commande l'utilisent aussi.
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

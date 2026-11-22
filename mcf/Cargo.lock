@@ -3893,6 +3893,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf_geo"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mcf_lang_bridge"
 version = "0.1.0"
 dependencies = [
