@@ -17,12 +17,51 @@ publish = false
 [workspace.dependencies]
 bevy = { path = "..", version = "0.20.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# float_roundtrip : relecture exacte des nombres à 17 chiffres significatifs (sinon -1806.6100000000001
+# est relu -1806.61, et un calque ouvert puis réenregistré change sans raison).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 thiserror = "2"
+# Interface de l'éditeur : versions vérifiées pour Bevy 0.20 / egui 0.36.
+bevy_egui = "0.43.1"
+egui_dock = "0.21.0"
 
 mcf_bench = { path = "crates/mcf_bench" }
 mcf_core = { path = "crates/mcf_core" }
 mcf_map = { path = "crates/mcf_map" }
+
+# `bevy_egui` dépend des sous-crates publiées de Bevy. Le moteur est un fork
+# local : sans ces redirections Cargo mélangerait deux copies incompatibles de
+# l'ECS et du renderer malgré le même numéro de version.
+[patch.crates-io]
+bevy = { path = ".." }
+bevy_a11y = { path = "../crates/bevy_a11y" }
+bevy_app = { path = "../crates/bevy_app" }
+bevy_asset = { path = "../crates/bevy_asset" }
+bevy_camera = { path = "../crates/bevy_camera" }
+bevy_clipboard = { path = "../crates/bevy_clipboard" }
+bevy_color = { path = "../crates/bevy_color" }
+bevy_core_pipeline = { path = "../crates/bevy_core_pipeline" }
+bevy_derive = { path = "../crates/bevy_derive" }
+bevy_ecs = { path = "../crates/bevy_ecs" }
+bevy_extract = { path = "../crates/bevy_extract" }
+bevy_image = { path = "../crates/bevy_image" }
+bevy_input = { path = "../crates/bevy_input" }
+bevy_light = { path = "../crates/bevy_light" }
+bevy_log = { path = "../crates/bevy_log" }
+bevy_math = { path = "../crates/bevy_math" }
+bevy_mesh = { path = "../crates/bevy_mesh" }
+bevy_picking = { path = "../crates/bevy_picking" }
+bevy_platform = { path = "../crates/bevy_platform" }
+bevy_reflect = { path = "../crates/bevy_reflect" }
+bevy_render = { path = "../crates/bevy_render" }
+bevy_shader = { path = "../crates/bevy_shader" }
+bevy_shape = { path = "../crates/bevy_shape" }
+bevy_time = { path = "../crates/bevy_time" }
+bevy_transform = { path = "../crates/bevy_transform" }
+bevy_ui_render = { path = "../crates/bevy_ui_render" }
+bevy_utils = { path = "../crates/bevy_utils" }
+bevy_window = { path = "../crates/bevy_window" }
+bevy_winit = { path = "../crates/bevy_winit" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

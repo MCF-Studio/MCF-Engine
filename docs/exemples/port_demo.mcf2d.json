@@ -1,0 +1,40 @@
+{
+  "format": "mcf2d",
+  "version": 1,
+  "name": "port_demo",
+  "metres_per_pixel": 0.5,
+  "origin_px": [2048, 2048],
+  "background": "port_demo.png",
+  "roads": [
+    {
+      "id": "avenue_du_port",
+      "class": "avenue",
+      "points": [[1300, 2048], [2048, 2048], [2800, 2300]]
+    },
+    {
+      "id": "route_quai_nord",
+      "class": "route",
+      "points": [[2048, 1500], [2048, 2048], [2048, 2700]]
+    }
+  ],
+  "junctions": [
+    {
+      "id": "carrefour_port",
+      "kind": "carrefour",
+      "origin": [2048, 2048],
+      "arms": [
+        {"angle": 0, "class": "route"},
+        {"angle": 90, "class": "avenue"},
+        {"angle": 180, "class": "route"},
+        {"angle": 270, "class": "avenue"}
+      ]
+    }
+  ],
+  "zones": [
+    {
+      "id": "zone_port_nord",
+      "kind": "port",
+      "polygon": [[1750, 1650], [2350, 1650], [2350, 1950], [1750, 1950]]
+    }
+  ]
+}

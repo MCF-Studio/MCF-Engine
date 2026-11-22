@@ -12,3 +12,5 @@ editor = "run -p mcf_editor --features dev"
 client = "run -p mcf_client --features dev"
 server = "run -p mcf_server"
 bench-scene = "run -p mcf_bench --bin mcf_bench_scene --profile bench-release"
+# Grosse carte du test A (sans Bevy : quelques secondes).
+big-map = "run -p mcf_big_map --release"
