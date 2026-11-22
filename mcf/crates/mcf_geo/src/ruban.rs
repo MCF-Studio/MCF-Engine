@@ -161,6 +161,21 @@ pub fn maillage_bande(bande: &Bande, altitudes: &[f64], surelevation: f64) -> Ma
     m
 }
 
+/// Maillage plan d'un polygone simple, face vers le haut. `altitude(p)` donne la hauteur de chaque sommet.
+pub fn maillage_polygone(poly: &[P2], altitude: impl Fn(P2) -> f64) -> Maillage {
+    let mut m = Maillage::default();
+    for p in poly {
+        m.positions.push([p[0], altitude(*p), p[1]]);
+        m.uvs.push([p[0], p[1]]);
+    }
+    for t in crate::polygone::trianguler(poly) {
+        // Positif dans (x, z) = vers le bas vu de +Y : on inverse.
+        m.indices.extend_from_slice(&[t[0] as u32, t[2] as u32, t[1] as u32]);
+    }
+    m.normales = normales(&m.positions, &m.indices);
+    m
+}
+
 fn normales(positions: &[[f64; 3]], indices: &[u32]) -> Vec<[f64; 3]> {
     let mut acc = vec![[0.0f64; 3]; positions.len()];
     for t in indices.as_chunks::<3>().0 {
