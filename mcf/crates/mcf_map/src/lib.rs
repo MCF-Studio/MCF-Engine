@@ -89,7 +89,15 @@ pub const ROAD_KEYS: &[&str] = &["uid", "template", "points"];
 /// Nombre maximal de routes par calque.
 pub const MAX_ROADS: usize = 500;
 /// Modèles de route connus (`MapRoad.TEMPLATES`).
-pub const ROAD_TEMPLATES: &[&str] = &["chemin", "route", "avenue"];
+pub const ROAD_TEMPLATES: &[&str] = &[
+    "sentier",
+    "chemin_terre",
+    "route",
+    "ruelle",
+    "rue",
+    "avenue",
+    "voie_rapide",
+];
 /// Nombre minimal de points d'une route.
 pub const ROAD_MIN_POINTS: usize = 2;
 /// Nombre maximal de points d'une route.

@@ -94,7 +94,7 @@ pub struct MapItem {
 pub struct MapRoad {
     /// Identifiant unique stable.
     pub uid: String,
-    /// Modèle (`chemin`, `route`, `avenue`).
+    /// Classe de route (`mcf_map::ROAD_TEMPLATES`, identique à `mcf_geo::ClasseRoute`).
     pub template: String,
     /// Points au sol, en coordonnées monde.
     pub points: Vec<[f64; 3]>,

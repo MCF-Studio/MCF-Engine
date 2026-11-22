@@ -31,7 +31,6 @@ Toutes les commandes se lancent **depuis `mcf/`** (c'est là qu'est `.cargo/conf
 |---|---|
 | `cargo editor` | Lance l'éditeur en mode dev (Bevy en bibliothèque dynamique : recompilation rapide) |
 | `cargo editor -- chemin\\vers\\calque.mcfmap` | Lance l'éditeur avec un calque validé, visible simultanément en carte orthographique 2D et scène 3D |
-| `cargo run -p mcf_map --bin mcf_map_import_2d -- plan.mcf2d.json sorties` | Convertit strictement un plan 2D conventionné en `.mcfmap`, zones et manifeste ; ajoutez `--ecraser` seulement pour remplacer les sorties |
 | `Ctrl+S` dans l'éditeur | Réécrit atomiquement le calque ouvert après validation stricte ; aucun fichier n'est écrit tant qu'une destination n'est pas définie |
 
 Depuis la scène de démonstration, le bouton **Créer un calque local** prépare une carte en mémoire. Indiquez ensuite un chemin finissant par `.mcfmap`, cliquez **Utiliser ce chemin**, puis **Enregistrer le calque** : aucune écriture n'a lieu avant cette dernière action explicite.
@@ -44,9 +43,9 @@ L'inspecteur permet aussi de **verrouiller** l'objet principal : il reste visibl
 
 Le bouton **Masquer/Afficher** retire temporairement l'objet de la scène 3D, du plan 2D et des sélections, sans supprimer sa donnée de carte.
 
-Caméra 3D : `WASD` pour se déplacer, `Shift` pour accélérer et clic droit maintenu pour regarder autour. Plan 2D : flèches pour le panoramique, `Q`/`E` ou la molette au-dessus du plan pour le zoom. La convention et le convertisseur de carte 2D sont documentés dans [`../docs/CONVENTION_CARTE_2D_VERS_MCFMAP.md`](../docs/CONVENTION_CARTE_2D_VERS_MCFMAP.md).
+Caméra 3D : `WASD` pour se déplacer, `Shift` pour accélérer et clic droit maintenu pour regarder autour. Plan 2D : flèches pour le panoramique, `Q`/`E` ou la molette au-dessus du plan pour le zoom. La conception de carte 2D ↔ 3D est spécifiée dans [`../docs/SPEC_CONCEPTION_CARTE_2D_3D.md`](../docs/SPEC_CONCEPTION_CARTE_2D_3D.md).
 
-Les routes utilisent le même gabarit dans les deux vues : `chemin` (2 m), `route` (4 m) et `avenue` (6 m). Elles peuvent être sélectionnées directement sur leur ruban, en 2D comme en 3D.
+Les routes ont 7 classes (`sentier`, `chemin_terre`, `route`, `ruelle`, `rue`, `avenue`, `voie_rapide`) dont le profil (chaussée, trottoirs ou accotements) vient de `mcf_geo` : le plan 2D et la 3D affichent exactement les mêmes bandes, continues dans les virages. Elles peuvent être sélectionnées directement sur leur ruban, en 2D comme en 3D.
 
 Dans l’inspecteur d’une route, **+ Point final** et **− Point final** modifient le tracé (au minimum deux points), régénèrent les rubans 2D/3D, puis sont sauvegardés dans le `.mcfmap` lors de l’enregistrement explicite.
 | `cargo client` | Lance le jeu en mode dev |

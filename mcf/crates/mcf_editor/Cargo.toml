@@ -16,6 +16,7 @@ bevy = { workspace = true, features = ["3d", "ui"] }
 bevy_egui.workspace = true
 egui_dock.workspace = true
 mcf_core.workspace = true
+mcf_geo.workspace = true
 
 [lints]
 workspace = true

@@ -7,14 +7,16 @@
 use std::path::{Path, PathBuf};
 
 use bevy::{
+    asset::RenderAssetUsages,
     camera::Viewport,
     input::mouse::{MouseMotion, MouseWheel},
-    math::ops::atan2,
+    mesh::{Indices, PrimitiveTopology},
     prelude::*,
     window::PrimaryWindow,
 };
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use mcf_core::{CatalogRef, LayerName, McfCorePlugin, McfUid, mcf_map};
+use mcf_geo::{ClasseRoute, NatureBande, TableProfils};
 
 #[derive(Component, Debug, Clone)]
 struct EditorObject {
@@ -30,11 +32,34 @@ struct EditorLocked;
 #[derive(Component)]
 struct EditorHidden;
 
-/// Tracé de route conservé comme donnée source et rendu par les gizmos.
+/// Tracé de route conservé comme donnée source. Toute sa géométrie visible (ruban 3D, plan 2D, sélection) vient de
+/// `mcf_geo` : une seule source, donc aucun écart entre les vues.
 #[derive(Component, Debug, Clone)]
 struct RoadPreview {
     points: Vec<Vec3>,
-    width_m: f32,
+    classe: ClasseRoute,
+}
+
+impl RoadPreview {
+    fn profil(&self) -> &'static mcf_geo::ProfilRoute {
+        TableProfils::DEFAUT.get(self.classe)
+    }
+
+    /// Largeur bord à bord, en mètres.
+    fn emprise_m(&self) -> f32 {
+        self.profil().emprise_m() as f32
+    }
+
+    /// Axe discrétisé dans le plan `(x, z)`.
+    fn axe(&self) -> Vec<mcf_geo::P2> {
+        let points: Vec<mcf_geo::P2> = self.points.iter().map(|p| [p.x as f64, p.z as f64]).collect();
+        mcf_geo::discretiser(&points, &[], mcf_geo::ECART_CORDE_M)
+    }
+
+    /// Bandes du profil en travers (chaussée, côtés).
+    fn bandes(&self) -> Vec<mcf_geo::Bande> {
+        mcf_geo::bandes(&self.axe(), self.profil())
+    }
 }
 
 /// Maillage de chaussée créé à partir d'un tracé de route.
@@ -290,67 +315,91 @@ fn spawn_demo_roads(
         meshes,
         materials,
         vec![Vec3::new(0.0, 0.05, -21.0), Vec3::new(0.0, 0.05, 21.0)],
-        4.0,
+        ClasseRoute::Rue,
     );
     spawn_road_preview(
         commands,
         meshes,
         materials,
         vec![Vec3::new(-21.0, 0.05, 0.0), Vec3::new(21.0, 0.05, 0.0)],
-        4.0,
+        ClasseRoute::Rue,
     );
 }
 
-/// Largeur de référence des gabarits de route, en mètres.
-fn road_width(template: &str) -> f32 {
-    match template {
-        "chemin" => 2.0,
-        "avenue" => 6.0,
-        _ => 4.0, // `route` et gabarit prudent pour une donnée ancienne.
-    }
+/// Classe d'une route du calque. Le calque a été validé (`ROAD_TEMPLATES` = classes de `mcf_geo`) : le repli
+/// n'est atteint que pour une donnée construite en mémoire sans validation.
+fn road_class(template: &str) -> ClasseRoute {
+    ClasseRoute::depuis_id(template).unwrap_or(ClasseRoute::Rue)
 }
 
-/// Crée le ruban 3D et conserve sa géométrie source pour le plan 2D.
+/// Crée le tracé et ses rubans 3D.
 fn spawn_road_preview(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     points: Vec<Vec3>,
-    width_m: f32,
+    classe: ClasseRoute,
 ) -> Entity {
-    let owner = commands
-        .spawn(RoadPreview {
-            points: points.clone(),
-            width_m,
-        })
-        .id();
-    spawn_road_surfaces(commands, meshes, materials, owner, &points, width_m);
+    let road = RoadPreview { points, classe };
+    let owner = commands.spawn(road.clone()).id();
+    spawn_road_surfaces(commands, meshes, materials, owner, &road);
     owner
 }
 
+/// Couleur provisoire d'une bande, commune au plan et à la 3D (les vrais matériaux viendront avec les styles
+/// « plan » et « satellite »).
+fn band_color(road: &RoadPreview, nature: NatureBande) -> Color {
+    let profil = road.profil();
+    match (nature, profil.revetement, profil.cote) {
+        (NatureBande::Chaussee, mcf_geo::Revetement::Revetu, _) => Color::srgb(0.075, 0.08, 0.095),
+        (NatureBande::Chaussee, mcf_geo::Revetement::Terre, _) => Color::srgb(0.42, 0.33, 0.22),
+        (_, _, mcf_geo::Cote::Trottoir) => Color::srgb(0.55, 0.55, 0.53),
+        _ => Color::srgb(0.36, 0.34, 0.28),
+    }
+}
+
+/// Un maillage continu par bande, construit par `mcf_geo` (plus de pavés par segment : ni trou ni chevauchement
+/// dans les virages).
 fn spawn_road_surfaces(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     owner: Entity,
-    points: &[Vec3],
-    width_m: f32,
+    road: &RoadPreview,
 ) {
-    let material = materials.add(Color::srgb(0.075, 0.08, 0.095));
-    for segment in points.windows(2) {
-        let delta = segment[1] - segment[0];
-        let length = delta.xz().length();
-        if length <= f32::EPSILON {
+    // Le tracé v1 ne porte pas de rayons : l'axe discrétisé garde les points de `road.points`, dans le même ordre.
+    // Les points sont stockés 0,12 m au-dessus du sol (voir `sync_road_points`) ; la chaussée revient à +3 cm et
+    // les côtés à +5 cm pour ne pas scintiller avec le sol.
+    let altitudes: Vec<f64> = road.points.iter().map(|p| p.y as f64).collect();
+    for bande in road.bandes() {
+        let surelevation = if bande.nature == NatureBande::Chaussee {
+            -0.09
+        } else {
+            -0.07
+        };
+        let maillage = mcf_geo::maillage_bande(&bande, &altitudes, surelevation);
+        if maillage.indices.is_empty() {
             continue;
         }
-        let midpoint = (segment[0] + segment[1]) * 0.5 + Vec3::Y * 0.03;
-        let yaw = atan2(delta.x, delta.z);
+        let to_f32 = |v: &[[f64; 3]]| v.iter().map(|p| p.map(|c| c as f32)).collect::<Vec<[f32; 3]>>();
+        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, to_f32(&maillage.positions))
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, to_f32(&maillage.normales))
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_UV_0,
+                maillage
+                    .uvs
+                    .iter()
+                    .map(|uv| uv.map(|c| c as f32))
+                    .collect::<Vec<[f32; 2]>>(),
+            )
+            .with_inserted_indices(Indices::U32(maillage.indices));
         commands.spawn((
             RoadSurface,
             RoadSurfaceOwner(owner),
-            Mesh3d(meshes.add(Cuboid::new(width_m, 0.06, length))),
-            MeshMaterial3d(material.clone()),
-            Transform::from_translation(midpoint).with_rotation(Quat::from_rotation_y(yaw)),
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(band_color(road, bande.nature))),
+            Transform::IDENTITY,
         ));
     }
 }
@@ -443,7 +492,7 @@ fn spawn_loaded_map(
             .map(|point| Vec3::new(point[0] as f32, point[1] as f32 + 0.12, point[2] as f32))
             .collect();
         let translation = points.first().copied().unwrap_or(Vec3::ZERO);
-        let entity = spawn_road_preview(commands, meshes, materials, points, road_width(&road.template));
+        let entity = spawn_road_preview(commands, meshes, materials, points, road_class(&road.template));
         commands.entity(entity).insert((
             EditorObject {
                 name: format!("Route {}", road.uid),
@@ -837,7 +886,7 @@ fn select_object_in_viewport(
                     continue;
                 }
                 let point = ray.origin + direction * distance_along_ray;
-                if point_road_distance(point.xz(), segment[0], segment[1]) <= road.width_m * 0.5
+                if point_road_distance(point.xz(), segment[0], segment[1]) <= road.emprise_m() * 0.5
                     && nearest.is_none_or(|(_, distance)| distance_along_ray < distance)
                 {
                     nearest = Some((entity, distance_along_ray));
@@ -1338,8 +1387,7 @@ fn editor_ui(
                                             &mut meshes,
                                             &mut materials,
                                             entity,
-                                            &road.points,
-                                            road.width_m,
+                                            &road,
                                         );
                                         commands.entity(entity).insert(road.clone());
                                         document.dirty = true;
@@ -1360,8 +1408,7 @@ fn editor_ui(
                                             &mut meshes,
                                             &mut materials,
                                             entity,
-                                            &road.points,
-                                            road.width_m,
+                                            &road,
                                         );
                                         commands.entity(entity).insert(road.clone());
                                         document.dirty = true;
@@ -1394,8 +1441,7 @@ fn editor_ui(
                                         &mut meshes,
                                         &mut materials,
                                         entity,
-                                        &road.points,
-                                        road.width_m,
+                                        &road,
                                     );
                                     commands.entity(entity).insert(road.clone());
                                     document.dirty = true;
@@ -1426,7 +1472,7 @@ fn editor_ui(
                                             &mut meshes,
                                             &mut materials,
                                             points.clone(),
-                                            road_width(&duplicate.template),
+                                            road_class(&duplicate.template),
                                         );
                                         commands.entity(road_entity).insert((
                                             EditorObject {
@@ -1809,6 +1855,29 @@ fn editor_ui(
             let mut nearest = None;
             let pointer = response.interact_pointer_pos();
             for (entity, road) in &roads {
+                // Mêmes bandes que le ruban 3D (`mcf_geo`) : le plan ne redessine pas la route à sa façon.
+                let selected = state.selected_entities.contains(&entity);
+                let plan = |p: mcf_geo::P2| {
+                    egui::pos2(
+                        center.x + p[0] as f32 * pixels_per_meter,
+                        center.y + p[1] as f32 * pixels_per_meter,
+                    )
+                };
+                for bande in road.bandes() {
+                    let fill = if selected {
+                        egui::Color32::YELLOW
+                    } else {
+                        let [r, g, b] = band_color(road, bande.nature).to_srgba().to_u8_array_no_alpha();
+                        egui::Color32::from_rgb(r, g, b)
+                    };
+                    for quad in bande.quads() {
+                        painter.add(egui::Shape::convex_polygon(
+                            quad.iter().map(|p| plan(*p)).collect(),
+                            fill,
+                            egui::Stroke::NONE,
+                        ));
+                    }
+                }
                 for segment in road.points.windows(2) {
                     let to_point = |point: Vec3| {
                         egui::pos2(
@@ -1816,17 +1885,6 @@ fn editor_ui(
                             center.y + point.z * pixels_per_meter,
                         )
                     };
-                    painter.line_segment(
-                        [to_point(segment[0]), to_point(segment[1])],
-                        egui::Stroke::new(
-                            road.width_m * pixels_per_meter,
-                            if state.selected_entities.contains(&entity) {
-                                egui::Color32::YELLOW
-                            } else {
-                                egui::Color32::from_rgb(73, 75, 84)
-                            },
-                        ),
-                    );
                     if state.selected_entities.contains(&entity) {
                         for point in [segment[0], segment[1]] {
                             painter.circle_filled(to_point(point), 5.0, egui::Color32::YELLOW);
@@ -1840,7 +1898,7 @@ fn editor_ui(
                     if let Some(pointer) = pointer {
                         let distance =
                             point_segment_distance(pointer, to_point(segment[0]), to_point(segment[1]));
-                        if distance <= road.width_m * pixels_per_meter * 0.5
+                        if distance <= road.emprise_m() * pixels_per_meter * 0.5
                             && nearest.is_none_or(|(_, best)| distance < best)
                         {
                             nearest = Some((entity, distance));
@@ -2112,10 +2170,10 @@ mod tests {
     }
 
     #[test]
-    fn les_gabarits_de_route_ont_des_largeurs_stables() {
-        assert_eq!(road_width("chemin"), 2.0);
-        assert_eq!(road_width("route"), 4.0);
-        assert_eq!(road_width("avenue"), 6.0);
+    fn les_classes_du_calque_sont_celles_de_mcf_geo() {
+        let ids: Vec<&str> = ClasseRoute::TOUTES.iter().map(|c| c.id()).collect();
+        assert_eq!(ids, mcf_map::ROAD_TEMPLATES);
+        assert_eq!(road_class("avenue"), ClasseRoute::Avenue);
     }
 
     #[test]

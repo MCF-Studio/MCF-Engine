@@ -95,9 +95,9 @@ création ; on peut ensuite la corriger carte par carte (largeurs, pentes, coule
 régénéré. Les largeurs de voie suivent l'usage français : 3,5 m par voie, 2,5 m de stationnement, trottoirs de 1,5 à
 3,5 m.
 
-**Nouvelle convention, sans reprise de l'existant** : les classes v1 (`chemin` 2 m, `route` 4 m, `avenue` 6 m), les
-routes et carrefours stockés dans `.mcfmap` et l'import `.mcf2d.json` sont retirés au jalon J3. Aucune carte réelle
-n'en dépend.
+**Nouvelle convention, sans reprise de l'existant** : les classes v1 (`chemin` 2 m, `route` 4 m, `avenue` 6 m) et
+l'import `.mcf2d.json` sont retirés dès J1. Les routes et carrefours quittent `.mcfmap` pour `reseau.json` au jalon
+J3. Aucune carte réelle n'en dépend.
 
 ### 4.3 Une route se **dessine**, elle n'est pas un modèle 3D posé
 On ne pose pas de morceaux de route modélisés à l'avance (droite, virage à 30°, croisement…). Ces kits obligent à
@@ -273,7 +273,7 @@ Il n'y a pas de clients tiers : c'est un outil interne. L'isolation porte sur de
 | J0 | cette spec validée, ADR « éditeur unique 2D/3D » | Aroun a tranché les D-x |
 | J1 | découpage de `mcf_editor` (fichier unique de 2 150 lignes → modules), crate `mcf_geo`, rubans continus | route en L sans trou ni chevauchement ; test d'exactitude vert |
 | J2 | vue Plan = caméra ortho + style plan ; fin du dessin de géométrie en egui | capture Plan superposée à la 3D vue de dessus : écart nul |
-| J3 | projet de carte (manifeste, réseau, quartiers, bâtiments), validation, tests de fuzz ; retrait des routes v1 et de l'import `.mcf2d` | projet créé, rouvert à l'identique ; fichiers piégés refusés |
+| J3 | projet de carte (manifeste, réseau, quartiers, bâtiments), validation, tests de fuzz ; routes et carrefours v1 sortis de `.mcfmap` vers `reseau.json` | projet créé, rouvert à l'identique ; fichiers piégés refusés |
 | J4 | outil Réseau (classes, accroche, carrefours auto, rayons) | maquette d'un quartier de 400 × 400 m tracée en < 15 min |
 | J5 | relief (tuiles, pinceaux, affichage plan, terrassement routes) | route sur colline : pentes conformes, talus propres |
 | J6 | îlots, zonage, lotissement, blocs, origine/verrou | relancer le lotissement ne touche aucun bloc `manuel` |
@@ -293,7 +293,7 @@ Aroun a délégué les choix techniques de cartographie (« carte blanche ») en
 |---|---|---|
 | D-1 | Profils routiers | valeurs du §4.2 par défaut, réglables par carte dans le manifeste |
 | D-2 | Gabarits de bâti | valeurs du §6.2 par défaut, réglables par carte |
-| D-3 | Ancienne convention | **pas de reprise** : nouvelle convention propre, retrait des routes v1 et de l'import `.mcf2d` (J3) |
+| D-3 | Ancienne convention | **pas de reprise** : nouvelle convention propre, routes et carrefours v1 sortis de `.mcfmap` vers `reseau.json` (J3) |
 | D-4 | Minimap / GPS | oui : pyramide de tuiles du plan stylisé + graphe routier (§8) |
 | D-5 | Emplacement des cartes | dépôt du jeu, `cartes/<nom>/` |
 | D-6 | Git LFS | oui pour les tuiles de relief et les calques image (`cartes/**/*.png`) |

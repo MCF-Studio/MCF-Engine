@@ -44,7 +44,7 @@ Alternative **B**.
 - Les projets de carte sont stockés en mètres, par famille de données, dans le dépôt du jeu (`cartes/<nom>/`),
   avec les PNG en Git LFS.
 - On repart sur une **nouvelle convention propre** : les routes et carrefours v1 de `.mcfmap` et l'import
-  `.mcf2d.json` sont retirés au jalon J3 (aucune carte réelle n'en dépend).
+  `.mcf2d.json` sont retirés (import dès J1 ; routes v1 de `.mcfmap` au jalon J3). Aucune carte réelle n'en dépend.
 
 Détail : `docs/SPEC_CONCEPTION_CARTE_2D_3D.md`.
 

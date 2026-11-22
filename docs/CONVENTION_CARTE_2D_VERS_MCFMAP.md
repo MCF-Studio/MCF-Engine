@@ -1,7 +1,7 @@
 # Convention carte 2D → MCF
 
 > **Obsolète depuis le 2026-11-22** (ADR-0001). Remplacée par `SPEC_CONCEPTION_CARTE_2D_3D.md`. Le convertisseur
-> décrit ici sera retiré au jalon J3 ; ne rien construire de nouveau dessus.
+> `mcf_map_import_2d` et l'exemple `port_demo` ont été retirés ; ce document n'est gardé que pour l'historique.
 
 Ce document définit le contrat du futur outil de création de cartes 2D. Il
 permet de transformer sans ambiguïté un plan, ses routes et ses zones en

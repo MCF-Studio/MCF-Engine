@@ -57,7 +57,7 @@ fn sample() -> McfMap {
             },
             JunctionArm {
                 angle: 120.0,
-                template: "chemin".into(),
+                template: "chemin_terre".into(),
             },
             JunctionArm {
                 angle: 240.0,

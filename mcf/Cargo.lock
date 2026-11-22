@@ -3890,6 +3890,7 @@ dependencies = [
  "bevy_egui",
  "egui_dock",
  "mcf_core",
+ "mcf_geo",
 ]
 
 [[package]]

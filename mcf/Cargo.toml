@@ -27,6 +27,7 @@ egui_dock = "0.21.0"
 
 mcf_bench = { path = "crates/mcf_bench" }
 mcf_core = { path = "crates/mcf_core" }
+mcf_geo = { path = "crates/mcf_geo" }
 mcf_map = { path = "crates/mcf_map" }
 
 # `bevy_egui` dépend des sous-crates publiées de Bevy. Le moteur est un fork
