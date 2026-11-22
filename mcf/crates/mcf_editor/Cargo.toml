@@ -13,6 +13,8 @@ dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
 
 [dependencies]
 bevy = { workspace = true, features = ["3d", "ui"] }
+bevy_egui.workspace = true
+egui_dock.workspace = true
 mcf_core.workspace = true
 
 [lints]

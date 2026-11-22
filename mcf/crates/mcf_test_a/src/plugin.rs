@@ -203,7 +203,7 @@ fn load_and_spawn(
     for p in &map.placements {
         let kind = p.model.kind;
         let material = match p.tint {
-            Some(rgba) => tint_material(rgba, &mut *materials),
+            Some(rgba) => tint_material(rgba, &mut materials),
             None => matte.clone(),
         };
         let base = (
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn carte_absente_quitte_en_erreur() {
-        let mut app = app(PathBuf::from("dossier/inexistant"), MapViewOptions::default());
+        let app = app(PathBuf::from("dossier/inexistant"), MapViewOptions::default());
         assert!(app.world().get_resource::<MapReport>().is_none());
         assert!(app.should_exit().is_some_and(|e| e.is_error()));
     }

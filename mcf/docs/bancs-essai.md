@@ -50,6 +50,28 @@ rue la plus dense à pied, entrée dans un intérieur, conduite rapide (streamin
 Seuil de réussite proposé : ≥ 60 FPS en 1 % low sur la config « joueur moyen » au palier de départ, aucune
 saccade > 50 ms en conduite, et **au moins aussi bien que Godot** sur la même scène.
 
+### Contrat de comparaison Bevy / Godot
+
+Chaque paire de résultats doit pointer vers le même manifeste de carte et le
+même identifiant de parcours. Les deux moteurs sont lancés séparément, mais
+avec les invariants suivants : build `release`, même machine et pilote,
+résolution 1920 × 1080, VSync désactivée, même heure/météo, mêmes options
+LOD/HLOD/occlusion explicitement indiquées, cinq secondes de chauffe et la
+durée intégrale du parcours ensuite. Une variante ne peut pas être comparée à
+une autre si l'un de ces champs diffère.
+
+Le rapport brut conserve : commit, versions du moteur et du catalogue,
+manifeste et somme SHA-256 de la carte, système/pilote, ligne de commande,
+horodatage, CSV image-par-image et valeurs agrégées. Une mesure est répétée
+trois fois ; le rapport affiche la médiane des moyennes et le pire p99. Les
+valeurs indisponibles sont notées `N/D`, jamais remplacées par zéro.
+
+| Décision | Condition à vérifier |
+|---|---|
+| Continuer | Tous les seuils du scénario sont atteints et aucune métrique MCF critique n'est inférieure à Godot de plus de 5 %. |
+| Réorienter | Un écart de plus de 5 % est reproduit, mais une piste technique mesurable (streaming, LOD, HLOD ou occlusion) existe. |
+| Arrêter | Les seuils échouent après les pistes retenues, ou l'écart défavorable dépasse 15 % sur trois répétitions. |
+
 ### Générateur : état (2026-11-18)
 
 - ✅ Éléments posés : bâtiments (dont intérieurs), objets, arbres, lampes (dont 50 avec ombre), points
@@ -74,7 +96,10 @@ mobilier intérieur) : acceptable pour mesurer le rendu, à revoir si le test l'
 - N clients **bots** headless (pas de rendu) qui jouent un scénario RP : marcher, courir, conduire, entrer
   dans un bâtiment, parler (événements de chat), échanger un objet, se regrouper sur une place.
 - Réseau dégradé simulé : 80 ms de latence, 20 ms de gigue, 1 % de pertes.
-- Paliers : 32, 64, 128, 256 joueurs.
+- Paliers officiels : 32, 60, 80, 128, 256 joueurs. Les paliers 60 et 80
+  couvrent respectivement la cible serveur déjà mesurée et la charge RP visée ;
+  32, 128 et 256 conservent l'échelle demandée par la roadmap. Un palier 64
+  peut servir au diagnostic interne mais ne remplace aucun résultat officiel.
 - Deux bibliothèques comparées sur le même scénario : **`lightyear`** et **`bevy_replicon` + `renet`**
   (les deux existent en version compatible Bevy 0.20, vérifié le 2026-11-18).
 
