@@ -119,13 +119,20 @@ impl Plugin for MapViewPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(MapDir(self.dir.clone()))
             .insert_resource(self.options.clone())
-            .add_systems(Startup, (load_and_spawn, finish_report).chain().in_set(MapViewSet));
+            .add_systems(
+                Startup,
+                (load_and_spawn, finish_report).chain().in_set(MapViewSet),
+            );
     }
 }
 
 /// Allume ou éteint toutes les lampes (lumière et ampoule).
 pub fn set_lamps_lit(lamps: &mut Query<&mut Visibility, With<LampLight>>, lit: bool) {
-    let v = if lit { Visibility::Inherited } else { Visibility::Hidden };
+    let v = if lit {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
     for mut vis in lamps.iter_mut() {
         vis.set_if_neq(v);
     }
@@ -187,19 +194,30 @@ fn load_and_spawn(
 
     // Sols : île et ville, un maillage chacun.
     let m = &map.manifest;
-    commands.spawn((Mesh3d(meshes.add(ground_mesh(m.size_m as f32))), MeshMaterial3d(matte.clone())));
+    commands.spawn((
+        Mesh3d(meshes.add(ground_mesh(m.size_m as f32))),
+        MeshMaterial3d(matte.clone()),
+    ));
     commands.spawn((
         Mesh3d(meshes.add(city_ground_mesh(m.city_m as f32, BLOCK as f32, STREET as f32))),
         MeshMaterial3d(matte.clone()),
     ));
 
     let ranged = |k: Kind| opts.visibility_ranges.then(|| fade_end(k)).flatten();
-    let n_ranged = map.placements.iter().filter(|p| ranged(p.model.kind).is_some()).count();
+    let n_ranged = map
+        .placements
+        .iter()
+        .filter(|p| ranged(p.model.kind).is_some())
+        .count();
     let mut plain = Vec::with_capacity(map.placements.len() - n_ranged);
     let mut faded = Vec::with_capacity(n_ranged);
     let mut heads = Vec::new();
     let mut interiors = Vec::new();
-    let lamp_vis = if opts.lamps_lit { Visibility::Inherited } else { Visibility::Hidden };
+    let lamp_vis = if opts.lamps_lit {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
     for p in &map.placements {
         let kind = p.model.kind;
         let material = match p.tint {
@@ -335,9 +353,15 @@ mod tests {
         assert_eq!(report.entities, q.total() + lamps + 2);
         let layered = world.query_filtered::<(), With<MapLayer>>().iter(world).count();
         assert_eq!(layered, q.total() + lamps);
-        let heads = world.query_filtered::<&Visibility, With<LampLight>>().iter(world).collect::<Vec<_>>();
+        let heads = world
+            .query_filtered::<&Visibility, With<LampLight>>()
+            .iter(world)
+            .collect::<Vec<_>>();
         assert_eq!(heads.len(), lamps);
-        assert!(heads.iter().all(|v| **v == Visibility::Hidden), "lampes éteintes au départ");
+        assert!(
+            heads.iter().all(|v| **v == Visibility::Hidden),
+            "lampes éteintes au départ"
+        );
         let shadow = world
             .query::<&PointLight>()
             .iter(world)
@@ -359,7 +383,12 @@ mod tests {
         assert!(live > 3 && live <= MODEL_COUNT + 3, "maillages vivants : {live}");
         assert_eq!(report.meshes, MODEL_COUNT + 3);
         assert!(report.materials <= 2 + 6, "une teinte de véhicule = un matériau");
-        assert!(report.kinds.iter().all(|k| k.tri_min > 0 && k.tri_min <= k.tri_max));
+        assert!(
+            report
+                .kinds
+                .iter()
+                .all(|k| k.tri_min > 0 && k.tri_min <= k.tri_max)
+        );
     }
 
     #[test]
@@ -373,7 +402,12 @@ mod tests {
         let mut app = app(tmp.0.clone(), opts);
         let world = app.world_mut();
         assert_eq!(world.query::<&VisibilityRange>().iter(world).count(), 0);
-        assert!(world.query::<&PointLight>().iter(world).all(|l| !l.shadow_maps_enabled));
+        assert!(
+            world
+                .query::<&PointLight>()
+                .iter(world)
+                .all(|l| !l.shadow_maps_enabled)
+        );
         assert!(
             world
                 .query_filtered::<&Visibility, With<LampLight>>()

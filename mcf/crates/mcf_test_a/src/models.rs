@@ -16,8 +16,8 @@
 
 use bevy::color::{ColorToComponents, LinearRgba, Srgba};
 use bevy::math::{Quat, Vec3};
-use bevy::shape::{Cone, Cuboid, Cylinder, Plane3d, Sphere};
 use bevy::mesh::{Mesh, MeshBuilder, Meshable, VertexAttributeValues};
+use bevy::shape::{Cone, Cuboid, Cylinder, Plane3d, Sphere};
 use bevy::transform::components::Transform;
 use mcf_big_map::Kind;
 
@@ -259,7 +259,11 @@ fn tree(slot: usize, i: usize) -> Mesh {
         for j in 0..3 {
             let radius = (2.4 - j as f32 * 0.6) * h / 10.0;
             let ch = h * 0.4;
-            p.add(cone(radius, ch, 12), at(0.0, h * 0.3 + j as f32 * h * 0.2 + ch / 2.0, 0.0), leaves);
+            p.add(
+                cone(radius, ch, 12),
+                at(0.0, h * 0.3 + j as f32 * h * 0.2 + ch / 2.0, 0.0),
+                leaves,
+            );
         }
     } else {
         let h = 6.0 + 4.0 * r(1);
@@ -312,13 +316,22 @@ fn character(slot: usize) -> Mesh {
 fn vehicle(i: usize) -> Mesh {
     let mut p = Parts::new();
     let wheel = |p: &mut Parts, x: f32, z: f32, r: f32| {
-        let t = Transform::from_xyz(x, r, z).with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2));
+        let t =
+            Transform::from_xyz(x, r, z).with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2));
         p.add(cylinder(r, 0.25, 14), t, TIRE);
     };
     let lights = |p: &mut Parts, w: f32, l: f32, y: f32| {
         for x in [-w * 0.32, w * 0.32] {
-            p.add(cuboid(0.3, 0.12, 0.05), at(x, y, -l / 2.0 - 0.02), Srgba::rgb(0.95, 0.92, 0.75));
-            p.add(cuboid(0.3, 0.12, 0.05), at(x, y, l / 2.0 + 0.02), Srgba::rgb(0.70, 0.05, 0.05));
+            p.add(
+                cuboid(0.3, 0.12, 0.05),
+                at(x, y, -l / 2.0 - 0.02),
+                Srgba::rgb(0.95, 0.92, 0.75),
+            );
+            p.add(
+                cuboid(0.3, 0.12, 0.05),
+                at(x, y, l / 2.0 + 0.02),
+                Srgba::rgb(0.70, 0.05, 0.05),
+            );
         }
     };
     let white = Srgba::WHITE;
@@ -337,7 +350,11 @@ fn vehicle(i: usize) -> Mesh {
             p.add(cuboid(w, 1.6, l), at(0.0, 1.15, 0.0), white);
             p.add(cuboid(w * 0.9, 0.6, 0.05), at(0.0, 1.55, -l / 2.0 - 0.01), GLASS);
             for side in [-1.0, 1.0] {
-                p.add(cuboid(0.05, 0.5, 1.0), at(side * (w / 2.0 + 0.01), 1.55, -l / 2.0 + 0.8), GLASS);
+                p.add(
+                    cuboid(0.05, 0.5, 1.0),
+                    at(side * (w / 2.0 + 0.01), 1.55, -l / 2.0 + 0.8),
+                    GLASS,
+                );
             }
             for (x, z) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
                 wheel(&mut p, x * (w / 2.0 - 0.05), z * (l / 2.0 - 0.9), 0.36);
@@ -348,7 +365,11 @@ fn vehicle(i: usize) -> Mesh {
             let (w, l) = (2.4, 7.0);
             p.add(cuboid(w, 2.0, 1.8), at(0.0, 1.4, -l / 2.0 + 0.9), white);
             p.add(cuboid(w * 0.9, 0.7, 0.05), at(0.0, 1.9, -l / 2.0 - 0.01), GLASS);
-            p.add(cuboid(w, 2.6, l - 1.9), at(0.0, 1.7, 0.95), Srgba::rgb(0.85, 0.85, 0.85));
+            p.add(
+                cuboid(w, 2.6, l - 1.9),
+                at(0.0, 1.7, 0.95),
+                Srgba::rgb(0.85, 0.85, 0.85),
+            );
             for z in [-l / 2.0 + 0.9, l / 2.0 - 2.4, l / 2.0 - 1.1] {
                 for x in [-1.0, 1.0] {
                     wheel(&mut p, x * (w / 2.0 - 0.1), z, 0.45);
@@ -376,7 +397,10 @@ pub fn ground_mesh(size: f32) -> Mesh {
 pub fn city_ground_mesh(city: f32, block: f32, street: f32) -> Mesh {
     let mut p = Parts::new();
     p.add(
-        Plane3d::default().mesh().size(city + street, city + street).build(),
+        Plane3d::default()
+            .mesh()
+            .size(city + street, city + street)
+            .build(),
         at(0.0, 0.03, 0.0),
         Srgba::rgb(0.18, 0.18, 0.19),
     );
@@ -478,7 +502,10 @@ mod tests {
         for t in idx.chunks(3) {
             let [a, b, c] = [t[0], t[1], t[2]].map(|i| Vec3::from_array(pos[i]));
             let face = (b - a).cross(c - a);
-            assert!(face.dot(-(a + b + c) / 3.0) > 0.0, "triangle tourné vers l'extérieur");
+            assert!(
+                face.dot(-(a + b + c) / 3.0) > 0.0,
+                "triangle tourné vers l'extérieur"
+            );
         }
     }
 

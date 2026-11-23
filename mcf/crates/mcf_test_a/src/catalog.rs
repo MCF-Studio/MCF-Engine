@@ -123,9 +123,7 @@ pub fn model_of(id: &str) -> Option<ModelRef> {
         }
         let index: usize = digits.parse().ok()?;
         return if index < n {
-            u16::try_from(index)
-                .ok()
-                .map(|index| ModelRef { kind, index })
+            u16::try_from(index).ok().map(|index| ModelRef { kind, index })
         } else {
             None
         };
@@ -186,7 +184,10 @@ mod tests {
                 index: 199
             })
         );
-        assert_eq!(model_of("bench_lampe_ombre").map(|m| m.kind), Some(Kind::ShadowLamp));
+        assert_eq!(
+            model_of("bench_lampe_ombre").map(|m| m.kind),
+            Some(Kind::ShadowLamp)
+        );
     }
 
     #[test]

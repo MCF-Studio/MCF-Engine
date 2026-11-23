@@ -121,7 +121,9 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
     let text_field = |k: &str, max: usize| {
         o.get(k)
             .and_then(Value::as_str)
-            .filter(|s| !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+            .filter(|s| {
+                !s.is_empty() && s.len() <= max && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
             .map(str::to_owned)
             .ok_or_else(|| format!("manifeste : « {k} » invalide"))
     };
@@ -211,8 +213,8 @@ pub fn placements_of(map: &McfMap, layer: u16) -> Result<Vec<Placement>, String>
     map.items
         .iter()
         .map(|it| {
-            let model =
-                model_of(&it.catalog).ok_or_else(|| format!("{} : modèle inconnu « {} »", map.layer, it.catalog))?;
+            let model = model_of(&it.catalog)
+                .ok_or_else(|| format!("{} : modèle inconnu « {} »", map.layer, it.catalog))?;
             let tint = match it.props.get("color") {
                 Some(PropValue::Color(c)) => Some(
                     Srgba::hex(c)
@@ -251,7 +253,12 @@ impl LoadedMap {
     }
 }
 
-fn load_layer(dir: &Path, f: &ManifestFile, layer: u16, cat: &SimpleCatalog) -> Result<(Vec<Placement>, usize), String> {
+fn load_layer(
+    dir: &Path,
+    f: &ManifestFile,
+    layer: u16,
+    cat: &SimpleCatalog,
+) -> Result<(Vec<Placement>, usize), String> {
     let loaded = load_file(&dir.join(&f.name), Some(cat)).map_err(|e| format!("{} : {e}", f.name))?;
     if loaded.map.items.len() != f.elements {
         return Err(format!(
@@ -262,7 +269,10 @@ fn load_layer(dir: &Path, f: &ManifestFile, layer: u16, cat: &SimpleCatalog) -> 
         ));
     }
     if !loaded.map.roads.is_empty() || !loaded.map.junctions.is_empty() || loaded.map.base_edits.is_some() {
-        return Err(format!("{} : routes et île de base pas encore gérées par le banc", f.name));
+        return Err(format!(
+            "{} : routes et île de base pas encore gérées par le banc",
+            f.name
+        ));
     }
     Ok((placements_of(&loaded.map, layer)?, loaded.warnings.len()))
 }
@@ -275,7 +285,10 @@ pub fn load_map_dir(dir: &Path) -> Result<LoadedMap, String> {
         .map_err(|e| format!("{} : {e}", mpath.display()))?
         .len();
     if size > MAX_MANIFEST_BYTES {
-        return Err(format!("{} : manifeste trop gros ({size} octets)", mpath.display()));
+        return Err(format!(
+            "{} : manifeste trop gros ({size} octets)",
+            mpath.display()
+        ));
     }
     let text = std::fs::read_to_string(&mpath).map_err(|e| format!("{} : {e}", mpath.display()))?;
     let manifest = parse_manifest(&text)?;
@@ -300,7 +313,10 @@ pub fn load_map_dir(dir: &Path) -> Result<LoadedMap, String> {
             .collect();
         handles
             .into_iter()
-            .map(|h| h.join().unwrap_or_else(|_| vec![(0, Err("lecture interrompue (panique)".into()))]))
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| vec![(0, Err("lecture interrompue (panique)".into()))])
+            })
             .collect()
     });
     let mut per_file: Vec<Option<(Vec<Placement>, usize)>> = vec![None; files.len()];
@@ -421,12 +437,16 @@ pub(crate) mod tests {
             ("absolu", |v| v["fichiers"][0]["fichier"] = "C:/x.mcfmap".into()),
             ("extension", |v| v["fichiers"][0]["fichier"] = "x.json".into()),
             ("champ inconnu", |v| v["script"] = "rm -rf".into()),
-            ("champ inconnu fichier", |v| v["fichiers"][0]["exec"] = true.into()),
+            ("champ inconnu fichier", |v| {
+                v["fichiers"][0]["exec"] = true.into()
+            }),
             ("format", |v| v["format"] = "autre".into()),
             ("version", |v| v["version"] = 2.into()),
             ("total", |v| v["elements"] = 1.into()),
             ("taille", |v| v["taille_m"] = 1e9.into()),
-            ("cellule hors carte", |v| v["fichiers"][0]["cellule"] = serde_json::json!([99, 0])),
+            ("cellule hors carte", |v| {
+                v["fichiers"][0]["cellule"] = serde_json::json!([99, 0])
+            }),
             ("palier", |v| v["palier"] = "a/b".into()),
             ("doublon", |v| {
                 let first = v["fichiers"][0]["fichier"].clone();
@@ -458,7 +478,15 @@ pub(crate) mod tests {
     #[test]
     fn noms_de_fichiers() {
         assert!(is_plain_file_name("bench_c000_001_0.mcfmap"));
-        for bad in ["", ".mcfmap", "a/b.mcfmap", "a\\b.mcfmap", "..mcfmap", "A.mcfmap", "a.mcfmap.tmp"] {
+        for bad in [
+            "",
+            ".mcfmap",
+            "a/b.mcfmap",
+            "a\\b.mcfmap",
+            "..mcfmap",
+            "A.mcfmap",
+            "a.mcfmap.tmp",
+        ] {
             assert!(!is_plain_file_name(bad), "{bad}");
         }
     }
