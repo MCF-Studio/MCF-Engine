@@ -6,9 +6,12 @@
 //! physiques) = avancer la cible, A / E (AZERTY ; Q / E en QWERTY) = monter / descendre.
 
 use bevy::{
-    camera::{Viewport, visibility::RenderLayers},
+    camera::{Exposure, Hdr, Viewport, visibility::RenderLayers},
+    core_pipeline::tonemapping::{DebandDither, Tonemapping},
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
+    light::AtmosphereEnvironmentMapLight,
     math::ops,
+    pbr::AtmosphereSettings,
     prelude::*,
     window::PrimaryWindow,
 };
@@ -97,6 +100,15 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
             clear_color: FOND_PLAN,
             ..default()
         },
+        // Même format d'image que la 3D (HDR) : les deux vues partagent la même texture, le Plan dessine par-dessus
+        // (mini-carte, vue partagée) au lieu d'écrire dans une texture à part. Aplats sans éclairage : l'exposition
+        // ne les change pas.
+        Hdr,
+        // En HDR, le tonemapping est une passe sur **toute** l'image partagée (pas seulement le viewport) : le Plan,
+        // qui passe après la 3D, la tonemapperait une seconde fois. Sans tonemapping, ses aplats gardent aussi leurs
+        // couleurs exactes.
+        Tonemapping::None,
+        DebandDither::Disabled,
         RenderLayers::from_layers(&[0, COUCHE_PLAN]),
         // Nord (−Z) en haut de l'écran.
         Transform::from_xyz(centre.x, haut, centre.y)
@@ -112,18 +124,19 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
         }),
         Camera {
             order: 0,
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.62, 0.74, 0.86)),
+            clear_color: ClearColorConfig::Custom(Color::BLACK),
             ..default()
         },
         RenderLayers::from_layers(&[0, COUCHE_3D]),
-        DistanceFog {
-            color: Color::srgb(0.62, 0.74, 0.86),
-            falloff: FogFalloff::Linear {
-                start: cote * 2.0,
-                end: cote * 6.0,
-            },
+        // Ciel physique (diffusion de Rayleigh / Mie) : le ciel, la brume lointaine (perspective aérienne) et la
+        // lumière ambiante suivent la position du soleil. Unités réelles : soleil en lux, exposition « plein jour ».
+        AtmosphereSettings {
+            aerial_view_lut_max_distance: (cote * 8.0).clamp(4_000.0, 40_000.0),
             ..default()
         },
+        AtmosphereEnvironmentMapLight::default(),
+        Exposure::SUNLIGHT,
+        Tonemapping::AcesFitted,
         Transform::default(),
     ));
 }

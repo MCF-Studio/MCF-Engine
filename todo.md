@@ -8,7 +8,18 @@
 - [x] A / E pour monter / descendre la caméra 3D (touches physiques : Q / E en QWERTY). *Pas encore vérifié à l'écran.*
 - [ ] Réseau électrique : gaines (lignes, pas forcément aériennes), compteurs de bâtiment, compteur général qui coupe tout un quartier.
 - [ ] Import de cartes 2D (satmap ou plan stylisé, réf. `G:\MCF-Remember-this-life\docs\map`) comme modèle : relever routes, relief, emplacements de bâtiments, aux conventions de l'éditeur.
-- [ ] Rendu : luminosité, skybox / ciel, textures plus qualitatives (Poly Haven local ; prompt ChatGPT si besoin).
+- [x] Rendu : luminosité, ciel, textures plus qualitatives → première passe codée. **Pas encore vue à l'écran**
+  (compilée, testée, éditeur non lancé).
+  - Ciel physique de Bevy (`Atmosphere`) au lieu du fond bleu uni et du brouillard : ciel, disque solaire, brume
+    lointaine et lumière ambiante suivent le soleil (après-midi, sud-ouest, 38° de hauteur).
+  - Soleil en unités réelles avec exposition « plein jour », ombres jusqu'à ~2 × le côté de la carte.
+  - Textures Poly Haven (CC0) copiées depuis la bibliothèque locale : herbe (terrain, îlots), terre (chemins,
+    accotements), asphalte, dalles de trottoir, enduit (murs, teinté par famille), bitume (toits). Couleur + normales
+    + AO / rugosité, plaquées en mètres, mipmaps calculées au chargement. Terrain teinté selon l'altitude et la pente.
+  - Le Plan n'a plus de tonemapping : ses aplats sont affichés avec leurs couleurs exactes (un peu plus vives
+    qu'avant).
+  - À voir à l'écran : réglage de l'exposition, taille des répétitions, sens des reliefs des normales.
+  - Plus tard : textures en KTX2 compressées (16 Mo de PNG aujourd'hui), choix de l'heure du jour dans l'éditeur.
 
 Texte d'origine (Aroun) :
 

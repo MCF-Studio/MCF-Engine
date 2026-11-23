@@ -8,12 +8,17 @@
 mod camera;
 mod outils;
 mod scene;
+mod textures;
 mod ui;
 
 use std::path::PathBuf;
 
 use bevy::{
     camera::{CameraOutputMode, visibility::RenderLayers},
+    light::{
+        Atmosphere, CascadeShadowConfigBuilder, SunDisk, atmosphere::ScatteringMedium, light_consts::lux,
+    },
+    math::ops,
     prelude::*,
     render::render_resource::BlendState,
 };
@@ -345,7 +350,12 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
         })
         .insert_resource(edition)
         .init_resource::<ZoneVues>()
-        .add_plugins((camera::CamerasPlugin, scene::ScenePlugin, outils::OutilsPlugin))
+        .add_plugins((
+            camera::CamerasPlugin,
+            scene::ScenePlugin,
+            outils::OutilsPlugin,
+            textures::TexturesPlugin,
+        ))
         .add_systems(Startup, preparer)
         .add_systems(EguiPrimaryContextPass, ui::interface)
         .run()
@@ -359,7 +369,12 @@ fn carte_de_test() -> Carte {
         .expect("une carte vide de 512 m est toujours valide")
 }
 
-fn preparer(mut commands: Commands, mut egui: ResMut<EguiGlobalSettings>) {
+fn preparer(
+    mut commands: Commands,
+    mut egui: ResMut<EguiGlobalSettings>,
+    mut milieux: ResMut<Assets<ScatteringMedium>>,
+    projet: Res<Projet>,
+) {
     // Caméra dédiée à l'interface : les caméras de carte gardent leur viewport sans déplacer egui.
     egui.auto_create_primary_context = false;
     commands.spawn((
@@ -376,16 +391,60 @@ fn preparer(mut commands: Commands, mut egui: ResMut<EguiGlobalSettings>) {
             ..default()
         },
     ));
-    commands.insert_resource(GlobalAmbientLight {
-        brightness: 350.0,
-        ..default()
-    });
+    // Lumière ambiante : donnée par le ciel (`AtmosphereEnvironmentMapLight` sur la caméra 3D), pas par une
+    // constante qui aplatit tout.
+    commands.insert_resource(GlobalAmbientLight::NONE);
+    commands.spawn(Atmosphere::earth(milieux.add(ScatteringMedium::earth(256, 256))));
+    let (a, b) = projet.carte.manifeste.bornes();
+    let cote = (b[0] - a[0]).max(b[1] - a[1]) as f32;
     commands.spawn((
         DirectionalLight {
-            illuminance: 9_000.0,
+            illuminance: lux::RAW_SUNLIGHT,
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_xyz(-0.5, 1.0, -0.35).looking_at(Vec3::ZERO, Vec3::Y),
+        SunDisk::EARTH,
+        // Les ombres couvrent la carte vue de loin (la caméra 3D démarre à ~0,9 × le côté de la carte).
+        CascadeShadowConfigBuilder {
+            num_cascades: 4,
+            first_cascade_far_bound: 40.0,
+            maximum_distance: (cote * 2.0).clamp(600.0, 4_000.0),
+            ..default()
+        }
+        .build(),
+        Transform::from_rotation(soleil(HAUTEUR_SOLEIL_DEG, AZIMUT_SOLEIL_DEG)),
     ));
+}
+
+/// Hauteur du soleil au-dessus de l'horizon (°) : milieu d'après-midi, ombres lisibles sans tomber au crépuscule.
+const HAUTEUR_SOLEIL_DEG: f32 = 38.0;
+/// Azimut du soleil (°, depuis le nord, sens horaire vu du dessus) : sud-ouest.
+const AZIMUT_SOLEIL_DEG: f32 = 220.0;
+
+/// Orientation d'une lumière directionnelle (elle éclaire vers son −Z local) pour un soleil à `hauteur` au-dessus de
+/// l'horizon et à l'`azimut` donné. Repère : Y en haut, nord = −Z, est = +X.
+fn soleil(hauteur_deg: f32, azimut_deg: f32) -> Quat {
+    let (h, az) = (hauteur_deg.to_radians(), azimut_deg.to_radians());
+    // Direction vers le soleil.
+    let vers_soleil = Vec3::new(
+        ops::sin(az) * ops::cos(h),
+        ops::sin(h),
+        -ops::cos(az) * ops::cos(h),
+    );
+    Transform::IDENTITY.looking_to(-vers_soleil, Vec3::Y).rotation
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soleil_au_sud_ouest_eclaire_vers_le_nord_est_et_le_bas() {
+        let eclaire = soleil(38.0, 220.0) * Vec3::NEG_Z;
+        assert!(eclaire.y < 0.0, "le soleil éclaire vers le bas : {eclaire}");
+        // Sud-ouest → la lumière part vers le nord-est (−Z, +X).
+        assert!(eclaire.z < 0.0 && eclaire.x > 0.0, "{eclaire}");
+        let hauteur = ops::asin(-eclaire.y).to_degrees();
+        assert!((hauteur - 38.0).abs() < 1e-3, "{hauteur}");
+    }
 }
