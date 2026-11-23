@@ -1,8 +1,9 @@
-//! Première base fonctionnelle de l'éditeur MCF.
+//! Éditeur MCF.
 //!
-//! La carte et la scène affichent le même monde : la gauche est une caméra
-//! orthographique de dessus, la droite une caméra de travail 3D. Un calque
-//! `.mcfmap` validé peut être chargé au lancement avec `cargo editor -- chemin`.
+//! - `cargo editor` : **conception de carte 2D ↔ 3D** (module `conception`) sur la carte de test ;
+//!   `cargo editor -- <dossier de projet>` ouvre un projet de carte (`carte.mcfcarte.json`).
+//! - `cargo editor -- calque.mcfmap` : éditeur d'objets d'un calque `.mcfmap` (ci-dessous). La carte et la scène
+//!   affichent le même monde : la gauche est une caméra orthographique de dessus, la droite une caméra 3D.
 
 use std::path::{Path, PathBuf};
 
@@ -170,7 +171,17 @@ fn commit_drag(drag: &mut DragState, history: &mut TransformHistory, document: &
     true
 }
 
+mod conception;
+
 fn main() -> AppExit {
+    match std::env::args_os().nth(1).map(PathBuf::from) {
+        Some(p) if is_mcfmap_path(&p) => editeur_calque(),
+        dossier => conception::lancer(dossier),
+    }
+}
+
+/// Éditeur d'objets d'un calque `.mcfmap` (le chemin est relu dans `setup_editor`).
+fn editeur_calque() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {

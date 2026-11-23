@@ -161,6 +161,13 @@ personnes **sans connaissance technique** pour la carte, et assez complet pour l
 | **Conception de carte 2D ↔ 3D** | Vue Plan dans l'éditeur (pas d'outil séparé, ADR-0001) : relief, réseau routier dessiné (7 classes), îlots et quartiers, bâti en blocs qui « pousse », exports plan stylisé / satellite / minimap. Noyau `mcf_geo` partagé, exactitude 2D = 3D testée. Spec et jalons J0–J8 : `docs/SPEC_CONCEPTION_CARTE_2D_3D.md`. Recoupe la phase 4 (terrain, routes) : les deux suivent cette spec |
 | **Essayer** (Ctrl+P) | Jouer immédiatement la scène / la carte, puis revenir exactement à l'état d'édition (instantané du monde) |
 
+**État conception 2D ↔ 3D (2026-11-23)** : `cargo editor` ouvre la vue Conception branchée sur `mcf_carte` (carte de
+test par défaut, `cargo editor -- <dossier>` pour un projet ; un `.mcfmap` ouvre l'ancien éditeur de calque). Plan
+orthographique + 3D sur les mêmes maillages, étapes Cadre / Relief (5 pinceaux) / Réseau (tracé, poignées, 7 classes) /
+Quartiers (îlots, zones libres) / Bâti (lotir, déplacer, verrou, niveaux) / Export (aperçu, tuiles, minimap, graphe).
+Lancé une fois sur le PC (scène reconstruite en 116 ms, mode dev) ; outils pas encore essayés un par un à la main, budgets
+du §12 pas encore mesurés en `bench-release`.
+
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la
   seule aide intégrée (test fait avec un vrai contributeur) ;
