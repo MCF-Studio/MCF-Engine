@@ -3,7 +3,7 @@
 //!
 //! Plan : molette = zoom vers le curseur, clic droit ou molette maintenus = déplacer, flèches.
 //! 3D : clic droit maintenu = tourner, clic molette = déplacer, molette = rapprocher, ZQSD / WASD (touches
-//! physiques) = avancer la cible.
+//! physiques) = avancer la cible, A / E (AZERTY ; Q / E en QWERTY) = monter / descendre.
 
 use bevy::{
     camera::{Viewport, visibility::RenderLayers},
@@ -35,6 +35,8 @@ pub struct Orbite {
     pub lacet: f32,
     /// Tangage (rad, positif = vue plongeante).
     pub tangage: f32,
+    /// Hauteur ajoutée au-dessus du sol (A / E), m.
+    pub elevation: f32,
 }
 
 /// Plan : centre visé et mètres par pixel logique.
@@ -77,6 +79,7 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
         distance: cote * 0.9,
         lacet: 0.6,
         tangage: 0.75,
+        elevation: 0.0,
     });
     let haut = hauteur_plan(&projet);
     commands.spawn((
@@ -129,6 +132,12 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
 pub fn rect_de(vue: Vue, zone: Rect, disposition: Disposition) -> Option<Rect> {
     match (disposition, vue) {
         (Disposition::Plan, Vue::Plan) | (Disposition::Perspective, Vue::Perspective) => Some(zone),
+        // Mini-carte : le Plan en incrustation, en bas à droite de la 3D.
+        (Disposition::Perspective, Vue::Plan) => {
+            let cote = (zone.width().min(zone.height()) * 0.3).clamp(150.0, 340.0);
+            let fin = zone.max - Vec2::splat(12.0);
+            Some(Rect::from_corners(fin - Vec2::splat(cote), fin))
+        }
         (Disposition::Partagee, Vue::Plan) => Some(Rect::from_corners(
             zone.min,
             Vec2::new(zone.center().x, zone.max.y),
@@ -170,7 +179,8 @@ fn disposer(
         let dim = (r.size() * f).as_uvec2().max(UVec2::ONE).min(taille - pos);
         camera.is_active = true;
         if *vue == Vue::Plan {
-            camera.clear_color = if edition.disposition == Disposition::Partagee {
+            // Partagée ou mini-carte : la 3D a déjà effacé l'image ; le fond du Plan est un aplat de la scène.
+            camera.clear_color = if edition.disposition != Disposition::Plan {
                 ClearColorConfig::None
             } else {
                 FOND_PLAN
@@ -202,6 +212,10 @@ fn naviguer_plan(
     edition: Res<Edition>,
     mut plan: ResMut<VuePlan>,
 ) {
+    // Mini-carte : cadrage fixe sur toute la carte (voir `appliquer`).
+    if edition.disposition == Disposition::Perspective {
+        return;
+    }
     let Some(rect) = rect_de(Vue::Plan, zone.rect, edition.disposition) else {
         return;
     };
@@ -291,6 +305,16 @@ fn naviguer_3d(
         };
         let dist = orbite.distance;
         orbite.cible += d * dist * 0.8 * vite * temps.delta_secs();
+        // A / E (touches physiques Q / E en QWERTY) : monter / descendre.
+        let mut v = 0.0;
+        if touches.pressed(KeyCode::KeyQ) {
+            v += 1.0;
+        }
+        if touches.pressed(KeyCode::KeyE) {
+            v -= 1.0;
+        }
+        orbite.elevation =
+            (orbite.elevation + v * dist.max(20.0) * 0.6 * vite * temps.delta_secs()).clamp(-200.0, 3_000.0);
     }
     // La cible suit le sol.
     let p = [f64::from(orbite.cible.x), f64::from(orbite.cible.z)];
@@ -306,7 +330,7 @@ fn raccourcis_vues(touches: Res<ButtonInput<KeyCode>>, zone: Res<ZoneVues>, mut 
     }
     let maj = touches.pressed(KeyCode::ShiftLeft) || touches.pressed(KeyCode::ShiftRight);
     edition.disposition = match (maj, edition.disposition) {
-        (true, Disposition::Partagee) => Disposition::Plan,
+        (true, Disposition::Partagee) => Disposition::Perspective,
         (true, _) => Disposition::Partagee,
         (false, Disposition::Plan) => Disposition::Perspective,
         (false, _) => Disposition::Plan,
@@ -317,22 +341,38 @@ fn appliquer(
     plan: Res<VuePlan>,
     orbite: Res<Orbite>,
     projet: Res<Projet>,
+    zone: Res<ZoneVues>,
+    edition: Res<Edition>,
     mut cameras: Query<(&Vue, &mut Transform, &mut Projection)>,
 ) {
+    // Mini-carte : toute la carte dans l'incrustation.
+    let mini = match (
+        edition.disposition,
+        rect_de(Vue::Plan, zone.rect, edition.disposition),
+    ) {
+        (Disposition::Perspective, Some(r)) => {
+            let (a, b) = projet.carte.manifeste.bornes();
+            let centre = Vec2::new(((a[0] + b[0]) * 0.5) as f32, ((a[1] + b[1]) * 0.5) as f32);
+            let cote = (b[0] - a[0]).max(b[1] - a[1]) as f32;
+            Some((centre, cote * 1.04 / r.width().min(r.height()).max(1.0)))
+        }
+        _ => None,
+    };
     for (vue, mut t, mut projection) in &mut cameras {
         match vue {
             Vue::Plan => {
-                t.translation = Vec3::new(plan.centre.x, hauteur_plan(&projet), plan.centre.y);
+                let (centre, m_par_px) = mini.unwrap_or((plan.centre, plan.m_par_px));
+                t.translation = Vec3::new(centre.x, hauteur_plan(&projet), centre.y);
                 if let Projection::Orthographic(o) = &mut *projection {
-                    o.scale = plan.m_par_px;
+                    o.scale = m_par_px;
                 }
             }
             Vue::Perspective => {
                 let (s, c) = ops::sin_cos(orbite.lacet);
                 let (ts, tc) = ops::sin_cos(orbite.tangage);
                 let dir = Vec3::new(s * tc, ts, c * tc);
-                *t = Transform::from_translation(orbite.cible + dir * orbite.distance)
-                    .looking_at(orbite.cible, Vec3::Y);
+                let cible = orbite.cible + Vec3::Y * orbite.elevation;
+                *t = Transform::from_translation(cible + dir * orbite.distance).looking_at(cible, Vec3::Y);
             }
         }
     }

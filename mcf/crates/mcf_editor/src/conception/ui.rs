@@ -58,6 +58,33 @@ fn remplacer(
     edition.glisse = None;
 }
 
+/// Thème de l'éditeur : police plus grande, accents de couleur.
+fn styler(ctx: &egui::Context) {
+    use egui::{FontFamily, FontId, TextStyle};
+    ctx.all_styles_mut(|s| {
+        s.text_styles = [
+            (TextStyle::Heading, FontId::new(21.0, FontFamily::Proportional)),
+            (TextStyle::Body, FontId::new(15.0, FontFamily::Proportional)),
+            (TextStyle::Button, FontId::new(15.0, FontFamily::Proportional)),
+            (TextStyle::Small, FontId::new(12.5, FontFamily::Proportional)),
+            (TextStyle::Monospace, FontId::new(14.0, FontFamily::Monospace)),
+        ]
+        .into();
+        s.spacing.item_spacing = egui::vec2(8.0, 6.0);
+        s.spacing.button_padding = egui::vec2(8.0, 4.0);
+        let v = &mut s.visuals;
+        let accent = egui::Color32::from_rgb(214, 132, 52);
+        v.selection.bg_fill = accent;
+        v.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+        v.hyperlink_color = accent;
+        v.panel_fill = egui::Color32::from_rgb(24, 27, 33);
+        v.window_fill = egui::Color32::from_rgb(30, 34, 41);
+        v.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(44, 50, 60);
+        v.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(64, 74, 90);
+        v.widgets.active.weak_bg_fill = accent;
+    });
+}
+
 pub fn interface(
     mut contexts: EguiContexts,
     mut projet: ResMut<Projet>,
@@ -65,8 +92,13 @@ pub fn interface(
     mut zone: ResMut<ZoneVues>,
     mut plan: ResMut<VuePlan>,
     mut orbite: ResMut<Orbite>,
+    mut style_pose: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    if !*style_pose {
+        *style_pose = true;
+        styler(ctx);
+    }
     let mut racine = egui::Ui::new(
         ctx.clone(),
         "racine".into(),
@@ -95,9 +127,13 @@ pub fn interface(
             ui.separator();
             ui.label("Vue :");
             for (d, nom, astuce) in [
-                (Disposition::Plan, "Plan", "Tab"),
-                (Disposition::Perspective, "3D", "Tab"),
+                (
+                    Disposition::Perspective,
+                    "3D + mini-carte",
+                    "Tab. Clic sur la mini-carte : l'agrandir.",
+                ),
                 (Disposition::Partagee, "Plan + 3D", "Maj+Tab"),
+                (Disposition::Plan, "Plan", "Tab"),
             ] {
                 if ui
                     .selectable_label(edition.disposition == d, nom)
@@ -136,25 +172,61 @@ pub fn interface(
 
     egui::Panel::left("etapes")
         .resizable(false)
-        .exact_size(300.0)
+        .exact_size(340.0)
         .show(&mut racine, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("Étapes");
-                ui.horizontal_wrapped(|ui| {
-                    for e in Etape::TOUTES {
-                        if ui.selectable_label(edition.etape == e, e.nom()).clicked() {
-                            edition.aller_a(e);
-                        }
+                // Étapes en cascade : l'étape courante se déplie sous son titre.
+                for e in Etape::TOUTES {
+                    let actif = edition.etape == e;
+                    let c = e.couleur();
+                    let couleur = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                    let fond = if actif {
+                        couleur
+                    } else {
+                        couleur.gamma_multiply(0.25)
+                    };
+                    let rep = egui::Frame::new()
+                        .fill(fond)
+                        .corner_radius(6)
+                        .inner_margin(egui::Margin::symmetric(10, 6))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.label(
+                                egui::RichText::new(e.nom())
+                                    .strong()
+                                    .size(17.0)
+                                    .color(egui::Color32::WHITE),
+                            );
+                            ui.label(
+                                egui::RichText::new(e.resume())
+                                    .size(12.5)
+                                    .color(egui::Color32::from_white_alpha(if actif { 230 } else { 150 })),
+                            );
+                        })
+                        .response
+                        .interact(egui::Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if rep.clicked() && !actif {
+                        edition.aller_a(e);
                     }
-                });
-                ui.separator();
-                match edition.etape {
-                    Etape::Cadre => cadre(ui, projet, edition, &mut plan, &mut orbite),
-                    Etape::Relief => etape_relief(ui, edition),
-                    Etape::Reseau => etape_reseau(ui, projet, edition),
-                    Etape::Quartiers => etape_quartiers(ui, edition),
-                    Etape::Bati => etape_bati(ui, projet, edition),
-                    Etape::Export => etape_export(ui, projet, edition),
+                    if actif {
+                        egui::Frame::new()
+                            .stroke(egui::Stroke::new(2.0, couleur))
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::same(10))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                match e {
+                                    Etape::Cadre => cadre(ui, projet, edition, &mut plan, &mut orbite),
+                                    Etape::Relief => etape_relief(ui, edition),
+                                    Etape::Reseau => etape_reseau(ui, projet, edition),
+                                    Etape::Quartiers => etape_quartiers(ui, edition),
+                                    Etape::Bati => etape_bati(ui, projet, edition),
+                                    Etape::Export => etape_export(ui, projet, edition),
+                                }
+                            });
+                    }
+                    ui.add_space(4.0);
                 }
             });
         });
@@ -389,7 +461,8 @@ fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
             "Clics : points du tracé (virages arrondis automatiquement).",
             "Double-clic ou Entrée : terminer. Retour arrière : retirer le dernier point. Échap : abandonner.",
             "Croiser ou toucher une route crée le carrefour. Alt : sans accroche.",
-            "Éditer : cliquez une route, puis glissez ses poignées. Suppr : supprimer.",
+            "Éditer : cliquez une route, glissez ses poignées. Ctrl+clic sur la route : ajouter un point ; Ctrl+clic sur un point : le retirer. Suppr : supprimer le tronçon.",
+            "Maj+clic (depuis n'importe quel outil) : sélectionner ; l'éditeur ouvre la bonne étape.",
         ],
     );
 }
@@ -633,21 +706,35 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                     });
                 projet.resultat(r, |()| "Classe changée : profil et carrefours recalculés.".into());
             }
-            let mut nom = t.nom.clone().unwrap_or_default();
+            // Le texte saisi vit dans l'état d'édition (sinon il serait remplacé à chaque image).
+            if edition.nom_saisi.as_ref().is_none_or(|(i, _)| *i != id) {
+                edition.nom_saisi = Some((id, t.nom.clone().unwrap_or_default()));
+            }
+            let mut valider = false;
+            ui.label("Nom de la voie");
             ui.horizontal(|ui| {
-                ui.label("Nom");
-                let rep = ui.text_edit_singleline(&mut nom);
-                if rep.lost_focus() && Some(nom.trim()) != t.nom.as_deref() {
-                    let valeur = (!nom.trim().is_empty()).then(|| nom.trim().to_owned());
-                    let r = projet.carte.modifier("Nommer la voie", |tx| {
-                        if let Some(x) = tx.reseau().troncons.get_mut(&id) {
-                            x.nom = valeur;
-                        }
-                        Ok(())
-                    });
-                    projet.resultat(r, |()| "Voie nommée.".into());
+                if let Some((_, texte)) = &mut edition.nom_saisi {
+                    let rep = ui.add(egui::TextEdit::singleline(texte).desired_width(160.0));
+                    valider |= rep.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 }
+                valider |= ui.button("Valider").clicked();
             });
+            if valider && let Some((_, texte)) = edition.nom_saisi.clone() {
+                let valeur = (!texte.trim().is_empty()).then(|| texte.trim().to_owned());
+                let ancien = t.nom.clone();
+                // Une voie traverse plusieurs carrefours : tous les tronçons qui portaient le même nom suivent.
+                let r = projet.carte.modifier("Nommer la voie", |tx| {
+                    let mut n = 0;
+                    for (i, x) in tx.reseau().troncons.iter_mut() {
+                        if *i == id || (ancien.is_some() && x.nom == ancien) {
+                            x.nom = valeur.clone();
+                            n += 1;
+                        }
+                    }
+                    Ok(n)
+                });
+                projet.resultat(r, |n| format!("Voie nommée ({n} tronçon(s))."));
+            }
             ui.label(
                 egui::RichText::new("Glissez les poignées (blanches : carrefours / extrémités).")
                     .small()

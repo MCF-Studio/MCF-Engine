@@ -88,6 +88,30 @@ impl Etape {
         Self::Export,
     ];
 
+    /// Sous-titre (ce qu'on y fait).
+    pub const fn resume(self) -> &'static str {
+        match self {
+            Self::Cadre => "Créer, ouvrir, enregistrer la carte",
+            Self::Relief => "Collines, vallées, plateaux",
+            Self::Reseau => "Tracer et modifier les routes",
+            Self::Quartiers => "Donner un usage aux îlots",
+            Self::Bati => "Faire pousser et ajuster le bâti",
+            Self::Export => "Plan, minimap, graphe GPS",
+        }
+    }
+
+    /// Couleur de l'étape (sRGB).
+    pub const fn couleur(self) -> [u8; 3] {
+        match self {
+            Self::Cadre => [96, 125, 160],
+            Self::Relief => [126, 150, 74],
+            Self::Reseau => [214, 132, 52],
+            Self::Quartiers => [150, 100, 190],
+            Self::Bati => [62, 140, 200],
+            Self::Export => [40, 160, 150],
+        }
+    }
+
     /// Nom affiché.
     pub const fn nom(self) -> &'static str {
         match self {
@@ -175,7 +199,7 @@ pub struct Glisse {
 pub enum Disposition {
     /// Plan seul.
     Plan,
-    /// 3D seule.
+    /// 3D avec la mini-carte (Plan en incrustation).
     Perspective,
     /// Plan à gauche, 3D à droite.
     Partagee,
@@ -224,6 +248,11 @@ pub struct Edition {
     pub conflits: Vec<Id>,
     /// Durée du dernier recalcul de la scène (ms), pour les budgets du §12.
     pub duree_scene_ms: f64,
+    /// Altitude figée du plan visé pendant un coup de pinceau en 3D (sinon le pinceau « grimpe » sur la colline
+    /// qu'il est en train de lever).
+    pub plan_pinceau: Option<f64>,
+    /// Nom de voie en cours de saisie (tronçon, texte).
+    pub nom_saisi: Option<(Id, String)>,
 }
 
 impl Default for Edition {
@@ -235,12 +264,12 @@ impl Default for Edition {
             famille: Famille::Residentiel,
             densite: Densite::Moyenne,
             rayon: 20.0,
-            force: 6.0,
+            force: 3.0,
             cible: 0.0,
             points: Vec::new(),
             selection: Selection::Rien,
             glisse: None,
-            disposition: Disposition::Partagee,
+            disposition: Disposition::Perspective,
             curseur: None,
             accroche: true,
             chemin: String::new(),
@@ -249,6 +278,8 @@ impl Default for Edition {
             ecraser_export: false,
             conflits: Vec::new(),
             duree_scene_ms: 0.0,
+            plan_pinceau: None,
+            nom_saisi: None,
         }
     }
 }

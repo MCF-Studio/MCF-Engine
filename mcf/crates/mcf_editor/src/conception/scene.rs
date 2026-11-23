@@ -215,6 +215,7 @@ fn reconstruire(
     let quartiers = projet.carte.quartiers.clone();
     let reseau = projet.carte.reseau.clone();
     let alt_max = projet.carte.manifeste.altitude_max_m as f32;
+    let projet_alt_min = projet.carte.manifeste.altitude_min_m as f32;
     let d = projet.carte.derive();
     let mut ajouter = |commands: &mut Commands,
                        partie: Partie,
@@ -262,6 +263,32 @@ fn reconstruire(
         affiche.dernier_terrain = Some(Instant::now());
     }
 
+    if change(|x| x.manifeste) {
+        // Fond du Plan (hors carte) : un aplat sous tout, pour que le Plan n'ait jamais à effacer l'image (mini-carte,
+        // vue partagée).
+        let (w, h) = ((fin[0] - coin[0]) as f32, (fin[1] - coin[1]) as f32);
+        let c = Vec3::new(
+            ((coin[0] + fin[0]) * 0.5) as f32,
+            projet_alt_min - 20.0,
+            ((coin[1] + fin[1]) * 0.5) as f32,
+        );
+        let fond = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.86, 0.87, 0.84),
+            unlit: true,
+            ..default()
+        });
+        ajouter(
+            &mut commands,
+            Partie::Eau,
+            Plane3d::default()
+                .mesh()
+                .size(w * 30.0, h * 30.0)
+                .build()
+                .translated_by(c),
+            fond,
+            COUCHE_PLAN,
+        );
+    }
     if change(|x| x.manifeste)
         && let Some(niveau) = eau
     {

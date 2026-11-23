@@ -10,7 +10,8 @@ use mcf_carte::{Carte, Id, relief::Pinceau};
 use mcf_geo::{P2, polygone};
 
 use super::{
-    COUCHE_3D, COUCHE_PLAN, CibleGlisse, Edition, Etape, Glisse, Outil, Projet, Selection, ZoneVues,
+    COUCHE_3D, COUCHE_PLAN, CibleGlisse, Disposition, Edition, Etape, Glisse, Outil, Projet, Selection,
+    ZoneVues,
     camera::{Vue, vue_sous},
     scene::Affiche,
 };
@@ -233,6 +234,28 @@ fn souris(
         (Some(c), Some((v, cam, gt))) => viser(*v, cam, gt, c, &mut projet.carte),
         _ => None,
     };
+    // Coup de pinceau en 3D : on vise le plan horizontal pris au début du geste.
+    let pinceau = matches!(edition.outil, Outil::Pinceau(_)) && boutons.pressed(MouseButton::Left);
+    match (pinceau, edition.plan_pinceau, curseur, camera) {
+        (true, None, _, Some((Vue::Perspective, ..))) => {
+            edition.plan_pinceau = edition.curseur.map(|(_, h)| h)
+        }
+        (true, Some(y), Some(c), Some((Vue::Perspective, cam, gt))) => {
+            if let Ok(r) = cam.viewport_to_world(gt, c) {
+                let (o, d) = (r.origin.as_dvec3(), r.direction.as_dvec3());
+                if d.y.abs() > 1e-6 {
+                    let q = o + d * ((y - o.y) / d.y);
+                    let p = [q.x, q.z];
+                    if projet.carte.manifeste.contient(p) {
+                        let h = projet.carte.derive().terrain.hauteur(p);
+                        edition.curseur = Some((p, h));
+                    }
+                }
+            }
+        }
+        (false, ..) => edition.plan_pinceau = None,
+        _ => {}
+    }
 
     // Fin d'un geste de sculpture : une seule étape d'historique.
     if boutons.just_released(MouseButton::Left) {
@@ -256,82 +279,23 @@ fn souris(
         return;
     };
     let appui = boutons.just_pressed(MouseButton::Left);
+    let maj = touches.pressed(KeyCode::ShiftLeft) || touches.pressed(KeyCode::ShiftRight);
+    // Clic sur la mini-carte : elle s'agrandit (vue partagée).
+    if appui && vue == Some(Vue::Plan) && edition.disposition == Disposition::Perspective {
+        edition.disposition = Disposition::Partagee;
+        return;
+    }
+    // Maj+clic : sélectionner depuis n'importe quel outil.
+    if appui && maj && edition.outil != Outil::Selection {
+        selectionner(&mut projet, &mut edition, p, None, false);
+        return;
+    }
     match edition.outil {
         Outil::Selection => {
-            if !appui {
-                return;
+            if appui {
+                let viseur = camera.zip(curseur).map(|((_, cam, gt), c)| (cam, gt, c));
+                selectionner(&mut projet, &mut edition, p, viseur, ctrl);
             }
-            // 1. Poignées du tronçon sélectionné (au pixel près, dans la vue où l'on clique).
-            if let (Selection::Troncon(id), Some((_, cam, gt)), Some(c)) =
-                (&edition.selection, camera, curseur)
-            {
-                let id = *id;
-                let controle = projet
-                    .carte
-                    .reseau
-                    .troncons
-                    .get(&id)
-                    .and_then(|t| projet.carte.reseau.controle(t))
-                    .map(|(pts, _)| pts)
-                    .unwrap_or_default();
-                let terrain = &projet.carte.derive().terrain;
-                let proche = controle.iter().enumerate().find(|(_, q)| {
-                    let w = Vec3::new(q[0] as f32, terrain.hauteur(**q) as f32, q[1] as f32);
-                    cam.world_to_viewport(gt, w).is_ok_and(|s| s.distance(c) <= 10.0)
-                });
-                if let Some((index, q)) = proche {
-                    edition.glisse = Some(Glisse {
-                        depart: *q,
-                        actuel: *q,
-                        cible: CibleGlisse::Poignee {
-                            troncon: id,
-                            index,
-                            nombre: controle.len(),
-                        },
-                    });
-                    return;
-                }
-            }
-            // 2. Bâtiment (Ctrl : ajoute / retire de la sélection).
-            if let Some(id) = batiment_en(&projet.carte, p) {
-                let mut ids = match &edition.selection {
-                    Selection::Batiments(v) => v.clone(),
-                    _ => Vec::new(),
-                };
-                if ctrl {
-                    if let Some(i) = ids.iter().position(|x| *x == id) {
-                        ids.remove(i);
-                    } else {
-                        ids.push(id);
-                    }
-                    edition.selection = if ids.is_empty() {
-                        Selection::Rien
-                    } else {
-                        Selection::Batiments(ids)
-                    };
-                    return;
-                }
-                if !ids.contains(&id) {
-                    ids = vec![id];
-                }
-                edition.selection = Selection::Batiments(ids);
-                edition.glisse = Some(Glisse {
-                    depart: p,
-                    actuel: p,
-                    cible: CibleGlisse::Batiments,
-                });
-                return;
-            }
-            // 3. Tronçon, 4. quartier.
-            let profils = projet.carte.manifeste.profils;
-            let troncon = projet.carte.derive().geo.troncon_sous(p, &profils);
-            edition.selection = if let Some(id) = troncon {
-                Selection::Troncon(id)
-            } else if let Some(id) = quartier_en(&mut projet.carte, p) {
-                Selection::Quartier(id)
-            } else {
-                Selection::Rien
-            };
         }
         Outil::Tracer | Outil::ZoneLibre => {
             if appui {
@@ -388,6 +352,166 @@ fn souris(
             }
         }
     }
+}
+
+/// Clic de sélection. `viseur` (caméra, transformée, curseur) permet d'attraper les poignées du tronçon
+/// sélectionné ; `ctrl` : ajoute / retire (bâtiments), insère / supprime un point (tronçon sélectionné).
+fn selectionner(
+    projet: &mut Projet,
+    edition: &mut Edition,
+    p: P2,
+    viseur: Option<(&Camera, &GlobalTransform, Vec2)>,
+    ctrl: bool,
+) {
+    // 1. Poignées et tracé du tronçon sélectionné.
+    if let Selection::Troncon(id) = edition.selection {
+        let controle = projet
+            .carte
+            .reseau
+            .troncons
+            .get(&id)
+            .and_then(|t| projet.carte.reseau.controle(t))
+            .map(|(pts, _)| pts)
+            .unwrap_or_default();
+        let terrain = &projet.carte.derive().terrain;
+        let proche = viseur.and_then(|(cam, gt, c)| {
+            controle.iter().enumerate().find(|(_, q)| {
+                let w = Vec3::new(q[0] as f32, terrain.hauteur(**q) as f32, q[1] as f32);
+                cam.world_to_viewport(gt, w).is_ok_and(|s| s.distance(c) <= 10.0)
+            })
+        });
+        match (proche, ctrl) {
+            (Some((index, _)), true) => {
+                supprimer_point(projet, id, index, controle.len());
+                return;
+            }
+            (Some((index, q)), false) => {
+                edition.glisse = Some(Glisse {
+                    depart: *q,
+                    actuel: *q,
+                    cible: CibleGlisse::Poignee {
+                        troncon: id,
+                        index,
+                        nombre: controle.len(),
+                    },
+                });
+                return;
+            }
+            (None, true) => {
+                let profils = projet.carte.manifeste.profils;
+                if projet.carte.derive().geo.troncon_sous(p, &profils) == Some(id) {
+                    inserer_point(projet, id, &controle, p);
+                    return;
+                }
+            }
+            (None, false) => {}
+        }
+    }
+    // 2. Bâtiment (Ctrl : ajoute / retire de la sélection).
+    if let Some(id) = batiment_en(&projet.carte, p) {
+        let mut ids = match &edition.selection {
+            Selection::Batiments(v) => v.clone(),
+            _ => Vec::new(),
+        };
+        if ctrl {
+            if let Some(i) = ids.iter().position(|x| *x == id) {
+                ids.remove(i);
+            } else {
+                ids.push(id);
+            }
+            edition.selection = if ids.is_empty() {
+                Selection::Rien
+            } else {
+                Selection::Batiments(ids)
+            };
+        } else {
+            if !ids.contains(&id) {
+                ids = vec![id];
+            }
+            edition.selection = Selection::Batiments(ids);
+            edition.glisse = Some(Glisse {
+                depart: p,
+                actuel: p,
+                cible: CibleGlisse::Batiments,
+            });
+        }
+        suivre_selection(edition);
+        return;
+    }
+    // 3. Tronçon, 4. quartier.
+    let profils = projet.carte.manifeste.profils;
+    let troncon = projet.carte.derive().geo.troncon_sous(p, &profils);
+    edition.selection = if let Some(id) = troncon {
+        Selection::Troncon(id)
+    } else if let Some(id) = quartier_en(&mut projet.carte, p) {
+        Selection::Quartier(id)
+    } else {
+        Selection::Rien
+    };
+    suivre_selection(edition);
+}
+
+/// L'éditeur suit la sélection : une route ouvre l'étape Réseau, un bâtiment l'étape Bâti, un quartier l'étape
+/// Quartiers (sauf depuis Bâti, qui lotit les quartiers). L'outil devient « sélection », le geste en cours est gardé.
+fn suivre_selection(edition: &mut Edition) {
+    let cible = match (&edition.selection, edition.etape) {
+        (Selection::Troncon(_), _) => Etape::Reseau,
+        (Selection::Batiments(_), _) => Etape::Bati,
+        (Selection::Quartier(_), Etape::Bati) => Etape::Bati,
+        (Selection::Quartier(_), _) => Etape::Quartiers,
+        (Selection::Rien, e) => e,
+    };
+    if cible != edition.etape || edition.outil != Outil::Selection {
+        edition.etape = cible;
+        edition.outil = Outil::Selection;
+        edition.points.clear();
+    }
+}
+
+/// Insère un point de forme sur le segment du tracé le plus proche de `p`.
+fn inserer_point(projet: &mut Projet, id: Id, controle: &[P2], p: P2) {
+    let Some(k) = (0..controle.len().saturating_sub(1)).min_by(|a, b| {
+        let da = mcf_geo::distance_segment(p, controle[*a], controle[*a + 1]);
+        let db = mcf_geo::distance_segment(p, controle[*b], controle[*b + 1]);
+        da.total_cmp(&db)
+    }) else {
+        return;
+    };
+    let r = projet.carte.modifier("Ajouter un point", |tx| {
+        let t = tx
+            .reseau()
+            .troncons
+            .get_mut(&id)
+            .ok_or_else(|| "tronçon introuvable".to_string())?;
+        let rayon = mcf_carte::reseau::rayon_defaut(t.classe);
+        t.points.insert(k, p);
+        t.rayons.insert(k.min(t.rayons.len()), rayon);
+        Ok(())
+    });
+    projet.resultat(r, |()| {
+        "Point ajouté (glissez-le ; Ctrl+clic dessus pour le retirer).".into()
+    });
+}
+
+/// Supprime un point de forme (les extrémités sont des carrefours : on ne les supprime pas ici).
+fn supprimer_point(projet: &mut Projet, id: Id, index: usize, nombre: usize) {
+    if index == 0 || index + 1 >= nombre {
+        projet.echec("Une extrémité ne se supprime pas : supprimez le tronçon (Suppr) ou déplacez-la.");
+        return;
+    }
+    let r = projet.carte.modifier("Retirer un point", |tx| {
+        let t = tx
+            .reseau()
+            .troncons
+            .get_mut(&id)
+            .ok_or_else(|| "tronçon introuvable".to_string())?;
+        if index - 1 < t.points.len() {
+            t.points.remove(index - 1);
+            t.rayons.remove(index - 1);
+        }
+        Ok(())
+    });
+    projet.resultat(r, |()| "Point retiré.".into());
 }
 
 fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse) {
@@ -574,8 +698,23 @@ fn dessiner(
     mut dessus: Gizmos<GizmosDessus>,
     affiche: Res<Affiche>,
     edition: Res<Edition>,
+    orbite: Res<super::camera::Orbite>,
     mut projet: ResMut<Projet>,
 ) {
+    // Où regarde la caméra 3D (repère dans le Plan et la mini-carte).
+    if edition.disposition != Disposition::Plan {
+        let y = projet.carte.manifeste.altitude_max_m as f32 + 30.0;
+        let c = orbite.cible.with_y(y);
+        let (s, co) = bevy::math::ops::sin_cos(orbite.lacet);
+        let avant = Vec3::new(-s, 0.0, -co);
+        let droite = Vec3::new(co, 0.0, -s);
+        let r = (orbite.distance * 0.25).max(4.0);
+        let oeil = c - avant * orbite.distance * bevy::math::ops::cos(orbite.tangage);
+        let rouge = Color::srgb(0.9, 0.2, 0.15);
+        plan.circle(horizontal(c), r * 0.3, rouge);
+        plan.line(oeil, c + avant * r + droite * r, rouge);
+        plan.line(oeil, c + avant * r - droite * r, rouge);
+    }
     let jaune = Color::srgb(1.0, 0.82, 0.1);
     let rouge = Color::srgb(0.95, 0.15, 0.1);
     let violet = Color::srgb(0.65, 0.3, 0.95);
