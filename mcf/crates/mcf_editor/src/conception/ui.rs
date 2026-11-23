@@ -83,13 +83,13 @@ pub fn interface(
             let sale = if projet.carte.sale.propre() { "" } else { " *" };
             ui.label(format!("{}{sale}", projet.carte.manifeste.nom));
             ui.separator();
-            if ui.button("↶ Annuler").on_hover_text("Ctrl+Z").clicked() {
+            if ui.button("Annuler").on_hover_text("Ctrl+Z").clicked() {
                 outils::annuler(projet, edition);
             }
-            if ui.button("↷ Refaire").on_hover_text("Ctrl+Y").clicked() {
+            if ui.button("Refaire").on_hover_text("Ctrl+Y").clicked() {
                 outils::refaire(projet, edition);
             }
-            if ui.button("💾 Enregistrer").on_hover_text("Ctrl+S").clicked() {
+            if ui.button("Enregistrer").on_hover_text("Ctrl+S").clicked() {
                 outils::enregistrer(projet, edition);
             }
             ui.separator();
@@ -107,7 +107,7 @@ pub fn interface(
                     edition.disposition = d;
                 }
             }
-            if ui.button("⌖ Recentrer").clicked() {
+            if ui.button("Recentrer").clicked() {
                 recentrer(&projet.carte.manifeste, &mut plan, &mut orbite);
             }
         });
@@ -441,7 +441,7 @@ fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
 fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     ui.horizontal(|ui| {
         if ui
-            .selectable_label(edition.outil == Outil::Lotir, "🏗 Lotir un quartier")
+            .selectable_label(edition.outil == Outil::Lotir, "Lotir un quartier")
             .clicked()
         {
             edition.outil = Outil::Lotir;
@@ -559,7 +559,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                 projet.resultat(r, |()| format!("{niveaux} niveau(x)."));
             }
             let mut verrou = b.verrou;
-            if ui.checkbox(&mut verrou, "🔒 Verrouillé").changed() {
+            if ui.checkbox(&mut verrou, "Verrouillé").changed() {
                 let r = projet.carte.modifier("Verrou", |tx| {
                     if let Some(x) = tx.batiment(id) {
                         x.verrou = verrou;
@@ -577,7 +577,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
         Selection::Batiments(ids) => {
             ui.strong(format!("{} bâtiments", ids.len()));
             ui.horizontal(|ui| {
-                for (v, nom) in [(true, "🔒 Verrouiller"), (false, "Déverrouiller")] {
+                for (v, nom) in [(true, "Verrouiller"), (false, "Déverrouiller")] {
                     if ui.button(nom).clicked() {
                         let r = projet.carte.modifier("Verrou", |tx| {
                             for i in &ids {
@@ -705,7 +705,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                 .count();
             ui.label(format!("{n} bâtiment(s) rattaché(s)."));
             ui.horizontal(|ui| {
-                if ui.button("🏗 Lotir").clicked() {
+                if ui.button("Lotir").clicked() {
                     let r = projet.carte.lotir(id);
                     projet.resultat(r, |n| format!("{n} bâtiment(s) ont poussé."));
                 }

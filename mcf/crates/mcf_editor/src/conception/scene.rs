@@ -395,14 +395,14 @@ fn reconstruire(
                 let poly = i.interieur.as_ref().unwrap_or(&i.contour);
                 voile.ajouter(
                     &mcf_geo::maillage_polygone(poly, |_| y),
-                    lin(a.famille.couleur_plan(), 0.5),
+                    lin(a.famille.couleur_plan(), 0.3),
                 );
             }
         }
         for z in quartiers.zones.values() {
             voile.ajouter(
                 &mcf_geo::maillage_polygone(&z.polygone, |_| y),
-                lin(z.famille.couleur_plan(), 0.5),
+                lin(z.famille.couleur_plan(), 0.3),
             );
         }
         if !voile.vide() {
@@ -507,7 +507,7 @@ fn bloc(plan: &mut Tampon, trois_d: &mut Tampon, b: &mcf_carte::Batiment, terrai
     let sol = terrain.hauteur(b.centre()).max(bas + 0.3);
     let haut = sol + b.hauteur();
     let toit = mcf_geo::maillage_polygone(&b.empreinte, |_| haut);
-    plan.ajouter(&toit, lin([205, 198, 190], 1.0));
+    plan.ajouter(&toit, lin([150, 140, 132], 1.0));
     trois_d.ajouter(&toit, lin([120, 118, 116], 1.0));
     let c = polygone::centroide(&b.empreinte);
     let mur = teinte_3d(b.famille);
