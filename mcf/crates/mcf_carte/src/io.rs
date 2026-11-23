@@ -4,6 +4,7 @@
 //! <dossier>/carte.mcfcarte.json   manifeste
 //!          /reseau.json            réseau routier
 //!          /quartiers.json         quartiers
+//!          /contours.json          contours nommés (entrées de souterrain…)
 //!          /batiments/c_X_Z.json   bâti par cellule
 //!          /relief/t_X_Z.png       heightmap source 16 bits par tuile (bords partagés)
 //!          /calques/<nom>.mcfmap   objets posés
@@ -25,6 +26,7 @@ use serde::de::DeserializeOwned;
 
 use crate::batiments::{self, FichierBatiments};
 use crate::carte::{Carte, Sale};
+use crate::contours::Contours;
 use crate::manifeste::{Manifeste, nom_sur};
 use crate::quartiers::Quartiers;
 use crate::relief::Relief;
@@ -38,6 +40,8 @@ pub const MAX_MANIFESTE: u64 = 1024 * 1024;
 pub const MAX_RESEAU: u64 = 64 * 1024 * 1024;
 /// Quartiers.
 pub const MAX_QUARTIERS: u64 = 16 * 1024 * 1024;
+/// Contours.
+pub const MAX_CONTOURS: u64 = 16 * 1024 * 1024;
 /// Une cellule de bâti.
 pub const MAX_CELLULE: u64 = 32 * 1024 * 1024;
 /// Une tuile PNG.
@@ -61,7 +65,10 @@ fn lire_borne(chemin: &Path, max: u64) -> Result<Vec<u8>, String> {
     verifier_pas_lien(chemin)?;
     let meta = fs::metadata(chemin).map_err(|e| erreur(chemin, e))?;
     if !meta.is_file() || meta.len() > max {
-        return Err(erreur(chemin, format!("fichier absent ou trop gros (max {max} octets)")));
+        return Err(erreur(
+            chemin,
+            format!("fichier absent ou trop gros (max {max} octets)"),
+        ));
     }
     fs::read(chemin).map_err(|e| erreur(chemin, e))
 }
@@ -117,7 +124,9 @@ fn encoder_tuile(r: &Relief, m: &Manifeste, tx: usize, tz: usize) -> Result<Vec<
 fn decoder_tuile(octets: Vec<u8>, m: &Manifeste, r: &mut Relief, tx: usize, tz: usize) -> Result<(), String> {
     let n = cote_tuile(m);
     let mut dec = png::Decoder::new(Cursor::new(octets));
-    dec.set_limits(png::Limits { bytes: n * n * 2 + 1024 });
+    dec.set_limits(png::Limits {
+        bytes: n * n * 2 + 1024,
+    });
     let mut lecteur = dec.read_info().map_err(|e| e.to_string())?;
     let info = lecteur.info();
     // Dimensions et format vérifiés AVANT de décoder les pixels.
@@ -154,6 +163,7 @@ impl Carte {
         manifeste.valider().map_err(|e| format!("manifeste : {e}"))?;
         let reseau: Reseau = lire_json(&dossier.join("reseau.json"), MAX_RESEAU)?;
         let quartiers: Quartiers = lire_json(&dossier.join("quartiers.json"), MAX_QUARTIERS)?;
+        let contours: Contours = lire_json(&dossier.join("contours.json"), MAX_CONTOURS)?;
         let mut tous = BTreeMap::new();
         let dossier_bat = dossier.join("batiments");
         if dossier_bat.exists() {
@@ -208,7 +218,16 @@ impl Carte {
                 }
             }
         }
-        let carte = Carte::assembler(dossier.to_path_buf(), manifeste, reseau, quartiers, tous, relief, calques);
+        let carte = Carte::assembler(
+            dossier.to_path_buf(),
+            manifeste,
+            reseau,
+            quartiers,
+            contours,
+            tous,
+            relief,
+            calques,
+        );
         carte.valider()?;
         Ok(carte)
     }
@@ -233,6 +252,7 @@ impl Carte {
                     manifeste: true,
                     reseau: true,
                     quartiers: true,
+                    contours: true,
                     batiments: true,
                     relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                     calques: self.calques.keys().cloned().collect(),
@@ -252,6 +272,9 @@ impl Carte {
         }
         if self.sale.quartiers {
             ecrire_json(&cible.join("quartiers.json"), &self.quartiers)?;
+        }
+        if self.sale.contours {
+            ecrire_json(&cible.join("contours.json"), &self.contours)?;
         }
         if self.sale.batiments {
             let d = cible.join("batiments");
@@ -309,8 +332,8 @@ impl Carte {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::Id;
     use crate::gabarits::{Densite, Famille};
+    use crate::ids::Id;
     use crate::relief::Pinceau;
     use mcf_geo::ClasseRoute;
 
@@ -324,11 +347,15 @@ mod tests {
     fn aller_retour_complet() {
         let mut c = Carte::nouvelle(Manifeste::nouveau("essai", 512.0)).expect("carte");
         for k in [-100.0, 0.0, 100.0] {
-            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0).expect("h");
-            c.tracer_route(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0).expect("v");
+            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0)
+                .expect("h");
+            c.tracer_route(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0)
+                .expect("v");
         }
         c.pinceau(Pinceau::Lever, [150.0, 150.0], 40.0, 12.0, 0.0);
-        let a = c.affecter([50.0, 50.0], Famille::Commerce, Densite::Moyenne).expect("affecter");
+        let a = c
+            .affecter([50.0, 50.0], Famille::Commerce, Densite::Moyenne)
+            .expect("affecter");
         c.lotir(a).expect("lotir");
         let d = dossier_test("aller_retour");
         c.enregistrer(Some(&d)).expect("enregistrer");
@@ -337,7 +364,13 @@ mod tests {
         assert_eq!(relue.quartiers, c.quartiers);
         assert_eq!(relue.batiments, c.batiments);
         // Précision 16 bits sur 512 m de plage : < 8 mm.
-        let ecart = relue.relief.h.iter().zip(&c.relief.h).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        let ecart = relue
+            .relief
+            .h
+            .iter()
+            .zip(&c.relief.h)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
         assert!(ecart < 0.008, "écart de relief {ecart}");
         // Dossier non vide refusé.
         let mut autre = Carte::nouvelle(Manifeste::nouveau("autre", 256.0)).expect("carte");

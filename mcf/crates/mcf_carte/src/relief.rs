@@ -77,7 +77,13 @@ pub enum Pinceau {
 
 impl Pinceau {
     /// Tous les pinceaux.
-    pub const TOUS: [Self; 5] = [Self::Lever, Self::Abaisser, Self::Lisser, Self::Aplanir, Self::Naturel];
+    pub const TOUS: [Self; 5] = [
+        Self::Lever,
+        Self::Abaisser,
+        Self::Lisser,
+        Self::Aplanir,
+        Self::Naturel,
+    ];
 
     /// Nom affiché.
     pub const fn nom(self) -> &'static str {
@@ -101,7 +107,9 @@ fn bruit(graine: u64, x: f64, z: f64) -> f64 {
     let (ix, iz) = (x.floor(), z.floor());
     let (fx, fz) = (lisse(x - ix), lisse(z - iz));
     let v = |a: f64, b: f64| {
-        let mut s = graine ^ ((a as i64 as u64).wrapping_mul(0x9E37_79B9)) ^ ((b as i64 as u64).wrapping_mul(0x85EB_CA6B) << 1);
+        let mut s = graine
+            ^ ((a as i64 as u64).wrapping_mul(0x9E37_79B9))
+            ^ ((b as i64 as u64).wrapping_mul(0x85EB_CA6B) << 1);
         (melanger(&mut s) >> 11) as f64 / (1u64 << 53) as f64
     };
     let a = v(ix, iz) + (v(ix + 1.0, iz) - v(ix, iz)) * fx;
@@ -176,7 +184,8 @@ impl Relief {
     /// Zone d'échantillons couvrant un disque.
     pub fn zone_disque(&self, c: P2, r: f64) -> Zone {
         let f = |v: f64, o: f64, n: usize| (((v - o) / self.resolution).floor().max(0.0) as usize).min(n);
-        let g = |v: f64, o: f64, n: usize| ((((v - o) / self.resolution).ceil() + 1.0).max(0.0) as usize).min(n);
+        let g =
+            |v: f64, o: f64, n: usize| ((((v - o) / self.resolution).ceil() + 1.0).max(0.0) as usize).min(n);
         Zone {
             x0: f(c[0] - r, self.origine[0], self.nx),
             z0: f(c[1] - r, self.origine[1], self.nz),
@@ -218,10 +227,19 @@ impl Relief {
         bornes: (f64, f64),
     ) -> Zone {
         if !(rayon.is_finite() && force.is_finite() && cible.is_finite()) || rayon <= 0.0 {
-            return Zone { x0: 0, z0: 0, x1: 0, z1: 0 };
+            return Zone {
+                x0: 0,
+                z0: 0,
+                x1: 0,
+                z1: 0,
+            };
         }
         let zone = self.zone_disque(centre, rayon);
-        let avant = if outil == Pinceau::Lisser { Some(self.clone_zone_voisine(zone)) } else { None };
+        let avant = if outil == Pinceau::Lisser {
+            Some(self.clone_zone_voisine(zone))
+        } else {
+            None
+        };
         for iz in zone.z0..zone.z1 {
             for ix in zone.x0..zone.x1 {
                 let p = self.position(ix, iz);
@@ -238,7 +256,10 @@ impl Relief {
                     Pinceau::Aplanir => h + (cible - h) * (force.clamp(0.0, 1.0) * w),
                     Pinceau::Naturel => h + force * w * fractal(graine, p, rayon.max(8.0)),
                     Pinceau::Lisser => {
-                        let moy = avant.as_ref().map(|(g, z0)| moyenne_3x3(g, z0, ix, iz)).unwrap_or(h);
+                        let moy = avant
+                            .as_ref()
+                            .map(|(g, z0)| moyenne_3x3(g, z0, ix, iz))
+                            .unwrap_or(h);
                         h + (moy - h) * (force.clamp(0.0, 1.0) * w)
                     }
                 };
@@ -335,7 +356,9 @@ pub fn altitudes_reseau(
         alt.noeuds.insert(*id, s / 5.0);
     }
     for (id, g) in &geo.troncons {
-        let Some(t) = reseau.troncons.get(id) else { continue };
+        let Some(t) = reseau.troncons.get(id) else {
+            continue;
+        };
         let n = ((g.longueur / PAS_PROFIL_M).ceil() as usize).max(1);
         let pas = g.longueur / n as f64;
         let mut h: Vec<f64> = (0..=n)
@@ -366,9 +389,19 @@ pub fn altitudes_reseau(
                 h[i] = h[i].clamp(h[i + 1] - g_max, h[i + 1] + g_max);
             }
         }
-        let contrainte = h.iter().zip(&terrain).any(|(a, b)| (a - b).abs() > 1.0 + 2.0 * g_max)
+        let contrainte = h
+            .iter()
+            .zip(&terrain)
+            .any(|(a, b)| (a - b).abs() > 1.0 + 2.0 * g_max)
             && h.windows(2).any(|w| ((w[1] - w[0]).abs() - g_max).abs() < 1e-9);
-        alt.troncons.insert(*id, ProfilLong { pas, h, pente_contrainte: contrainte });
+        alt.troncons.insert(
+            *id,
+            ProfilLong {
+                pas,
+                h,
+                pente_contrainte: contrainte,
+            },
+        );
     }
     alt
 }
@@ -382,11 +415,18 @@ pub const BANQUETTE_M: f64 = 1.0;
 
 /// Terrain final : relief source terrassé sous les routes (plat en travers, talus à 1 pour 2) et sous les
 /// carrefours.
-pub fn terrain_final(source: &Relief, geo: &GeoReseau, alt: &AltitudesReseau, profils: &TableProfils) -> Relief {
+pub fn terrain_final(
+    source: &Relief,
+    geo: &GeoReseau,
+    alt: &AltitudesReseau,
+    profils: &TableProfils,
+) -> Relief {
     let mut sortie = source.clone();
     let mut meilleur = vec![f32::INFINITY; source.h.len()];
     for (id, g) in &geo.troncons {
-        let Some(profil) = alt.troncons.get(id) else { continue };
+        let Some(profil) = alt.troncons.get(id) else {
+            continue;
+        };
         let w = profils.get(g.classe).emprise_m() * 0.5 + BANQUETTE_M;
         let mut abscisse = 0.0;
         for s in g.axe.windows(2) {
@@ -395,8 +435,14 @@ pub fn terrain_final(source: &Relief, geo: &GeoReseau, alt: &AltitudesReseau, pr
             let morceaux = ((l / 16.0).ceil() as usize).max(1);
             for k in 0..morceaux {
                 let (t0, t1) = (k as f64 / morceaux as f64, (k + 1) as f64 / morceaux as f64);
-                let a = [s[0][0] + (s[1][0] - s[0][0]) * t0, s[0][1] + (s[1][1] - s[0][1]) * t0];
-                let b = [s[0][0] + (s[1][0] - s[0][0]) * t1, s[0][1] + (s[1][1] - s[0][1]) * t1];
+                let a = [
+                    s[0][0] + (s[1][0] - s[0][0]) * t0,
+                    s[0][1] + (s[1][1] - s[0][1]) * t0,
+                ];
+                let b = [
+                    s[0][0] + (s[1][0] - s[0][0]) * t1,
+                    s[0][1] + (s[1][1] - s[0][1]) * t1,
+                ];
                 let (da, db) = (abscisse + l * t0, abscisse + l * t1);
                 let portee = w + TALUS_MAX_M;
                 let c = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
@@ -479,9 +525,14 @@ pub fn courbes_de_niveau(r: &Relief, intervalle: f64, pas: usize) -> Vec<Courbe>
         let mut ix = 0;
         while ix + pas < r.nx {
             let coins = [(ix, iz), (ix + pas, iz), (ix + pas, iz + pas), (ix, iz + pas)];
-            let h: Vec<f64> = coins.iter().map(|&(x, z)| f64::from(r.h[r.index(x, z)])).collect();
+            let h: Vec<f64> = coins
+                .iter()
+                .map(|&(x, z)| f64::from(r.h[r.index(x, z)]))
+                .collect();
             let p: Vec<P2> = coins.iter().map(|&(x, z)| r.position(x, z)).collect();
-            let (lo, hi) = h.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| (a.min(x), b.max(x)));
+            let (lo, hi) = h.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
+                (a.min(x), b.max(x))
+            });
             let mut niveau = (lo / intervalle).ceil() * intervalle;
             while niveau <= hi {
                 let mut pts: Vec<P2> = Vec::with_capacity(4);
@@ -489,7 +540,10 @@ pub fn courbes_de_niveau(r: &Relief, intervalle: f64, pas: usize) -> Vec<Courbe>
                     let (a, b) = (k, (k + 1) % 4);
                     if (h[a] < niveau) != (h[b] < niveau) {
                         let t = (niveau - h[a]) / (h[b] - h[a]);
-                        pts.push([p[a][0] + (p[b][0] - p[a][0]) * t, p[a][1] + (p[b][1] - p[a][1]) * t]);
+                        pts.push([
+                            p[a][0] + (p[b][0] - p[a][0]) * t,
+                            p[a][1] + (p[b][1] - p[a][1]) * t,
+                        ]);
                     }
                 }
                 if pts.len() >= 2 {
@@ -513,7 +567,11 @@ pub fn couleur_plan(h: f64, normale: [f64; 3], eau: Option<f64>) -> [f32; 3] {
         && h < e
     {
         let profondeur = ((e - h) / 20.0).clamp(0.0, 1.0) as f32;
-        return [0.55 - 0.2 * profondeur, 0.72 - 0.2 * profondeur, 0.88 - 0.1 * profondeur];
+        return [
+            0.55 - 0.2 * profondeur,
+            0.72 - 0.2 * profondeur,
+            0.88 - 0.1 * profondeur,
+        ];
     }
     let paliers: [(f64, [f32; 3]); 5] = [
         (0.0, [0.78, 0.86, 0.68]),
@@ -531,7 +589,8 @@ pub fn couleur_plan(h: f64, normale: [f64; 3], eau: Option<f64>) -> [f32; 3] {
     }
     let lumiere = [-0.5f64, 0.7, -0.5];
     let l = (lumiere[0] * lumiere[0] + lumiere[1] * lumiere[1] + lumiere[2] * lumiere[2]).sqrt();
-    let ombre = ((normale[0] * lumiere[0] + normale[1] * lumiere[1] + normale[2] * lumiere[2]) / l).clamp(0.0, 1.0);
+    let ombre =
+        ((normale[0] * lumiere[0] + normale[1] * lumiere[1] + normale[2] * lumiere[2]) / l).clamp(0.0, 1.0);
     let f = (0.55 + 0.6 * ombre) as f32;
     c.map(|x| (x * f).clamp(0.0, 1.0))
 }
@@ -577,7 +636,8 @@ mod tests {
             }
         }
         let mut res = Reseau::default();
-        res.tracer(ClasseRoute::Avenue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m).expect("route");
+        res.tracer(ClasseRoute::Avenue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m)
+            .expect("route");
         let geo = geometrie::calculer(&res, &m.profils);
         let alt = altitudes_reseau(&res, &geo, &src, &m.profils);
         let profil = alt.troncons.values().next().expect("profil");

@@ -99,10 +99,15 @@ pub fn cellule(m: &Manifeste, p: P2) -> (usize, usize) {
 }
 
 /// Range les bâtiments par cellule.
-pub fn par_cellule(m: &Manifeste, tous: &BTreeMap<Id, Batiment>) -> BTreeMap<(usize, usize), BTreeMap<Id, Batiment>> {
+pub fn par_cellule(
+    m: &Manifeste,
+    tous: &BTreeMap<Id, Batiment>,
+) -> BTreeMap<(usize, usize), BTreeMap<Id, Batiment>> {
     let mut v: BTreeMap<(usize, usize), BTreeMap<Id, Batiment>> = BTreeMap::new();
     for (id, b) in tous {
-        v.entry(cellule(m, b.centre())).or_default().insert(*id, b.clone());
+        v.entry(cellule(m, b.centre()))
+            .or_default()
+            .insert(*id, b.clone());
     }
     v
 }

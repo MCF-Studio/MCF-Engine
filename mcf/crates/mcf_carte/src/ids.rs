@@ -1,6 +1,7 @@
 //! Identifiants stables (64 bits, écrits en 16 caractères hexadécimaux) et générateur pseudo-aléatoire déterministe.
 
 use std::fmt;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,19 +13,41 @@ use serde::{Deserialize, Serialize};
 #[serde(try_from = "String", into = "String")]
 pub struct Id(pub u64);
 
+/// Pas du compteur d'identifiants (impair : `n ↦ n × PAS` est une bijection sur 64 bits).
+const PAS: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Finaliseur de SplitMix64 : bijection sur 64 bits.
+fn finaliser(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 impl Id {
-    /// Nouvel identifiant (horloge + compteur + adresse de pile, mélangés).
+    /// Nouvel identifiant. Une graine tirée une fois par processus (horloge + adresse) est combinée à un compteur,
+    /// puis passée dans une bijection : **deux appels d'un même processus ne rendent jamais le même identifiant**,
+    /// même après suppression de l'élément (aucune réutilisation). Entre deux sessions ou deux branches Git, la
+    /// graine diffère : collision possible mais improbable (64 bits aléatoires).
     pub fn nouveau() -> Self {
+        static GRAINE: OnceLock<u64> = OnceLock::new();
         static COMPTEUR: AtomicU64 = AtomicU64::new(0);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0);
-        let pile = &nanos as *const u64 as u64;
-        let n = COMPTEUR.fetch_add(1, Ordering::Relaxed);
-        let mut x = nanos ^ pile.rotate_left(32) ^ n.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        let v = melanger(&mut x);
-        Self(if v == 0 { 1 } else { v })
+        let graine = *GRAINE.get_or_init(|| {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+            let pile = &nanos as *const u64 as u64;
+            finaliser(nanos ^ pile.rotate_left(32))
+        });
+        loop {
+            let n = COMPTEUR.fetch_add(1, Ordering::Relaxed);
+            let v = finaliser(graine.wrapping_add(n.wrapping_mul(PAS)));
+            // 0 est réservé (identifiant « nul ») : on passe au suivant plutôt que de le remplacer par une valeur
+            // qui pourrait déjà être sortie.
+            if v != 0 {
+                return Self(v);
+            }
+        }
     }
 }
 
@@ -49,7 +72,11 @@ impl From<Id> for String {
 impl TryFrom<String> for Id {
     type Error = String;
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        if s.len() != 16 || !s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if s.len() != 16
+            || !s
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
             return Err("identifiant attendu : 16 caractères hexadécimaux minuscules".into());
         }
         u64::from_str_radix(&s, 16)
@@ -60,11 +87,8 @@ impl TryFrom<String> for Id {
 
 /// Pas de SplitMix64.
 pub fn melanger(etat: &mut u64) -> u64 {
-    *etat = etat.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *etat;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^ (z >> 31)
+    *etat = etat.wrapping_add(PAS);
+    finaliser(*etat)
 }
 
 /// Générateur déterministe : même graine, même suite (lotissement, relief naturel).

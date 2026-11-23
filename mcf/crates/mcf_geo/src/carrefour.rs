@@ -39,7 +39,10 @@ pub fn carrefour(centre: P2, bras: &[Bras], rayon_bordure: f64) -> Carrefour {
     let n = bras.len();
     let mut reculs = vec![0.0; n];
     if n < 2 {
-        return Carrefour { reculs, ..Default::default() };
+        return Carrefour {
+            reculs,
+            ..Default::default()
+        };
     }
     // Recul : là où le bord de ce bras sort de la bande de chacun des autres.
     for i in 0..n {
@@ -72,7 +75,10 @@ pub fn carrefour(centre: P2, bras: &[Bras], rayon_bordure: f64) -> Carrefour {
             let p = [centre[0] + d[0] * reculs[i], centre[1] + d[1] * reculs[i]];
             let w = demi(&bras[i].profil);
             let s = [-d[1], d[0]]; // vers l'angle croissant
-            ([p[0] - s[0] * w, p[1] - s[1] * w], [p[0] + s[0] * w, p[1] + s[1] * w])
+            (
+                [p[0] - s[0] * w, p[1] - s[1] * w],
+                [p[0] + s[0] * w, p[1] + s[1] * w],
+            )
         };
         let mut poly = Vec::new();
         for k in 0..n {
@@ -109,7 +115,11 @@ pub fn carrefour(centre: P2, bras: &[Bras], rayon_bordure: f64) -> Carrefour {
     };
     let chaussee = polygone(&|p: &ProfilRoute| p.chaussee_m * 0.5);
     let emprise = polygone(&|p: &ProfilRoute| p.emprise_m() * 0.5);
-    Carrefour { reculs, chaussee, emprise }
+    Carrefour {
+        reculs,
+        chaussee,
+        emprise,
+    }
 }
 
 #[cfg(test)]
@@ -150,7 +160,10 @@ mod tests {
         assert!(c.emprise.is_empty());
         let c = carrefour(
             [0.0, 0.0],
-            &[bras([1.0, 0.0], ClasseRoute::Rue), bras([-1.0, 0.0], ClasseRoute::Rue)],
+            &[
+                bras([1.0, 0.0], ClasseRoute::Rue),
+                bras([-1.0, 0.0], ClasseRoute::Rue),
+            ],
             3.0,
         );
         assert_eq!(c.reculs, vec![0.0, 0.0]);

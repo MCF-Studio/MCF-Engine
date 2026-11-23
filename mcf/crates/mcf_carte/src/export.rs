@@ -49,7 +49,14 @@ fn rang(c: ClasseRoute) -> usize {
 }
 
 /// Rend une zone de la carte. `coin` : coin `(x, z)` minimal (nord-ouest), image orientée nord en haut.
-pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px: f64, style: StylePlan) -> Result<Pixmap, String> {
+pub fn rendre(
+    carte: &mut Carte,
+    coin: P2,
+    largeur: u32,
+    hauteur: u32,
+    m_par_px: f64,
+    style: StylePlan,
+) -> Result<Pixmap, String> {
     if !(m_par_px.is_finite() && m_par_px > 0.0) || u64::from(largeur) * u64::from(hauteur) > MAX_PIXELS {
         return Err("rendu hors bornes".into());
     }
@@ -89,7 +96,14 @@ pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px:
         let pas = ((m_par_px * 2.0) / d.terrain.resolution).round().max(1.0) as usize;
         for (a, b, h) in relief::courbes_de_niveau(&d.terrain, 5.0, pas) {
             let maitresse = (h / 25.0).fract().abs() < 1e-6;
-            trait_(&mut pix, &[a, b], false, [140, 110, 80], if maitresse { 0.55 } else { 0.3 }, m_par_px * if maitresse { 1.4 } else { 0.8 });
+            trait_(
+                &mut pix,
+                &[a, b],
+                false,
+                [140, 110, 80],
+                if maitresse { 0.55 } else { 0.3 },
+                m_par_px * if maitresse { 1.4 } else { 0.8 },
+            );
         }
     }
     // 3. Quartiers.
@@ -116,7 +130,11 @@ pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px:
             .unwrap_or(ClasseRoute::Rue)
     };
     let bord = [96, 96, 96];
-    let trottoir = if style == StylePlan::Complet { [226, 222, 214] } else { [240, 238, 232] };
+    let trottoir = if style == StylePlan::Complet {
+        [226, 222, 214]
+    } else {
+        [240, 238, 232]
+    };
     for (_, g) in &ordre {
         for b in &g.bandes {
             let mut poly = b.gauche.clone();
@@ -133,7 +151,11 @@ pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px:
         for b in &g.bandes {
             let mut poly = b.gauche.clone();
             poly.extend(b.droite.iter().rev());
-            let c = if b.nature == NatureBande::Chaussee { profils.get(g.classe).couleur_plan } else { trottoir };
+            let c = if b.nature == NatureBande::Chaussee {
+                profils.get(g.classe).couleur_plan
+            } else {
+                trottoir
+            };
             remplir(&mut pix, &poly, c, 1.0);
         }
     }
@@ -142,7 +164,12 @@ pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px:
             continue;
         }
         remplir(&mut pix, &n.carrefour.emprise, trottoir, 1.0);
-        remplir(&mut pix, &n.carrefour.chaussee, profils.get(classe_noeud(id)).couleur_plan, 1.0);
+        remplir(
+            &mut pix,
+            &n.carrefour.chaussee,
+            profils.get(classe_noeud(id)).couleur_plan,
+            1.0,
+        );
         if !n.ilot.is_empty() {
             remplir(&mut pix, &n.ilot, [170, 214, 150], 1.0);
         }
@@ -154,7 +181,11 @@ pub fn rendre(carte: &mut Carte, coin: P2, largeur: u32, hauteur: u32, m_par_px:
         remplir(&mut pix, &ombre, [40, 40, 40], 0.18);
     }
     for b in &batiments {
-        let toit = if style == StylePlan::Complet { [205, 198, 190] } else { [215, 210, 200] };
+        let toit = if style == StylePlan::Complet {
+            [205, 198, 190]
+        } else {
+            [215, 210, 200]
+        };
         remplir(&mut pix, &b.empreinte, toit, 1.0);
         trait_(&mut pix, &b.empreinte, true, [110, 104, 98], 1.0, m_par_px);
     }
@@ -172,7 +203,12 @@ fn fond(pix: &mut Pixmap, terrain: &Relief, coin: P2, mpp: f64, eau: Option<f64>
         if style == StylePlan::Jeu {
             c = c.map(|x| 0.35 + x * 0.6);
         }
-        px.copy_from_slice(&[(c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8, 255]);
+        px.copy_from_slice(&[
+            (c[0] * 255.0) as u8,
+            (c[1] * 255.0) as u8,
+            (c[2] * 255.0) as u8,
+            255,
+        ]);
     }
 }
 
@@ -197,7 +233,12 @@ pub fn png_rgba(pix: &Pixmap) -> Result<Vec<u8>, String> {
 /// Exporte le plan en tuiles de 1024 px dans `exports/plan` (complet) ou en pyramide `exports/minimap/<niveau>`
 /// (jeu : niveau 0 = `m_par_px`, chaque niveau suivant deux fois moins détaillé, jusqu'à une seule tuile).
 /// Refuse d'écraser un export existant sans `ecraser`.
-pub fn exporter(carte: &mut Carte, m_par_px: f64, style: StylePlan, ecraser: bool) -> Result<Vec<PathBuf>, String> {
+pub fn exporter(
+    carte: &mut Carte,
+    m_par_px: f64,
+    style: StylePlan,
+    ecraser: bool,
+) -> Result<Vec<PathBuf>, String> {
     let Some(projet) = carte.dossier.clone() else {
         return Err("enregistrez la carte avant d'exporter".into());
     };
@@ -206,7 +247,10 @@ pub fn exporter(carte: &mut Carte, m_par_px: f64, style: StylePlan, ecraser: boo
         StylePlan::Jeu => "minimap",
     });
     if racine.exists() && !ecraser {
-        return Err(format!("{} existe déjà : confirmez le remplacement", racine.display()));
+        return Err(format!(
+            "{} existe déjà : confirmez le remplacement",
+            racine.display()
+        ));
     }
     if racine.exists() {
         fs::remove_dir_all(&racine).map_err(|e| e.to_string())?;
@@ -216,7 +260,10 @@ pub fn exporter(carte: &mut Carte, m_par_px: f64, style: StylePlan, ecraser: boo
     let mut mpp = m_par_px;
     let mut niveau = 0;
     loop {
-        let (wx, wz) = (((fin[0] - coin[0]) / mpp).ceil() as u32, ((fin[1] - coin[1]) / mpp).ceil() as u32);
+        let (wx, wz) = (
+            ((fin[0] - coin[0]) / mpp).ceil() as u32,
+            ((fin[1] - coin[1]) / mpp).ceil() as u32,
+        );
         let dossier = match style {
             StylePlan::Complet => racine.clone(),
             StylePlan::Jeu => racine.join(niveau.to_string()),
@@ -224,7 +271,10 @@ pub fn exporter(carte: &mut Carte, m_par_px: f64, style: StylePlan, ecraser: boo
         fs::create_dir_all(&dossier).map_err(|e| e.to_string())?;
         for tz in 0..wz.div_ceil(TUILE_PX) {
             for tx in 0..wx.div_ceil(TUILE_PX) {
-                let c = [coin[0] + f64::from(tx * TUILE_PX) * mpp, coin[1] + f64::from(tz * TUILE_PX) * mpp];
+                let c = [
+                    coin[0] + f64::from(tx * TUILE_PX) * mpp,
+                    coin[1] + f64::from(tz * TUILE_PX) * mpp,
+                ];
                 let pix = rendre(carte, c, TUILE_PX, TUILE_PX, mpp, style)?;
                 let chemin = dossier.join(format!("{tx}_{tz}.png"));
                 mcf_map::write_atomic(&chemin, &png_rgba(&pix)?).map_err(|e| e.to_string())?;
@@ -245,7 +295,10 @@ pub fn apercu(carte: &mut Carte, style: StylePlan) -> Result<Vec<u8>, String> {
     let (coin, fin) = carte.manifeste.bornes();
     let cote = (fin[0] - coin[0]).max(fin[1] - coin[1]);
     let mpp = (cote / 2048.0).max(0.25);
-    let (w, h) = (((fin[0] - coin[0]) / mpp).ceil() as u32, ((fin[1] - coin[1]) / mpp).ceil() as u32);
+    let (w, h) = (
+        ((fin[0] - coin[0]) / mpp).ceil() as u32,
+        ((fin[1] - coin[1]) / mpp).ceil() as u32,
+    );
     png_rgba(&rendre(carte, coin, w, h, mpp, style)?)
 }
 
@@ -273,10 +326,14 @@ mod tests {
     fn le_plan_montre_routes_quartiers_et_bati() {
         let mut c = Carte::nouvelle(Manifeste::nouveau("rendu", 512.0)).expect("carte");
         for k in [-100.0, 0.0, 100.0] {
-            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0).expect("h");
-            c.tracer_route(ClasseRoute::Avenue, &[[k, -100.0], [k, 100.0]], 2.0).expect("v");
+            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0)
+                .expect("h");
+            c.tracer_route(ClasseRoute::Avenue, &[[k, -100.0], [k, 100.0]], 2.0)
+                .expect("v");
         }
-        let a = c.affecter([50.0, 50.0], Famille::Residentiel, Densite::Faible).expect("affecter");
+        let a = c
+            .affecter([50.0, 50.0], Famille::Residentiel, Densite::Faible)
+            .expect("affecter");
         assert!(c.lotir(a).expect("lotir") > 0);
         let pix = rendre(&mut c, [-128.0, -128.0], 256, 256, 1.0, StylePlan::Complet).expect("rendu");
         let px = |x: f64, z: f64| {

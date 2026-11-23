@@ -117,7 +117,9 @@ pub const MAX_NIVEAUX: u32 = 120;
 
 impl Gabarit {
     fn valider(&self) -> Result<(), String> {
-        let ok_intervalle = |v: [f64; 2], max: f64| v[0].is_finite() && v[1].is_finite() && 0.0 <= v[0] && v[0] <= v[1] && v[1] <= max;
+        let ok_intervalle = |v: [f64; 2], max: f64| {
+            v[0].is_finite() && v[1].is_finite() && 0.0 <= v[0] && v[0] <= v[1] && v[1] <= max
+        };
         if !(1 <= self.niveaux[0] && self.niveaux[0] <= self.niveaux[1] && self.niveaux[1] <= MAX_NIVEAUX) {
             return Err("niveaux hors bornes".into());
         }
@@ -171,25 +173,117 @@ impl TableGabarits {
         use Densite::*;
         use Famille::*;
         let mut v = vec![
-            g(Residentiel, Faible, [1, 2], 3.0, [10.0, 16.0], [9.0, 12.0], [4.0, 6.0], false),
-            g(Residentiel, Moyenne, [3, 6], 3.0, [12.0, 30.0], [12.0, 15.0], [0.0, 3.0], true),
-            g(Residentiel, Forte, [6, 15], 3.0, [30.0, 80.0], [12.0, 16.0], [5.0, 10.0], false),
-            g(Residentiel, Centre, [16, 46], 3.0, [25.0, 40.0], [20.0, 30.0], [0.0, 0.0], true),
-            g(Commerce, Faible, [1, 2], 5.0, [40.0, 120.0], [30.0, 80.0], [15.0, 30.0], false),
-            g(Commerce, Moyenne, [3, 7], 3.5, [10.0, 25.0], [12.0, 18.0], [0.0, 0.0], true),
-            g(Commerce, Forte, [7, 21], 3.5, [20.0, 50.0], [20.0, 40.0], [0.0, 0.0], true),
-            g(Commerce, Centre, [21, 61], 3.5, [30.0, 50.0], [30.0, 50.0], [0.0, 5.0], false),
+            g(
+                Residentiel,
+                Faible,
+                [1, 2],
+                3.0,
+                [10.0, 16.0],
+                [9.0, 12.0],
+                [4.0, 6.0],
+                false,
+            ),
+            g(
+                Residentiel,
+                Moyenne,
+                [3, 6],
+                3.0,
+                [12.0, 30.0],
+                [12.0, 15.0],
+                [0.0, 3.0],
+                true,
+            ),
+            g(
+                Residentiel,
+                Forte,
+                [6, 15],
+                3.0,
+                [30.0, 80.0],
+                [12.0, 16.0],
+                [5.0, 10.0],
+                false,
+            ),
+            g(
+                Residentiel,
+                Centre,
+                [16, 46],
+                3.0,
+                [25.0, 40.0],
+                [20.0, 30.0],
+                [0.0, 0.0],
+                true,
+            ),
+            g(
+                Commerce,
+                Faible,
+                [1, 2],
+                5.0,
+                [40.0, 120.0],
+                [30.0, 80.0],
+                [15.0, 30.0],
+                false,
+            ),
+            g(
+                Commerce,
+                Moyenne,
+                [3, 7],
+                3.5,
+                [10.0, 25.0],
+                [12.0, 18.0],
+                [0.0, 0.0],
+                true,
+            ),
+            g(
+                Commerce,
+                Forte,
+                [7, 21],
+                3.5,
+                [20.0, 50.0],
+                [20.0, 40.0],
+                [0.0, 0.0],
+                true,
+            ),
+            g(
+                Commerce,
+                Centre,
+                [21, 61],
+                3.5,
+                [30.0, 50.0],
+                [30.0, 50.0],
+                [0.0, 5.0],
+                false,
+            ),
         ];
         for d in Densite::TOUTES {
-            v.push(g(Activite, d, [1, 1], 8.0, [30.0, 120.0], [25.0, 80.0], [8.0, 15.0], false));
-            v.push(g(Services, d, [2, 5], 3.5, [30.0, 60.0], [20.0, 40.0], [5.0, 10.0], false));
+            v.push(g(
+                Activite,
+                d,
+                [1, 1],
+                8.0,
+                [30.0, 120.0],
+                [25.0, 80.0],
+                [8.0, 15.0],
+                false,
+            ));
+            v.push(g(
+                Services,
+                d,
+                [2, 5],
+                3.5,
+                [30.0, 60.0],
+                [20.0, 40.0],
+                [5.0, 10.0],
+                false,
+            ));
         }
         Self(v)
     }
 
     /// Gabarit d'une famille constructible à une densité.
     pub fn get(&self, famille: Famille, densite: Densite) -> Option<&Gabarit> {
-        self.0.iter().find(|g| g.famille == famille && g.densite == densite)
+        self.0
+            .iter()
+            .find(|g| g.famille == famille && g.densite == densite)
     }
 
     /// Complète et cohérente ?
@@ -198,13 +292,20 @@ impl TableGabarits {
             for d in Densite::TOUTES {
                 let n = self.0.iter().filter(|g| g.famille == f && g.densite == d).count();
                 if n != 1 {
-                    return Err(format!("gabarit {}·{} : {n} entrée(s), 1 attendue", f.nom(), d.nom()));
+                    return Err(format!(
+                        "gabarit {}·{} : {n} entrée(s), 1 attendue",
+                        f.nom(),
+                        d.nom()
+                    ));
                 }
             }
         }
         for gab in &self.0 {
             if !gab.famille.constructible() {
-                return Err(format!("gabarit pour une famille non constructible ({})", gab.famille.nom()));
+                return Err(format!(
+                    "gabarit pour une famille non constructible ({})",
+                    gab.famille.nom()
+                ));
             }
             gab.valider()
                 .map_err(|e| format!("gabarit {}·{} : {e}", gab.famille.nom(), gab.densite.nom()))?;

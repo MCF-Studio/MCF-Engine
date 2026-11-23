@@ -52,8 +52,14 @@ pub fn calculer(reseau: &Reseau, geo: &GeoReseau, profils: &TableProfils) -> Vec
         let axe = &geo.troncons[id].axe;
         let n = axe.len();
         let ang = |a: P2, b: P2| (b[1] - a[1]).atan2(b[0] - a[0]);
-        sortantes.entry(t.de).or_default().push((ang(axe[0], axe[1]), *id, true));
-        sortantes.entry(t.vers).or_default().push((ang(axe[n - 1], axe[n - 2]), *id, false));
+        sortantes
+            .entry(t.de)
+            .or_default()
+            .push((ang(axe[0], axe[1]), *id, true));
+        sortantes
+            .entry(t.vers)
+            .or_default()
+            .push((ang(axe[n - 1], axe[n - 2]), *id, false));
     }
     for v in sortantes.values_mut() {
         v.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -61,7 +67,12 @@ pub fn calculer(reseau: &Reseau, geo: &GeoReseau, profils: &TableProfils) -> Vec
     // 3. Parcours des faces en tournant toujours à gauche : faces bornées en sens trigonométrique.
     let mut vues: BTreeSet<(Id, bool)> = BTreeSet::new();
     let mut ilots = Vec::new();
-    for depart in sortantes.values().flatten().map(|(_, id, s)| (*id, *s)).collect::<Vec<_>>() {
+    for depart in sortantes
+        .values()
+        .flatten()
+        .map(|(_, id, s)| (*id, *s))
+        .collect::<Vec<_>>()
+    {
         if vues.contains(&depart) {
             continue;
         }
@@ -73,7 +84,11 @@ pub fn calculer(reseau: &Reseau, geo: &GeoReseau, profils: &TableProfils) -> Vec
             vues.insert(h);
             let t = &reseau.troncons[&h.0];
             let axe = &geo.troncons[&h.0].axe;
-            let pts: Vec<P2> = if h.1 { axe.clone() } else { axe.iter().rev().copied().collect() };
+            let pts: Vec<P2> = if h.1 {
+                axe.clone()
+            } else {
+                axe.iter().rev().copied().collect()
+            };
             for p in &pts[..pts.len() - 1] {
                 contour.push(*p);
                 aretes.push(h.0);
@@ -81,7 +96,10 @@ pub fn calculer(reseau: &Reseau, geo: &GeoReseau, profils: &TableProfils) -> Vec
             let arrivee = if h.1 { t.vers } else { t.de };
             let liste = &sortantes[&arrivee];
             let jumelle = (h.0, !h.1);
-            let k = liste.iter().position(|(_, id, s)| (*id, *s) == jumelle).unwrap_or(0);
+            let k = liste
+                .iter()
+                .position(|(_, id, s)| (*id, *s) == jumelle)
+                .unwrap_or(0);
             let suivante = liste[(k + liste.len() - 1) % liste.len()];
             h = (suivante.1, suivante.2);
             garde += 1;
@@ -135,11 +153,14 @@ mod tests {
         let m = Manifeste::nouveau("t", 1024.0);
         let mut r = Reseau::default();
         for k in [-100.0, 0.0, 100.0] {
-            r.tracer(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0, &m).expect("h");
-            r.tracer(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0, &m).expect("v");
+            r.tracer(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0, &m)
+                .expect("h");
+            r.tracer(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0, &m)
+                .expect("v");
         }
         // Une impasse dans un îlot ne le coupe pas.
-        r.tracer(ClasseRoute::Ruelle, &[[50.0, 0.0], [50.0, 50.0]], 2.0, &m).expect("impasse");
+        r.tracer(ClasseRoute::Ruelle, &[[50.0, 0.0], [50.0, 50.0]], 2.0, &m)
+            .expect("impasse");
         let geo = geometrie::calculer(&r, &m.profils);
         let ilots = calculer(&r, &geo, &m.profils);
         assert_eq!(ilots.len(), 4);

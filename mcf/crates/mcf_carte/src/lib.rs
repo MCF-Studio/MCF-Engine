@@ -4,9 +4,12 @@
 
 pub mod batiments;
 pub mod carte;
+pub mod carte_de_test;
+pub mod contours;
 pub mod export;
 pub mod gabarits;
 pub mod geometrie;
+pub mod graphe;
 pub mod ids;
 pub mod ilots;
 pub mod io;
@@ -18,8 +21,10 @@ pub mod reseau;
 
 pub use batiments::{Batiment, Origine};
 pub use carte::{Carte, Derive, Revisions, Sale, Transaction};
+pub use contours::{Contour, Contours, UsageContour};
 pub use gabarits::{Densite, Famille, Gabarit, TableGabarits};
 pub use geometrie::GeoReseau;
+pub use graphe::{AreteGraphe, GrapheRoutier, Itineraire, NoeudGraphe};
 pub use ids::Id;
 pub use manifeste::Manifeste;
 pub use relief::{Pinceau, Relief};

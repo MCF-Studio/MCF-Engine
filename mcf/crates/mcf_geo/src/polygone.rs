@@ -139,7 +139,11 @@ pub fn trianguler(poly: &[P2]) -> Vec<[usize; 3]> {
         return Vec::new();
     }
     let positif = aire_signee(poly) >= 0.0;
-    let mut restants: Vec<usize> = if positif { (0..n).collect() } else { (0..n).rev().collect() };
+    let mut restants: Vec<usize> = if positif {
+        (0..n).collect()
+    } else {
+        (0..n).rev().collect()
+    };
     let mut sortie = Vec::with_capacity(n - 2);
     let mut garde = 0;
     while restants.len() > 3 && garde < n * n {
@@ -171,7 +175,14 @@ pub fn trianguler(poly: &[P2]) -> Vec<[usize; 3]> {
             // Polygone dégénéré : on retire un sommet plat pour avancer plutôt que de boucler.
             let k = (0..m)
                 .min_by(|&x, &y| {
-                    let f = |k: usize| croix(poly[restants[(k + m - 1) % m]], poly[restants[k]], poly[restants[(k + 1) % m]]).abs();
+                    let f = |k: usize| {
+                        croix(
+                            poly[restants[(k + m - 1) % m]],
+                            poly[restants[k]],
+                            poly[restants[(k + 1) % m]],
+                        )
+                        .abs()
+                    };
                     f(x).total_cmp(&f(y))
                 })
                 .unwrap_or(0);
@@ -207,7 +218,10 @@ pub fn retrait(poly: &[P2], retraits: &[f64]) -> Option<Vec<P2>> {
             (l > 1e-9).then(|| {
                 let d = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
                 let normale = [-d[1], d[0]];
-                ([a[0] + normale[0] * retraits[i], a[1] + normale[1] * retraits[i]], d)
+                (
+                    [a[0] + normale[0] * retraits[i], a[1] + normale[1] * retraits[i]],
+                    d,
+                )
             })
         })
         .collect();
@@ -237,9 +251,10 @@ pub fn retrait(poly: &[P2], retraits: &[f64]) -> Option<Vec<P2>> {
 
 /// Rectangle englobant `(min, max)`.
 pub fn englobant(poly: &[P2]) -> (P2, P2) {
-    poly.iter().fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(a, b), p| {
-        ([a[0].min(p[0]), a[1].min(p[1])], [b[0].max(p[0]), b[1].max(p[1])])
-    })
+    poly.iter()
+        .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(a, b), p| {
+            ([a[0].min(p[0]), a[1].min(p[1])], [b[0].max(p[0]), b[1].max(p[1])])
+        })
 }
 
 /// Deux polygones simples se chevauchent-ils (intérieurs communs) ? Des polygones qui se touchent seulement par un
@@ -314,7 +329,14 @@ mod tests {
 
     #[test]
     fn triangulation_d_un_l() {
-        let l = [[0.0, 0.0], [20.0, 0.0], [20.0, 5.0], [5.0, 5.0], [5.0, 20.0], [0.0, 20.0]];
+        let l = [
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 5.0],
+            [5.0, 5.0],
+            [5.0, 20.0],
+            [0.0, 20.0],
+        ];
         let t = trianguler(&l);
         assert_eq!(t.len(), 4);
         let somme: f64 = t.iter().map(|t| aire_signee(&[l[t[0]], l[t[1]], l[t[2]]])).sum();
@@ -323,7 +345,10 @@ mod tests {
         // Polygone horaire : mêmes aires, triangles toujours positifs.
         let inverse: Vec<P2> = l.iter().rev().copied().collect();
         let t = trianguler(&inverse);
-        assert!(t.iter().all(|t| aire_signee(&[inverse[t[0]], inverse[t[1]], inverse[t[2]]]) > 0.0));
+        assert!(
+            t.iter()
+                .all(|t| aire_signee(&[inverse[t[0]], inverse[t[1]], inverse[t[2]]]) > 0.0)
+        );
     }
 
     #[test]
@@ -347,7 +372,10 @@ mod tests {
         assert!(!se_chevauchent(&reduit(&CARRE, 0.01), &voisin));
         let dedans = [[2.0, 2.0], [3.0, 2.0], [3.0, 3.0]];
         assert!(se_chevauchent(&CARRE, &dedans));
-        assert!(!se_chevauchent(&CARRE, &[[20.0, 20.0], [30.0, 20.0], [30.0, 30.0]]));
+        assert!(!se_chevauchent(
+            &CARRE,
+            &[[20.0, 20.0], [30.0, 20.0], [30.0, 30.0]]
+        ));
     }
 
     #[test]

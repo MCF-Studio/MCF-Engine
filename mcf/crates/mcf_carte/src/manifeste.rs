@@ -54,7 +54,8 @@ pub struct Manifeste {
 /// Identifiant sûr : 1 à 64 caractères `a-z`, `0-9`, `_`, `-`.
 pub fn nom_sur(s: &str) -> bool {
     (1..=64).contains(&s.len())
-        && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 impl Manifeste {
@@ -124,7 +125,8 @@ impl Manifeste {
             return Err("relief trop grand pour cette résolution".into());
         }
         let (a, b) = (self.altitude_min_m, self.altitude_max_m);
-        if !(a.is_finite() && b.is_finite() && -1000.0 <= a && a + 1.0 <= b && b <= 9000.0 && b - a <= 4096.0) {
+        if !(a.is_finite() && b.is_finite() && -1000.0 <= a && a + 1.0 <= b && b <= 9000.0 && b - a <= 4096.0)
+        {
             return Err("plage d'altitude invalide".into());
         }
         if let Some(e) = self.niveau_eau_m

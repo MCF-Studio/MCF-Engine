@@ -60,7 +60,10 @@ pub fn point_a(ligne: &[P2], d: f64) -> Option<P2> {
         let l = distance(s[0], s[1]);
         if reste <= l && l > 0.0 {
             let t = reste / l;
-            return Some([s[0][0] + (s[1][0] - s[0][0]) * t, s[0][1] + (s[1][1] - s[0][1]) * t]);
+            return Some([
+                s[0][0] + (s[1][0] - s[0][0]) * t,
+                s[0][1] + (s[1][1] - s[0][1]) * t,
+            ]);
         }
         reste -= l;
     }

@@ -170,7 +170,8 @@ pub fn maillage_polygone(poly: &[P2], altitude: impl Fn(P2) -> f64) -> Maillage 
     }
     for t in crate::polygone::trianguler(poly) {
         // Positif dans (x, z) = vers le bas vu de +Y : on inverse.
-        m.indices.extend_from_slice(&[t[0] as u32, t[2] as u32, t[1] as u32]);
+        m.indices
+            .extend_from_slice(&[t[0] as u32, t[2] as u32, t[1] as u32]);
     }
     m.normales = normales(&m.positions, &m.indices);
     m

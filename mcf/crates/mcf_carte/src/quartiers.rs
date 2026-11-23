@@ -89,7 +89,9 @@ impl Quartiers {
                 || z.polygone.iter().any(|p| !m.contient(*p))
                 || !mcf_geo::polygone::est_simple(&z.polygone)
             {
-                return Err(format!("zone {id} : contour invalide (hors carte, croisé ou trop long)"));
+                return Err(format!(
+                    "zone {id} : contour invalide (hors carte, croisé ou trop long)"
+                ));
             }
         }
         Ok(())

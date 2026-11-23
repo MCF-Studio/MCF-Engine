@@ -73,7 +73,11 @@ pub fn lotir(interieur: &[P2], gabarit: &Gabarit, graine: u64, obstacles: &[Vec<
             match place {
                 Some(r) => {
                     blocs.push((r, niveaux));
-                    x += w + if gabarit.mitoyen { 0.0 } else { alea.entre(2.0, 6.0) };
+                    x += w + if gabarit.mitoyen {
+                        0.0
+                    } else {
+                        alea.entre(2.0, 6.0)
+                    };
                 }
                 None => x += 2.0,
             }
@@ -94,7 +98,10 @@ mod tests {
     #[test]
     fn blocs_dans_l_ilot_sans_chevauchement() {
         let t = TableGabarits::defaut();
-        for (f, d) in [(Famille::Residentiel, Densite::Moyenne), (Famille::Residentiel, Densite::Faible)] {
+        for (f, d) in [
+            (Famille::Residentiel, Densite::Moyenne),
+            (Famille::Residentiel, Densite::Faible),
+        ] {
             let g = t.get(f, d).expect("gabarit");
             let blocs = lotir(&ilot(), g, 42, &[]);
             assert!(blocs.len() >= 4, "{f:?} {d:?} : {}", blocs.len());
@@ -102,7 +109,10 @@ mod tests {
                 assert!((g.niveaux[0]..=g.niveaux[1]).contains(niv));
                 assert!(b.iter().all(|p| polygone::contient(&ilot(), *p) || on_edge(*p)));
                 for (c, _) in &blocs[i + 1..] {
-                    assert!(!polygone::se_chevauchent(&polygone::reduit(b, 0.05), &polygone::reduit(c, 0.05)));
+                    assert!(!polygone::se_chevauchent(
+                        &polygone::reduit(b, 0.05),
+                        &polygone::reduit(c, 0.05)
+                    ));
                 }
             }
             // Déterministe.
@@ -120,6 +130,10 @@ mod tests {
         let g = t.get(Famille::Residentiel, Densite::Moyenne).expect("gabarit");
         let obstacle = vec![[0.0, 0.0], [86.0, 0.0], [86.0, 20.0], [0.0, 20.0]];
         let blocs = lotir(&ilot(), g, 1, std::slice::from_ref(&obstacle));
-        assert!(blocs.iter().all(|(b, _)| !polygone::se_chevauchent(&polygone::reduit(b, 0.05), &obstacle)));
+        assert!(
+            blocs
+                .iter()
+                .all(|(b, _)| !polygone::se_chevauchent(&polygone::reduit(b, 0.05), &obstacle))
+        );
     }
 }

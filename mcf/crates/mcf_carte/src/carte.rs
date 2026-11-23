@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use mcf_geo::{ClasseRoute, P2, polygone};
 
 use crate::batiments::{Batiment, Origine};
+use crate::contours::{Contour, Contours, UsageContour};
 use crate::gabarits::{Densite, Famille};
 use crate::geometrie::{self, GeoReseau};
 use crate::ids::Id;
@@ -30,6 +31,7 @@ struct Etape {
     manifeste: Option<Manifeste>,
     reseau: Option<Reseau>,
     quartiers: Option<Quartiers>,
+    contours: Option<Contours>,
     batiments: BTreeMap<Id, Option<Batiment>>,
     relief: BTreeMap<(usize, usize), Vec<f32>>,
     calques: BTreeMap<String, Option<mcf_map::McfMap>>,
@@ -40,6 +42,7 @@ impl Etape {
         self.manifeste.is_none()
             && self.reseau.is_none()
             && self.quartiers.is_none()
+            && self.contours.is_none()
             && self.batiments.is_empty()
             && self.relief.is_empty()
             && self.calques.is_empty()
@@ -55,6 +58,8 @@ pub struct Sale {
     pub reseau: bool,
     /// Quartiers.
     pub quartiers: bool,
+    /// Contours nommés.
+    pub contours: bool,
     /// Cellules de bâti.
     pub batiments: bool,
     /// Tuiles de relief `(x, z)`.
@@ -79,6 +84,8 @@ pub struct Revisions {
     pub relief: u64,
     /// Quartiers.
     pub quartiers: u64,
+    /// Contours nommés.
+    pub contours: u64,
     /// Bâti.
     pub batiments: u64,
     /// Calques d'objets.
@@ -113,6 +120,8 @@ pub struct Carte {
     pub reseau: Reseau,
     /// Quartiers.
     pub quartiers: Quartiers,
+    /// Contours nommés (entrées de souterrain…).
+    pub contours: Contours,
     /// Bâti.
     pub batiments: BTreeMap<Id, Batiment>,
     /// Relief source.
@@ -173,8 +182,19 @@ impl Transaction<'_> {
         &mut self.carte.quartiers
     }
 
+    /// Contours modifiables.
+    pub fn contours(&mut self) -> &mut Contours {
+        if self.etape.contours.is_none() {
+            self.etape.contours = Some(self.carte.contours.clone());
+        }
+        &mut self.carte.contours
+    }
+
     fn noter_batiment(&mut self, id: Id) {
-        self.etape.batiments.entry(id).or_insert_with(|| self.carte.batiments.get(&id).cloned());
+        self.etape
+            .batiments
+            .entry(id)
+            .or_insert_with(|| self.carte.batiments.get(&id).cloned());
     }
 
     /// Bâtiment modifiable.
@@ -197,7 +217,10 @@ impl Transaction<'_> {
 
     /// Calque d'objets modifiable.
     pub fn calque(&mut self, nom: &str) -> Option<&mut mcf_map::McfMap> {
-        self.etape.calques.entry(nom.to_owned()).or_insert_with(|| self.carte.calques.get(nom).cloned());
+        self.etape
+            .calques
+            .entry(nom.to_owned())
+            .or_insert_with(|| self.carte.calques.get(nom).cloned());
         self.carte.calques.get_mut(nom)
     }
 
@@ -223,12 +246,14 @@ impl Carte {
             relief,
             reseau: Reseau::default(),
             quartiers: Quartiers::default(),
+            contours: Contours::default(),
             batiments: BTreeMap::new(),
             calques: BTreeMap::new(),
             sale: Sale {
                 manifeste: true,
                 reseau: true,
                 quartiers: true,
+                contours: true,
                 batiments: true,
                 relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                 calques: BTreeSet::new(),
@@ -247,6 +272,7 @@ impl Carte {
         manifeste: Manifeste,
         reseau: Reseau,
         quartiers: Quartiers,
+        contours: Contours,
         batiments: BTreeMap<Id, Batiment>,
         relief: Relief,
         calques: BTreeMap<String, mcf_map::McfMap>,
@@ -256,6 +282,7 @@ impl Carte {
             manifeste,
             reseau,
             quartiers,
+            contours,
             batiments,
             relief,
             calques,
@@ -271,13 +298,21 @@ impl Carte {
     /// Vérifie toutes les sources.
     pub fn valider(&self) -> Result<(), String> {
         self.manifeste.valider().map_err(|e| format!("manifeste : {e}"))?;
-        self.reseau.valider(&self.manifeste).map_err(|e| format!("réseau : {e}"))?;
-        self.quartiers.valider(&self.manifeste).map_err(|e| format!("quartiers : {e}"))?;
+        self.reseau
+            .valider(&self.manifeste)
+            .map_err(|e| format!("réseau : {e}"))?;
+        self.quartiers
+            .valider(&self.manifeste)
+            .map_err(|e| format!("quartiers : {e}"))?;
+        self.contours
+            .valider(&self.manifeste)
+            .map_err(|e| format!("contours : {e}"))?;
         if self.batiments.len() > crate::batiments::MAX_BATIMENTS {
             return Err("trop de bâtiments".into());
         }
         for (id, b) in &self.batiments {
-            b.valider(&self.manifeste).map_err(|e| format!("bâtiment {id} : {e}"))?;
+            b.valider(&self.manifeste)
+                .map_err(|e| format!("bâtiment {id} : {e}"))?;
         }
         Ok(())
     }
@@ -303,10 +338,19 @@ impl Carte {
                 c.manifeste.valider().map_err(|m| format!("manifeste : {m}"))?;
             }
             if e.reseau.is_some() || e.manifeste.is_some() {
-                c.reseau.valider(&c.manifeste).map_err(|m| format!("réseau : {m}"))?;
+                c.reseau
+                    .valider(&c.manifeste)
+                    .map_err(|m| format!("réseau : {m}"))?;
             }
             if e.quartiers.is_some() {
-                c.quartiers.valider(&c.manifeste).map_err(|m| format!("quartiers : {m}"))?;
+                c.quartiers
+                    .valider(&c.manifeste)
+                    .map_err(|m| format!("quartiers : {m}"))?;
+            }
+            if e.contours.is_some() || e.manifeste.is_some() {
+                c.contours
+                    .valider(&c.manifeste)
+                    .map_err(|m| format!("contours : {m}"))?;
             }
             for id in e.batiments.keys() {
                 if let Some(b) = c.batiments.get(id) {
@@ -349,6 +393,10 @@ impl Carte {
             self.sale.quartiers = true;
             self.revisions.quartiers += 1;
         }
+        if e.contours.is_some() {
+            self.sale.contours = true;
+            self.revisions.contours += 1;
+        }
         if !e.batiments.is_empty() {
             self.sale.batiments = true;
             self.revisions.batiments += 1;
@@ -388,6 +436,9 @@ impl Carte {
         }
         if let Some(q) = e.quartiers {
             inverse.quartiers = Some(std::mem::replace(&mut self.quartiers, q));
+        }
+        if let Some(c) = e.contours {
+            inverse.contours = Some(std::mem::replace(&mut self.contours, c));
         }
         for (id, avant) in e.batiments {
             let courant = match avant {
@@ -464,12 +515,16 @@ impl Carte {
             ..Default::default()
         });
         for (bx, bz) in blocs_de(zone) {
-            etape.relief.entry((bx, bz)).or_insert_with(|| self.relief.copier(self.zone_bloc(bx, bz)));
+            etape
+                .relief
+                .entry((bx, bz))
+                .or_insert_with(|| self.relief.copier(self.zone_bloc(bx, bz)));
         }
         let m = &self.manifeste;
         let graine = m.graine;
         let bornes = (m.altitude_min_m, m.altitude_max_m);
-        self.relief.pinceau(outil, centre, rayon, force, cible, graine, bornes);
+        self.relief
+            .pinceau(outil, centre, rayon, force, cible, graine, bornes);
         self.revisions.relief += 1;
         self.trait_en_cours = Some(etape);
     }
@@ -494,7 +549,9 @@ impl Carte {
     pub fn derive(&mut self) -> &Derive {
         let r = self.revisions;
         let a_jour = self.derive.as_ref().is_some_and(|d| {
-            d.revisions.reseau == r.reseau && d.revisions.relief == r.relief && d.revisions.manifeste == r.manifeste
+            d.revisions.reseau == r.reseau
+                && d.revisions.relief == r.relief
+                && d.revisions.manifeste == r.manifeste
         });
         if !a_jour {
             let profils = &self.manifeste.profils;
@@ -518,7 +575,12 @@ impl Carte {
     // ---------------------------------------------------------------- commandes
 
     /// Trace une route.
-    pub fn tracer_route(&mut self, classe: ClasseRoute, chemin: &[P2], accroche: f64) -> Result<Vec<Id>, String> {
+    pub fn tracer_route(
+        &mut self,
+        classe: ClasseRoute,
+        chemin: &[P2],
+        accroche: f64,
+    ) -> Result<Vec<Id>, String> {
         self.modifier(&format!("Tracer : {}", classe.nom()), |tx| {
             let (r, m) = tx.reseau_et_manifeste();
             r.tracer(classe, chemin, accroche, m)
@@ -536,15 +598,28 @@ impl Carte {
         };
         self.modifier(&format!("Quartier : {} {}", famille.nom(), densite.nom()), |tx| {
             let q = tx.quartiers();
-            q.affectations.retain(|_, a| !polygone::contient(&contour, a.repere));
+            q.affectations
+                .retain(|_, a| !polygone::contient(&contour, a.repere));
             let id = Id::nouveau();
-            q.affectations.insert(id, Affectation { repere, famille, densite });
+            q.affectations.insert(
+                id,
+                Affectation {
+                    repere,
+                    famille,
+                    densite,
+                },
+            );
             Ok(id)
         })
     }
 
     /// Ajoute une zone libre.
-    pub fn ajouter_zone(&mut self, polygone_: Vec<P2>, famille: Famille, densite: Densite) -> Result<Id, String> {
+    pub fn ajouter_zone(
+        &mut self,
+        polygone_: Vec<P2>,
+        famille: Famille,
+        densite: Densite,
+    ) -> Result<Id, String> {
         self.modifier("Zone libre", |tx| {
             let id = Id::nouveau();
             tx.quartiers().zones.insert(
@@ -569,6 +644,30 @@ impl Carte {
         }
         let z = self.quartiers.zones.get(&id)?;
         Some((z.polygone.clone(), z.famille, z.densite, graine ^ id.0))
+    }
+
+    /// Ajoute un contour nommé (polygone simple, nom unique).
+    pub fn ajouter_contour(
+        &mut self,
+        nom: &str,
+        usage: UsageContour,
+        polygone_: Vec<P2>,
+    ) -> Result<Id, String> {
+        self.modifier(&format!("Contour : {nom}"), |tx| {
+            if tx.carte().contours.par_nom(nom).is_some() {
+                return Err(format!("un contour s'appelle déjà « {nom} »"));
+            }
+            let id = Id::nouveau();
+            tx.contours().contours.insert(
+                id,
+                Contour {
+                    nom: nom.to_owned(),
+                    usage,
+                    polygone: polygone::oriente_positif(&polygone_),
+                },
+            );
+            Ok(id)
+        })
     }
 
     /// Fait (re)pousser les bâtiments d'un quartier. Les bâtiments manuels ou verrouillés ne sont jamais touchés.
@@ -627,7 +726,13 @@ impl Carte {
             .iter()
             .filter(|(_, a)| a.famille.constructible())
             .map(|(i, _)| *i)
-            .chain(self.quartiers.zones.iter().filter(|(_, z)| z.famille.constructible()).map(|(i, _)| *i))
+            .chain(
+                self.quartiers
+                    .zones
+                    .iter()
+                    .filter(|(_, z)| z.famille.constructible())
+                    .map(|(i, _)| *i),
+            )
             .collect();
         let mut total = 0;
         for id in ids {
@@ -677,8 +782,10 @@ mod tests {
     fn quartier() -> Carte {
         let mut c = Carte::nouvelle(Manifeste::nouveau("t", 1024.0)).expect("carte");
         for k in [-100.0, 0.0, 100.0] {
-            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0).expect("h");
-            c.tracer_route(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0).expect("v");
+            c.tracer_route(ClasseRoute::Rue, &[[-100.0, k], [100.0, k]], 2.0)
+                .expect("h");
+            c.tracer_route(ClasseRoute::Rue, &[[k, -100.0], [k, 100.0]], 2.0)
+                .expect("v");
         }
         c
     }
@@ -710,7 +817,9 @@ mod tests {
     #[test]
     fn quartier_lotissement_et_travail_manuel() {
         let mut c = quartier();
-        let a = c.affecter([50.0, 50.0], Famille::Residentiel, Densite::Moyenne).expect("affecter");
+        let a = c
+            .affecter([50.0, 50.0], Famille::Residentiel, Densite::Moyenne)
+            .expect("affecter");
         let n = c.lotir(a).expect("lotir");
         assert!(n >= 4);
         assert!(c.conflits().is_empty(), "un bâtiment généré empiète sur une rue");

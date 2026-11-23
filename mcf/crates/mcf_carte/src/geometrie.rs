@@ -174,7 +174,13 @@ impl GeoReseau {
     pub fn troncon_sous(&self, p: P2, profils: &TableProfils) -> Option<Id> {
         self.troncons
             .iter()
-            .map(|(id, g)| (*id, mcf_geo::distance_polyligne(p, &g.axe), profils.get(g.classe).emprise_m() * 0.5))
+            .map(|(id, g)| {
+                (
+                    *id,
+                    mcf_geo::distance_polyligne(p, &g.axe),
+                    profils.get(g.classe).emprise_m() * 0.5,
+                )
+            })
             .filter(|(_, d, w)| d <= w)
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(id, _, _)| id)
@@ -183,10 +189,9 @@ impl GeoReseau {
     /// Le point est-il sur une chaussée, un trottoir ou un carrefour ?
     pub fn sur_emprise(&self, p: P2, profils: &TableProfils) -> bool {
         self.troncon_sous(p, profils).is_some()
-            || self
-                .noeuds
-                .values()
-                .any(|n| !n.carrefour.emprise.is_empty() && mcf_geo::polygone::contient(&n.carrefour.emprise, p))
+            || self.noeuds.values().any(|n| {
+                !n.carrefour.emprise.is_empty() && mcf_geo::polygone::contient(&n.carrefour.emprise, p)
+            })
     }
 
     /// Polygones d'emprise de tout le réseau (quads des bandes et carrefours), pour les tests de collision.
@@ -215,8 +220,10 @@ mod tests {
     fn croisement_recule_les_rubans() {
         let m = Manifeste::nouveau("t", 1024.0);
         let mut r = Reseau::default();
-        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m).expect("1");
-        r.tracer(ClasseRoute::Rue, &[[0.0, -100.0], [0.0, 100.0]], 2.0, &m).expect("2");
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m)
+            .expect("1");
+        r.tracer(ClasseRoute::Rue, &[[0.0, -100.0], [0.0, 100.0]], 2.0, &m)
+            .expect("2");
         let g = calculer(&r, &m.profils);
         let centre = r.noeud_proche([0.0, 0.0], 0.01).expect("centre");
         let c = &g.noeuds[&centre];

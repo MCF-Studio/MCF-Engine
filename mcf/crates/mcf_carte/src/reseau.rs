@@ -167,7 +167,9 @@ impl Reseau {
     pub fn troncon_proche(&self, p: P2, rayon: f64) -> Option<(Id, P2)> {
         let mut best: Option<(Id, P2, f64)> = None;
         for (id, t) in &self.troncons {
-            let Some((pts, _)) = self.controle(t) else { continue };
+            let Some((pts, _)) = self.controle(t) else {
+                continue;
+            };
             for s in pts.windows(2) {
                 let (q, _) = projeter(p, s[0], s[1]);
                 let d = distance(p, q);
@@ -200,7 +202,13 @@ impl Reseau {
         }
         let interieur_existant = (1..pts.len() - 1).find(|&i| distance(pts[i], q) < 1e-6);
         let noeud = Id::nouveau();
-        self.noeuds.insert(noeud, Noeud { position: q, rond_point_m: None });
+        self.noeuds.insert(
+            noeud,
+            Noeud {
+                position: q,
+                rond_point_m: None,
+            },
+        );
         let rayon = |i: usize| t.rayons.get(i).copied().unwrap_or(0.0);
         let (avant, apres): (Vec<usize>, Vec<usize>) = match interieur_existant {
             // pts[i] = t.points[i - 1] devient le nœud.
@@ -257,7 +265,10 @@ impl Reseau {
             } else {
                 (p, Ancre::Libre)
             };
-            if points.last().is_none_or(|(q, _)| distance(*q, ancre.0) > ECART_MIN_M) {
+            if points
+                .last()
+                .is_none_or(|(q, _)| distance(*q, ancre.0) > ECART_MIN_M)
+            {
                 points.push(ancre);
             }
         }
@@ -266,7 +277,11 @@ impl Reseau {
         }
         // B. Croisements avec le réseau existant (sur les polylignes de contrôle).
         let mut croisements: Vec<(usize, f64, P2)> = Vec::new();
-        let existants: Vec<Vec<P2>> = self.troncons.values().filter_map(|t| self.controle(t).map(|c| c.0)).collect();
+        let existants: Vec<Vec<P2>> = self
+            .troncons
+            .values()
+            .filter_map(|t| self.controle(t).map(|c| c.0))
+            .collect();
         for k in 0..points.len() - 1 {
             let (a, b) = (points[k].0, points[k + 1].0);
             for pts in &existants {
@@ -285,13 +300,21 @@ impl Reseau {
         let dernier = points.len() - 1;
         for (k, (p, ancre)) in points.iter().enumerate() {
             let est_noeud = k == 0 || k == dernier || !matches!(ancre, Ancre::Libre);
-            let id = if let Ancre::Noeud(n) = ancre { Some(*n) } else { None };
+            let id = if let Ancre::Noeud(n) = ancre {
+                Some(*n)
+            } else {
+                None
+            };
             arrets.push((k, 0.0, *p, est_noeud, id));
         }
         for (k, t, x) in croisements {
             arrets.push((k, t, x, true, None));
         }
-        arrets.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap_or(std::cmp::Ordering::Equal));
+        arrets.sort_by(|a, b| {
+            (a.0, a.1)
+                .partial_cmp(&(b.0, b.1))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // D. Résolution des nœuds (coupe des tronçons existants si besoin), puis création des tronçons.
         let mut crees = Vec::new();
         let mut depart: Option<Id> = None;
@@ -308,7 +331,13 @@ impl Reseau {
                     Some(n) => n,
                     None => {
                         let n = Id::nouveau();
-                        self.noeuds.insert(n, Noeud { position: p, rond_point_m: None });
+                        self.noeuds.insert(
+                            n,
+                            Noeud {
+                                position: p,
+                                rond_point_m: None,
+                            },
+                        );
                         n
                     }
                 },
@@ -343,7 +372,9 @@ impl Reseau {
 
     /// Supprime un tronçon et les nœuds devenus isolés.
     pub fn supprimer_troncon(&mut self, id: Id) -> bool {
-        let Some(t) = self.troncons.remove(&id) else { return false };
+        let Some(t) = self.troncons.remove(&id) else {
+            return false;
+        };
         for n in [t.de, t.vers] {
             if self.degre(n) == 0 {
                 self.noeuds.remove(&n);
@@ -365,7 +396,11 @@ impl Reseau {
 
     /// Déplace un point de forme.
     pub fn deplacer_point(&mut self, troncon: Id, index: usize, p: P2, manifeste: &Manifeste) -> bool {
-        match self.troncons.get_mut(&troncon).and_then(|t| t.points.get_mut(index)) {
+        match self
+            .troncons
+            .get_mut(&troncon)
+            .and_then(|t| t.points.get_mut(index))
+        {
             Some(q) if manifeste.contient(p) => {
                 *q = p;
                 true
@@ -429,8 +464,10 @@ mod tests {
     #[test]
     fn croisement_cree_un_carrefour() {
         let mut r = Reseau::default();
-        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m()).expect("1");
-        r.tracer(ClasseRoute::Rue, &[[0.0, -100.0], [0.0, 100.0]], 2.0, &m()).expect("2");
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m())
+            .expect("1");
+        r.tracer(ClasseRoute::Rue, &[[0.0, -100.0], [0.0, 100.0]], 2.0, &m())
+            .expect("2");
         assert_eq!(r.troncons.len(), 4);
         let centre = r.noeud_proche([0.0, 0.0], 0.01).expect("carrefour");
         assert_eq!(r.degre(centre), 4);
@@ -440,10 +477,13 @@ mod tests {
     #[test]
     fn accroche_sur_un_noeud_et_un_troncon() {
         let mut r = Reseau::default();
-        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m()).expect("1");
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m())
+            .expect("1");
         // Part de 1 m à côté de l'extrémité, arrive 1,5 m à côté du milieu.
-        r.tracer(ClasseRoute::Ruelle, &[[-101.0, 50.0], [-100.0, 1.0]], 2.0, &m()).expect("2");
-        r.tracer(ClasseRoute::Ruelle, &[[20.0, 60.0], [20.0, 1.5]], 2.0, &m()).expect("3");
+        r.tracer(ClasseRoute::Ruelle, &[[-101.0, 50.0], [-100.0, 1.0]], 2.0, &m())
+            .expect("2");
+        r.tracer(ClasseRoute::Ruelle, &[[20.0, 60.0], [20.0, 1.5]], 2.0, &m())
+            .expect("3");
         let gauche = r.noeud_proche([-100.0, 0.0], 0.01).expect("extrémité");
         assert_eq!(r.degre(gauche), 2);
         let t = r.noeud_proche([20.0, 0.0], 0.01).expect("T");
@@ -455,14 +495,20 @@ mod tests {
     fn points_de_forme_et_scission() {
         let mut r = Reseau::default();
         let ids = r
-            .tracer(ClasseRoute::Avenue, &[[-200.0, 0.0], [0.0, 0.0], [0.0, 200.0]], 2.0, &m())
+            .tracer(
+                ClasseRoute::Avenue,
+                &[[-200.0, 0.0], [0.0, 0.0], [0.0, 200.0]],
+                2.0,
+                &m(),
+            )
             .expect("L");
         assert_eq!(ids.len(), 1);
         let t = &r.troncons[&ids[0]];
         assert_eq!(t.points, vec![[0.0, 0.0]]);
         assert_eq!(t.rayons, vec![20.0]);
         // Couper la branche verticale crée un nœud et garde le point de forme dans la première moitié.
-        r.tracer(ClasseRoute::Rue, &[[-50.0, 100.0], [50.0, 100.0]], 2.0, &m()).expect("croise");
+        r.tracer(ClasseRoute::Rue, &[[-50.0, 100.0], [50.0, 100.0]], 2.0, &m())
+            .expect("croise");
         assert_eq!(r.troncons.len(), 4);
         assert!(r.troncons.values().any(|t| t.points == vec![[0.0, 0.0]]));
         assert_eq!(r.valider(&m()), Ok(()));
@@ -471,8 +517,13 @@ mod tests {
     #[test]
     fn suppression_et_refus() {
         let mut r = Reseau::default();
-        let ids = r.tracer(ClasseRoute::Rue, &[[0.0, 0.0], [10.0, 0.0]], 2.0, &m()).expect("1");
-        assert!(r.tracer(ClasseRoute::Rue, &[[0.0, 0.0], [9999.0, 0.0]], 2.0, &m()).is_err());
+        let ids = r
+            .tracer(ClasseRoute::Rue, &[[0.0, 0.0], [10.0, 0.0]], 2.0, &m())
+            .expect("1");
+        assert!(
+            r.tracer(ClasseRoute::Rue, &[[0.0, 0.0], [9999.0, 0.0]], 2.0, &m())
+                .is_err()
+        );
         assert!(r.supprimer_troncon(ids[0]));
         assert!(r.noeuds.is_empty());
         let json = serde_json::to_string(&r).expect("json");
