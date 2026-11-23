@@ -56,6 +56,9 @@ impl Plugin for CamerasPlugin {
     }
 }
 
+/// Fond du Plan quand il est seul à l'écran.
+const FOND_PLAN: ClearColorConfig = ClearColorConfig::Custom(Color::srgb(0.93, 0.93, 0.9));
+
 /// Altitude de la caméra Plan : au-dessus de tout relief autorisé.
 fn hauteur_plan(projet: &Projet) -> f32 {
     projet.carte.manifeste.altitude_max_m as f32 + 600.0
@@ -84,9 +87,11 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
             far: haut + 1_000.0,
             ..OrthographicProjection::default_3d()
         }),
+        // La 3D dessine d'abord : un effacement vide toute l'image (pas seulement le viewport), le Plan vient donc
+        // en second et n'efface le fond que s'il est seul (voir `disposer`).
         Camera {
-            order: 0,
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.93, 0.93, 0.9)),
+            order: 1,
+            clear_color: FOND_PLAN,
             ..default()
         },
         RenderLayers::from_layers(&[0, COUCHE_PLAN]),
@@ -103,7 +108,7 @@ fn creer(mut commands: Commands, projet: Res<Projet>) {
             ..default()
         }),
         Camera {
-            order: 1,
+            order: 0,
             clear_color: ClearColorConfig::Custom(Color::srgb(0.62, 0.74, 0.86)),
             ..default()
         },
@@ -164,6 +169,13 @@ fn disposer(
         let pos = (r.min * f).as_uvec2().min(taille.saturating_sub(UVec2::ONE));
         let dim = (r.size() * f).as_uvec2().max(UVec2::ONE).min(taille - pos);
         camera.is_active = true;
+        if *vue == Vue::Plan {
+            camera.clear_color = if edition.disposition == Disposition::Partagee {
+                ClearColorConfig::None
+            } else {
+                FOND_PLAN
+            };
+        }
         camera.viewport = Some(Viewport {
             physical_position: pos,
             physical_size: dim,
