@@ -41,6 +41,10 @@
       classes avec « Voie express » et « Autoroute ».
     - Marches des 256 niveaux : arcs bruns le long des courbes de niveau avec un lissage faible. Lissage conseillé =
       25 × la marche (63 m pour l'exemple), proposé par l'éditeur ; 48 m les efface à l'écran.
+    - [x] **Convertisseur** (2026-11-24) : « 🪄 Convertir une carte… » (Cadre) ou `cargo run -p mcf_carte --example
+      convertir_carte --release -- <image>` : vue satellite / plan → carte couleurs + relief **proposé** (déduit).
+      Essai sur `map_sat.png` : mer, lacs, rivières, massif, forêts, champs, villes reconnus en 0,3–0,4 s ; sud en
+      partie pris pour de la ville ; routes non extraites. Bouton **pas encore vu à l'écran**.
     - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
       ou ombres ? non élucidé) ; terre-plein de l'autoroute pas encore regardé de près.
     - `map_1.png` et `map_sat.png` n'ont **pas** le relief en chiffres : demander une carte de relief au même cadrage
@@ -57,16 +61,3 @@
     qu'avant).
   - À voir à l'écran : réglage de l'exposition, taille des répétitions, sens des reliefs des normales.
   - Plus tard : textures en KTX2 compressées (16 Mo de PNG aujourd'hui), choix de l'heure du jour dans l'éditeur.
-
-Texte d'origine (Aroun) :
-
-Pour la vue 2D 3D, le mix 2D 2D, il faudrait en fait que la vue 2D soit comme une petite fenêtre et qu'on puisse choisir de la grandir ou pas. En gros si on clique dessus elle se met là comme elle est actuellement et qu'on puisse la rapetissir mais qu'on ait toujours une vue de la minimap quand même et je pense que ça pourrait rendre la chose pas mal.
-Quand on sélectionne un élément, il faudrait que dans l'inspecteur, on tombe directement sur ce que c'est. Par exemple, quand on est en train de faire du relief et qu'on a une route qui ne nous plaît pas, si je sélectionne la route, il faut que ça aille directement dans la catégorie réseau et que ça me sélectionne la bonne route que j'ai choisie. Comme ça, ça évite là, parce que ça pose des petits soucis de l'expérience utilisateur et du oui. du iux qui sont pas terribles
-Tant qu'on est à ce niveau-là de l'éditeur, j'ai prévu d'avoir les bâtiments et les quartiers, donc les villes, avec des compteurs électriques. Et j'ai prévu que du coup on puisse avoir un compteur général qui puisse couper tout un quartier. On va tout de suite faire en sorte d'ajouter dans Réseau le réseau électrique, donc que je puisse poser des gaines, alors pas forcément du réseau aérien visible, mais qu'on voie une ligne qui déterminera que c'est le réseau électrique.
-et il faudra prévoir que l'on puisse importer des cartes 2D qui ont des tracés et que l'éditeur les convertisse pour pouvoir afficher les tracés correctement et refaire la map 2D aux conventions de l'éditeur. Ce qu'il faut c'est vraiment pouvoir relever le tracé des routes, les reliefs si on arrive à l'éditeur. Et les endroits où sont les bâtiments. C'est entre si on te donne une satmap ou une map un peu stylisée qu'on arrive à pouvoir s'en servir comme modèle. Je t'ai mis un chemin en référence du type de carte. Je l'ai bien dit du type de carte, c'est pas spécialement ça mais on pourrait obtenir avec l'éditeur si on pouvait obtenir ça. envoyé dans l'éditeur justement pour servir de modèle "G:\MCF-Remember-this-life\docs\map"
-Et bien entendu, il faudra travailler un peu le rendu parce que là la luminosité est vraiment pas ouf. Il faudra mettre quand même une skybox, on ait quand même l'impression d'être dans un monde. Et essayer de trouver des textures, mettre des textures un peu plus qualitatives. Si tu veux, donne moi un prompt, je peux faire générer des textures par ton grand copain qui s'appelle ChatGPT.
-et puis il faudrait qu'avec A et E on puisse monter et descendre avec la caméra
-
-
-
-
