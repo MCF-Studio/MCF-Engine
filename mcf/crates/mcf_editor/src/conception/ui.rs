@@ -155,6 +155,16 @@ pub fn interface(
             if ui.button("Recentrer").clicked() {
                 recentrer(&projet.carte.manifeste, &mut plan, &mut orbite);
             }
+            ui.separator();
+            if ui
+                .selectable_label(edition.promenade, "🚶 Se promener (P)")
+                .on_hover_text(
+                    "Un personnage du jeu (1,65 m) marche là où regarde la caméra 3D : ZQSD, Maj pour courir.                      Pour juger l'échelle des rues et des bâtiments.",
+                )
+                .clicked()
+            {
+                edition.promenade = !edition.promenade;
+            }
         });
     });
 

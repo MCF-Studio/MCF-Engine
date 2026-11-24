@@ -8,6 +8,7 @@
 mod camera;
 mod fichiers;
 mod outils;
+mod promenade;
 mod references;
 mod releve;
 mod scene;
@@ -257,6 +258,8 @@ pub struct Edition {
     pub glisse: Option<Glisse>,
     /// Disposition des vues.
     pub disposition: Disposition,
+    /// Promenade en cours (personnage au sol, voir `promenade`).
+    pub promenade: bool,
     /// Point de la carte sous la souris (m) et son altitude.
     pub curseur: Option<(P2, f64)>,
     /// Accroche des tracés aux routes existantes (désactivable avec Alt).
@@ -322,6 +325,7 @@ impl Default for Edition {
             selection: Selection::Rien,
             glisse: None,
             disposition: Disposition::Perspective,
+            promenade: false,
             curseur: None,
             accroche: true,
             chemin: String::new(),
@@ -417,6 +421,7 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
             outils::OutilsPlugin,
             textures::TexturesPlugin,
             references::ReferencesPlugin,
+            promenade::PromenadePlugin,
         ))
         .add_systems(Startup, preparer)
         .add_systems(EguiPrimaryContextPass, ui::interface)

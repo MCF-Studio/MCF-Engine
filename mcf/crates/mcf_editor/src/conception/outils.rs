@@ -657,7 +657,8 @@ fn selectionner(
             }
             (None, true) => {
                 let profils = projet.carte.manifeste.profils;
-                if projet.carte.derive().geo.troncon_sous(p, &profils) == Some(id) {
+                let marge = marge_ecran_m(projet, p, viseur);
+                if projet.carte.derive().geo.troncon_proche(p, &profils, marge) == Some(id) {
                     inserer_point(projet, id, &controle, p);
                     return;
                 }
@@ -698,7 +699,8 @@ fn selectionner(
     }
     // 3. Tronçon, 4. quartier.
     let profils = projet.carte.manifeste.profils;
-    let troncon = projet.carte.derive().geo.troncon_sous(p, &profils);
+    let marge = marge_ecran_m(projet, p, viseur);
+    let troncon = projet.carte.derive().geo.troncon_proche(p, &profils, marge);
     edition.selection = if let Some(id) = troncon {
         Selection::Troncon(id)
     } else if let Some(id) = quartier_en(&mut projet.carte, p) {
@@ -707,6 +709,24 @@ fn selectionner(
         Selection::Rien
     };
     suivre_selection(edition);
+}
+
+/// Distance (m) qui fait `TOLERANCE_PX` pixels à l'écran autour de `p` : une route se clique à quelques pixels
+/// près, quel que soit le zoom du Plan ou la distance de la caméra 3D.
+fn marge_ecran_m(projet: &mut Projet, p: P2, viseur: Option<(&Camera, &GlobalTransform, Vec2)>) -> f64 {
+    const TOLERANCE_PX: f32 = 8.0;
+    let Some((cam, gt, _)) = viseur else {
+        return 0.0;
+    };
+    let h = projet.carte.derive().terrain.hauteur(p) as f32;
+    let a = Vec3::new(p[0] as f32, h, p[1] as f32);
+    match (
+        cam.world_to_viewport(gt, a),
+        cam.world_to_viewport(gt, a + Vec3::X),
+    ) {
+        (Ok(sa), Ok(sb)) if sa.distance(sb) > 1e-4 => f64::from(TOLERANCE_PX / sa.distance(sb)).min(500.0),
+        _ => 0.0,
+    }
 }
 
 /// L'éditeur suit la sélection : une route ouvre l'étape Réseau, un bâtiment l'étape Bâti, un quartier l'étape

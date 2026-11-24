@@ -186,6 +186,23 @@ impl GeoReseau {
             .map(|(id, _, _)| id)
     }
 
+    /// Tronçon le plus proche de `p` à moins de `marge_m` de son axe (ou sur son emprise si elle est plus large) :
+    /// pour cliquer une route dans un Plan dézoomé, où un pixel vaut des dizaines de mètres.
+    pub fn troncon_proche(&self, p: P2, profils: &TableProfils, marge_m: f64) -> Option<Id> {
+        self.troncons
+            .iter()
+            .map(|(id, g)| {
+                (
+                    *id,
+                    mcf_geo::distance_polyligne(p, &g.axe),
+                    (profils.get(g.classe).emprise_m() * 0.5).max(marge_m),
+                )
+            })
+            .filter(|(_, d, w)| d <= w)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _, _)| id)
+    }
+
     /// Le point est-il sur une chaussée, un trottoir ou un carrefour ?
     pub fn sur_emprise(&self, p: P2, profils: &TableProfils) -> bool {
         self.troncon_sous(p, profils).is_some()

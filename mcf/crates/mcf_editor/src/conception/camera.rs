@@ -309,7 +309,8 @@ fn naviguer_3d(
         }
     }
     let actif_3d = edition.disposition != Disposition::Plan;
-    if actif_3d && !zone.clavier_ui {
+    // En promenade, ZQSD fait marcher le personnage (module `promenade`), la caméra le suit.
+    if actif_3d && !zone.clavier_ui && !edition.promenade {
         let (s, c) = ops::sin_cos(orbite.lacet);
         let droite = Vec3::new(c, 0.0, -s);
         let avant = Vec3::new(-s, 0.0, -c);
