@@ -230,6 +230,15 @@ La bibliothèque est choisie par le test B.
 
 - Personnages : skinning GPU, **LOD d'animation** (mise à jour moins fréquente au loin), vêtements en couches,
   morph targets du visage.
+- **Tissu des vêtements** : solveur commun avec MCF Character Studio, crate `mcf-tissu` (dépôt **local**
+  `G:\MCF-Tissu`, pas de distant pour l'instant, décision d'Aroun du 2026-11-24 ; tag `v0.1.0`). Intégration :
+  `mcf-tissu = { git = "file:///G:/MCF-Tissu", tag = "…", features = ["glam"] }` (glam 0.33, comme Bevy 0.20.1),
+  plugin Bevy mince `mcf_tissu_bevy` qui appelle `AnimatedCloth::step` (le même pas que le précalcul du Studio),
+  contrat `tissu.v1` validé par `ClothAssetV1::validate()` de la crate. Coût mesuré par le Studio : ~3 µs par
+  particule et par pas sur un cœur (jupe de 1 566 particules ≈ 4,5 ms) → LOD obligatoire (simulation près de la
+  caméra, skinning seul au loin, repli en morph targets), plafond de tissus simulés à l'écran, rien côté serveur.
+  À trancher à l'intégration : une dépendance `file://` ne passe pas dans la CI GitHub du moteur (vendoring ou
+  dépôt distant le moment venu).
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
