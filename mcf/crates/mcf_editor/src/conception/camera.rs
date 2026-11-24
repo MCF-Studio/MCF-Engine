@@ -185,7 +185,20 @@ fn disposer(
         let Some(r) =
             rect_de(*vue, zone.rect, edition.disposition).filter(|r| r.width() >= 8.0 && r.height() >= 8.0)
         else {
-            camera.is_active = false;
+            if *vue == Vue::Perspective {
+                // La 3D cachée (Plan seul, première image avant la mesure des panneaux) reste active sur 1 pixel :
+                // désactivée, Bevy 0.20.1 prépare quand même la sonde d'éclairage du ciel
+                // (`AtmosphereEnvironmentMapLight`) sans vue ni tampon de transformations, et panique
+                // (`bevy_pbr/src/atmosphere/environment.rs:124`). Le Plan, dessiné ensuite, recouvre ce pixel.
+                camera.is_active = true;
+                camera.viewport = Some(Viewport {
+                    physical_position: UVec2::ZERO,
+                    physical_size: UVec2::ONE,
+                    ..default()
+                });
+            } else {
+                camera.is_active = false;
+            }
             continue;
         };
         let pos = (r.min * f).as_uvec2().min(taille.saturating_sub(UVec2::ONE));
