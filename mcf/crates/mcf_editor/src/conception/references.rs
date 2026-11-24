@@ -1,5 +1,6 @@
-//! Calques de référence dans la vue Plan : chaque image visible est un quadrilatère texturé, semi-transparent, posé
-//! au-dessus du terrain et sous le voile des quartiers. Les réglages en cours de saisie et le glisser de l'outil
+//! Calques de référence : dans la vue Plan, chaque image visible est un quadrilatère texturé, semi-transparent,
+//! posé au-dessus du terrain et sous le voile des quartiers ; dans la vue 3D, la même image est drapée sur le terrain
+//! final (relief + terrassements), juste au-dessus du sol. Les réglages en cours de saisie et le glisser de l'outil
 //! « Déplacer » sont affichés en direct, avant d'être écrits dans la carte.
 
 use std::collections::HashMap;
@@ -13,7 +14,14 @@ use bevy::{
 };
 use mcf_carte::{Carte, Id, Reference};
 
-use super::{COUCHE_PLAN, CibleGlisse, Edition, Projet, textures::mipmaps};
+use mcf_carte::Relief;
+
+use super::{COUCHE_3D, COUCHE_PLAN, CibleGlisse, Edition, Projet, textures::mipmaps};
+
+/// Points du drapé 3D par côté : une maille tous les 1/`DRAPE` de l'image.
+const DRAPE: usize = 128;
+/// Hauteur du drapé au-dessus du sol (m) : évite le scintillement avec le terrain.
+const DRAPE_DESSUS_M: f64 = 0.35;
 
 pub struct ReferencesPlugin;
 
@@ -33,6 +41,8 @@ struct Affichees {
     vu: Vec<(Id, Reference)>,
     /// Altitude d'affichage utilisée.
     altitude: f32,
+    /// Révisions du terrain final sous le drapé 3D (relief, réseau, manifeste).
+    terrain: (u64, u64, u64),
     /// Textures déjà envoyées, par calque (une image importée ne change jamais).
     textures: HashMap<Id, Handle<Image>>,
 }
@@ -64,7 +74,7 @@ pub fn references_affichees(carte: &Carte, edition: &Edition) -> Vec<(Id, Refere
 
 fn afficher(
     mut commands: Commands,
-    projet: Res<Projet>,
+    mut projet: ResMut<Projet>,
     edition: Res<Edition>,
     mut affichees: ResMut<Affichees>,
     mut images: ResMut<Assets<Image>>,
@@ -75,7 +85,9 @@ fn afficher(
     let voulu = references_affichees(&projet.carte, &edition);
     // Au-dessus de tout relief autorisé, sous le voile des quartiers (+20 m) et les repères (+25 m).
     let altitude = projet.carte.manifeste.altitude_max_m as f32 + 10.0;
-    if voulu == affichees.vu && altitude == affichees.altitude {
+    let r = projet.carte.revisions;
+    let terrain = (r.relief, r.reseau, r.manifeste);
+    if voulu == affichees.vu && altitude == affichees.altitude && terrain == affichees.terrain {
         return;
     }
     for e in &existants {
@@ -85,6 +97,7 @@ fn afficher(
     affichees
         .textures
         .retain(|id, _| projet.carte.images_references.contains_key(id));
+    let mut a_poser = Vec::new();
     for (id, r) in voulu.iter().filter(|(_, r)| r.visible) {
         let Some(image) = projet.carte.images_references.get(id) else {
             continue;
@@ -94,23 +107,36 @@ fn afficher(
             .entry(*id)
             .or_insert_with(|| images.add(texture(image)))
             .clone();
+        a_poser.push((r, texture));
+    }
+    let sol = &projet.carte.derive().terrain;
+    for (r, texture) in a_poser {
+        let materiau = materials.add(StandardMaterial {
+            base_color: Color::srgba(1.0, 1.0, 1.0, r.opacite),
+            base_color_texture: Some(texture),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            cull_mode: None,
+            ..default()
+        });
         commands.spawn((
             Calque,
             Mesh3d(meshes.add(quadrilatere(r, altitude))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgba(1.0, 1.0, 1.0, r.opacite),
-                base_color_texture: Some(texture),
-                unlit: true,
-                alpha_mode: AlphaMode::Blend,
-                cull_mode: None,
-                ..default()
-            })),
+            MeshMaterial3d(materiau.clone()),
             Transform::IDENTITY,
             RenderLayers::layer(COUCHE_PLAN),
+        ));
+        commands.spawn((
+            Calque,
+            Mesh3d(meshes.add(drape(r, sol))),
+            MeshMaterial3d(materiau),
+            Transform::IDENTITY,
+            RenderLayers::layer(COUCHE_3D),
         ));
     }
     affichees.vu = voulu;
     affichees.altitude = altitude;
+    affichees.terrain = terrain;
 }
 
 /// Texture d'un calque, avec ses mipmaps (lisible dézoomée).
@@ -146,6 +172,41 @@ fn quadrilatere(r: &Reference, y: f32) -> Mesh {
         )
         // Haut gauche, haut droit, bas droit, bas gauche : face vers +Y vu du dessus (nord en haut).
         .with_inserted_indices(Indices::U32(vec![0, 3, 1, 1, 3, 2]))
+}
+
+/// Image drapée sur le terrain : grille de `DRAPE` × `DRAPE` mailles entre les quatre coins du calque, chaque
+/// point posé `DRAPE_DESSUS_M` au-dessus du sol (hors de la carte : hauteur du bord le plus proche, cf. `Relief::hauteur`).
+fn drape(r: &Reference, sol: &Relief) -> Mesh {
+    let [hg, hd, bd, bg] = r.coins();
+    let lerp = |a: [f64; 2], b: [f64; 2], t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    let n = DRAPE + 1;
+    let mut positions = Vec::with_capacity(n * n);
+    let mut uvs = Vec::with_capacity(n * n);
+    for j in 0..n {
+        let v = j as f64 / DRAPE as f64;
+        let (gauche, droite) = (lerp(hg, bg, v), lerp(hd, bd, v));
+        for i in 0..n {
+            let u = i as f64 / DRAPE as f64;
+            let p = lerp(gauche, droite, u);
+            let y = sol.hauteur(p) + DRAPE_DESSUS_M;
+            positions.push([p[0] as f32, y as f32, p[1] as f32]);
+            uvs.push([u as f32, v as f32]);
+        }
+    }
+    let mut indices = Vec::with_capacity(DRAPE * DRAPE * 6);
+    for j in 0..DRAPE {
+        for i in 0..DRAPE {
+            let a = (j * n + i) as u32;
+            let (b, c, d) = (a + 1, a + n as u32, a + n as u32 + 1);
+            // Même sens que `quadrilatere` : face vers +Y.
+            indices.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n * n])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices))
 }
 
 #[cfg(test)]

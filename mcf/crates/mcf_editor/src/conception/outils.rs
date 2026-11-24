@@ -224,6 +224,8 @@ fn souris(
     cameras: Query<(&Vue, &Camera, &GlobalTransform)>,
     mut projet: ResMut<Projet>,
     mut edition: ResMut<Edition>,
+    // Vue où le glisser en cours a commencé (`Some(None)` : hors des vues).
+    mut vue_glisse: Local<Option<Option<Vue>>>,
 ) {
     let ctrl = touches.pressed(KeyCode::ControlLeft) || touches.pressed(KeyCode::ControlRight);
     let alt = touches.pressed(KeyCode::AltLeft) || touches.pressed(KeyCode::AltRight);
@@ -264,16 +266,27 @@ fn souris(
 
     // Glisser en cours.
     if let Some(mut g) = edition.glisse {
-        if let Some((p, _)) = edition.curseur {
+        // Fin dès que le bouton n'est plus enfoncé : un relâchement au-dessus d'un panneau (capté par egui) ou hors
+        // de la fenêtre ne doit pas laisser le glisser actif.
+        if !boutons.pressed(MouseButton::Left) {
+            edition.glisse = None;
+            *vue_glisse = None;
+            appliquer_glisse(&mut projet, &edition, g);
+            return;
+        }
+        // Le point ne suit le curseur que dans la vue où le glisser a commencé : passé dans l'autre vue, la même
+        // position d'écran vise un autre point (et la caméra 3D qui bouge le déplacerait tout seul).
+        let origine = *vue_glisse.get_or_insert(vue);
+        if vue.is_some()
+            && vue == origine
+            && let Some((p, _)) = edition.curseur
+        {
             g.actuel = p;
             edition.glisse = Some(g);
         }
-        if boutons.just_released(MouseButton::Left) {
-            edition.glisse = None;
-            appliquer_glisse(&mut projet, &edition, g);
-        }
         return;
     }
+    *vue_glisse = None;
 
     let Some((p, h)) = edition.curseur else {
         return;
