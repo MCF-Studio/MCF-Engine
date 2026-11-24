@@ -246,6 +246,11 @@ La bibliothèque est choisie par le test B.
   simplifié ≤ 1 500 triangles, sol activé. En jeu : 6 personnages simulés au plus, à moins de 12 m de la caméra,
   skinning seul au-delà ; budget total 2 ms par image sur un thread de travail. Un vêtement hors profil est refusé
   au chargement. Si le coût mesuré dépasse le budget, on baisse le plafond de particules, pas la fréquence.
+  **Profil jeu v2** (2026-11-24, après mesure du Studio : ~1,85 µs par particule et par pas, et non 0,7) : la plupart
+  des vêtements ne sont **pas simulés** (skinning pur : casquette, haut, pantalon, chaussures) ; seuls les pans libres
+  (jupe, robe, cape, manteau long) le sont, **un seul par personnage**, via un **maillage de simulation allégé
+  ≤ 350 particules** qui pilote le maillage de rendu (lien calculé dans `mcf-tissu`, identique Studio / moteur).
+  6 × 350 × 30 × 1,85 µs ≈ 1,95 ms par image. Attendu : `mcf-tissu` v0.3.0 (`GAME_PROFILE_V2`).
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
