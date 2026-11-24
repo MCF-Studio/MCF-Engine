@@ -28,6 +28,9 @@ pub const VERSION: u32 = 1;
 pub const MAX_REFERENCES: usize = 16;
 /// Côté maximal d'une image (pixels).
 pub const MAX_COTE_PX: u32 = 8192;
+/// Pixels maximum pour l'ensemble des calques d'une carte (64 Mpx ≈ 256 Mo en RGBA) : sans ce budget, 16 images
+/// de 8192² pixels réclameraient ~4 Go à l'ouverture d'une carte piégée.
+pub const MAX_PIXELS_TOTAL: u64 = 64 * 1024 * 1024;
 /// Poids maximal d'un fichier image (octets).
 pub const MAX_OCTETS: u64 = 64 * 1024 * 1024;
 /// Plage d'échelle autorisée (m par pixel).
@@ -195,6 +198,17 @@ impl References {
         }
         for (id, r) in &self.references {
             r.valider(m).map_err(|e| format!("calque {id} : {e}"))?;
+        }
+        // Vérifié sur les dimensions déclarées, avant tout décodage (voir `io::lire_references`).
+        let pixels: u64 = self
+            .references
+            .values()
+            .map(|r| u64::from(r.largeur_px) * u64::from(r.hauteur_px))
+            .sum();
+        if pixels > MAX_PIXELS_TOTAL {
+            return Err(format!(
+                "calques trop lourds : {pixels} pixels au total ({MAX_PIXELS_TOTAL} au plus)"
+            ));
         }
         Ok(())
     }
@@ -364,6 +378,15 @@ mod tests {
             f(&mut x);
             assert!(x.valider(&m).is_err(), "{x:?}");
         }
+        // Budget total : deux images de 8192² pixels dépassent 64 Mpx.
+        let mut lourd = References::default();
+        for _ in 0..2 {
+            let mut x = r();
+            x.largeur_px = MAX_COTE_PX;
+            x.hauteur_px = MAX_COTE_PX;
+            lourd.references.insert(Id::nouveau(), x);
+        }
+        assert!(lourd.valider(&m).is_err());
         let mut tout = References::default();
         for _ in 0..=MAX_REFERENCES {
             tout.references.insert(Id::nouveau(), r());
