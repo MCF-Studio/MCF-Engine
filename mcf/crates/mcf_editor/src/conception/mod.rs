@@ -414,7 +414,9 @@ fn preparer(
                 blend_state: Some(BlendState::ALPHA_BLENDING),
                 clear_color: ClearColorConfig::None,
             },
-            clear_color: ClearColorConfig::None,
+            // Image propre à l'interface (non HDR, distincte de celle des vues) : effacée en transparent à chaque image.
+            // Sans effacement, d'anciens panneaux (taille de fenêtre précédente) restaient incrustés sur les vues.
+            clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
     ));
