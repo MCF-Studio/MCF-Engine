@@ -473,13 +473,14 @@ fn etape_relief(ui: &mut egui::Ui, edition: &mut Edition) {
         }
     });
     ui.add(
-        egui::Slider::new(&mut edition.rayon, 2.0..=300.0)
+        // Jusqu'à 2 km (borne de `Carte::pinceau`) : sur une carte de 32 km, un massif se modèle à grands traits.
+        egui::Slider::new(&mut edition.rayon, 2.0..=2000.0)
             .logarithmic(true)
             .text("rayon (m)"),
     );
     let (max, unite) = match edition.outil {
         Outil::Pinceau(Pinceau::Lisser | Pinceau::Aplanir) => (4.0, "force"),
-        _ => (40.0, "m/s"),
+        _ => (150.0, "m/s"),
     };
     edition.force = edition.force.min(max);
     ui.add(egui::Slider::new(&mut edition.force, 0.1..=max).text(unite));
@@ -933,11 +934,14 @@ fn importer_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
 fn convertir_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
     let debut = std::time::Instant::now();
     match projet.carte.convertir_et_importer_fichier(chemin) {
-        Ok((couleurs, relief, c)) => {
+        Ok((_couleurs, relief, c)) => {
             if edition.etape != Etape::Cadre {
                 edition.aller_a(Etape::Cadre);
             }
-            edition.reference_active = Some(couleurs);
+            // Le relief proposé est actif : « Appliquer comme relief » vise le bon calque (le calque couleurs lu en gris
+            // inverserait montagnes et plaines). Les deux calques ont le même calage à l'import.
+            edition.reference_active = Some(relief);
+            edition.relief_niveaux = mcf_carte::relief_image::Niveaux::default();
             edition.reference_saisie = None;
             edition.disposition = Disposition::Partagee;
             edition.relief_noir_m = c.noir_m;
@@ -967,8 +971,9 @@ fn convertir_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
                 )
             };
             projet.info(format!(
-                "Converti en {:.1} s : {}. Calez le calque couleurs, puis sur le relief proposé « Même calage que… » \
-                 et « Appliquer comme relief » (relief déduit, à vérifier ; routes non extraites).{plage}",
+                "Converti en {:.1} s : {}. Le relief proposé est le calque actif : réglez noir, blanc et niveaux, puis \
+                 « Appliquer comme relief » (relief déduit, à vérifier ; routes non extraites). Si vous recalez le \
+                 calque couleurs, recopiez son calage sur le relief (« Même calage que… »).{plage}",
                 debut.elapsed().as_secs_f64(),
                 parts.join(", ")
             ));
@@ -1301,7 +1306,27 @@ fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Ed
         )
         .on_hover_text("Adoucit les marches des 256 niveaux de gris (0 = aucun).");
         ui.end_row();
+        // Niveaux : équilibrer clair et foncé sans retoucher l'image.
+        let n = &mut edition.relief_niveaux;
+        ui.label("Gris du noir");
+        ui.add(egui::Slider::new(&mut n.gris_noir, 0.0..=0.99).fixed_decimals(2))
+            .on_hover_text("Tout gris plus sombre que celui-ci prend l'altitude du noir.");
+        ui.end_row();
+        ui.label("Gris du blanc");
+        ui.add(egui::Slider::new(&mut n.gris_blanc, 0.01..=1.0).fixed_decimals(2))
+            .on_hover_text("Tout gris plus clair que celui-ci prend l'altitude du blanc : baissez-le pour monter les reliefs.");
+        ui.end_row();
+        if n.gris_blanc <= n.gris_noir + 0.01 {
+            n.gris_blanc = (n.gris_noir + 0.01).min(1.0);
+        }
+        ui.label("Courbe");
+        ui.add(egui::Slider::new(&mut n.courbe, 0.2..=5.0).logarithmic(true).fixed_decimals(2))
+            .on_hover_text("1 = linéaire. Plus de 1 : plaines plus basses, sommets gardés. Moins de 1 : plaines relevées.");
+        ui.end_row();
     });
+    if ui.small_button("Niveaux par défaut").clicked() {
+        edition.relief_niveaux = mcf_carte::relief_image::Niveaux::default();
+    }
     let conseille = projet.carte.references.references.get(&id).map_or(0.0, |r| {
         mcf_carte::relief_image::lissage_conseille(edition.relief_noir_m, edition.relief_blanc_m, r.m_par_px)
     });
@@ -1324,9 +1349,13 @@ fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Ed
             edition.relief_noir_m,
             edition.relief_blanc_m,
             edition.relief_lissage_m,
+            &edition.relief_niveaux,
         );
         projet.resultat(r, |n| {
-            format!("Relief appliqué : {n} points modifiés (Ctrl+Z pour annuler).")
+            format!(
+                "Relief appliqué : {n} points modifiés. Réglez et réappliquez autant que nécessaire (chaque \
+                 application remplace la précédente, Ctrl+Z pour annuler)."
+            )
         });
     }
 }

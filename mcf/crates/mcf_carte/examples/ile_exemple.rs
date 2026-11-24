@@ -49,6 +49,7 @@ fn main() -> Result<(), String> {
         -40.0,
         600.0,
         relief_image::lissage_conseille(-40.0, 600.0, 4.0),
+        &relief_image::Niveaux::default(),
     )?;
     println!("Relief : {n} points.");
     if let Some(releve::Proposition::Eau(eau)) = relever(&c, couleurs, releve::Sorte::Eau, 20.0, 20.0).first()

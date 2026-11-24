@@ -13,6 +13,74 @@ pub const LISSAGE_MAX_M: f64 = 500.0;
 /// Seuil d'opacité sous lequel un pixel ne porte pas de donnée (0 à 255).
 pub const ALPHA_DONNEE: u8 = 128;
 
+/// Niveaux appliqués au gris avant la conversion en altitude : le gris `gris_noir` devient l'altitude du noir, le gris
+/// `gris_blanc` celle du blanc (entre les deux : linéaire, puis `courbe`). Une courbe > 1 creuse les plaines et
+/// garde les sommets, < 1 relève les plaines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Niveaux {
+    /// Gris (0 à 1) qui devient l'altitude du noir ; plus sombre : altitude du noir aussi.
+    pub gris_noir: f64,
+    /// Gris (0 à 1) qui devient l'altitude du blanc ; plus clair : altitude du blanc aussi.
+    pub gris_blanc: f64,
+    /// Exposant de la courbe (0,2 à 5 ; 1 = linéaire).
+    pub courbe: f64,
+}
+
+impl Default for Niveaux {
+    fn default() -> Self {
+        Self {
+            gris_noir: 0.0,
+            gris_blanc: 1.0,
+            courbe: 1.0,
+        }
+    }
+}
+
+impl Niveaux {
+    /// Bornes (réglages saisis : non fiables).
+    pub fn valider(&self) -> Result<(), String> {
+        let ok = (0.0..=1.0).contains(&self.gris_noir)
+            && (0.0..=1.0).contains(&self.gris_blanc)
+            && self.gris_blanc - self.gris_noir >= 1.0 / 255.0
+            && (0.2..=5.0).contains(&self.courbe);
+        if ok {
+            Ok(())
+        } else {
+            Err("niveaux invalides (gris du noir < gris du blanc, courbe de 0,2 à 5)".into())
+        }
+    }
+
+    /// Gris corrigé (0 à 1).
+    pub fn appliquer(&self, g: f64) -> f64 {
+        ((g - self.gris_noir) / (self.gris_blanc - self.gris_noir))
+            .clamp(0.0, 1.0)
+            .powf(self.courbe)
+    }
+}
+
+/// Part des pixels opaques **en couleur** (écart entre canaux > 24 sur 255), sur un échantillon d'au plus ~1 Mpx. Une
+/// carte de relief est en niveaux de gris : au-delà de quelques pour cent, c'est sans doute la carte couleurs.
+pub fn part_coloree(image: &ImageRgba) -> f64 {
+    let n = (image.largeur as usize) * (image.hauteur as usize);
+    let pas = (n / 1_000_000).max(1);
+    let (mut opaques, mut colores) = (0usize, 0usize);
+    for p in image.rgba.as_chunks::<4>().0.iter().step_by(pas) {
+        if p[3] < ALPHA_DONNEE {
+            continue;
+        }
+        opaques += 1;
+        let (mx, mn) = (p[0].max(p[1]).max(p[2]), p[0].min(p[1]).min(p[2]));
+        if mx - mn > 24 {
+            colores += 1;
+        }
+    }
+    if opaques == 0 {
+        0.0
+    } else {
+        colores as f64 / opaques as f64
+    }
+}
+
 /// Lissage conseillé (m) pour effacer les marches des 256 niveaux : ~25 fois la hauteur d'une marche
 /// (`(blanc − noir) / 255`), et au moins 2 pixels de l'image. Constaté à l'écran sur l'exemple de la convention
 /// (2,5 m par niveau, 4 m par pixel) : 8 m laisse des arcs le long des courbes de niveau, 48 m les efface ; un critère
@@ -71,17 +139,18 @@ pub fn gris(image: &ImageRgba, px: f64, py: f64) -> Option<f64> {
     }
 }
 
-/// Altitude lue sous le point `p` de la carte : `bas + gris × (haut − bas)`, ou `None` hors de l'image ou sur un
-/// pixel transparent.
+/// Altitude lue sous le point `p` de la carte : `bas + niveaux(gris) × (haut − bas)`, ou `None` hors de l'image ou
+/// sur un pixel transparent.
 pub fn altitude_sous(
     reference: &Reference,
     image: &ImageRgba,
     p: [f64; 2],
     bas: f64,
     haut: f64,
+    niveaux: &Niveaux,
 ) -> Option<f64> {
     let (px, py) = reference.vers_image(p);
-    gris(image, px, py).map(|g| bas + g * (haut - bas))
+    gris(image, px, py).map(|g| bas + niveaux.appliquer(g) * (haut - bas))
 }
 
 /// Moyenne glissante séparable (carré de côté `2 × rayon + 1`) sur une grille `largeur × hauteur` où `NaN` = pas de
@@ -155,6 +224,33 @@ mod tests {
         assert_eq!(gris(&trou, 0.5, 0.5), None);
         // À côté du trou : le pixel le plus proche, sans mélange avec le trou.
         assert_eq!(gris(&trou, 1.2, 0.5), Some(1.0));
+    }
+
+    #[test]
+    fn niveaux_et_detection_des_couleurs() {
+        let n = Niveaux {
+            gris_noir: 0.1,
+            gris_blanc: 0.9,
+            courbe: 2.0,
+        };
+        assert_eq!(n.appliquer(0.05), 0.0);
+        assert_eq!(n.appliquer(0.95), 1.0);
+        assert!((n.appliquer(0.5) - 0.25).abs() < 1e-12, "milieu au carré");
+        assert!(n.valider().is_ok());
+        assert!(Niveaux { courbe: 0.0, ..n }.valider().is_err());
+        assert!(
+            Niveaux {
+                gris_noir: 0.9,
+                gris_blanc: 0.1,
+                ..n
+            }
+            .valider()
+            .is_err()
+        );
+        let gris = image(2, 1, &[[10, 10, 10, 255], [200, 200, 200, 255]]);
+        let couleurs = image(2, 1, &[[184, 217, 155, 255], [64, 150, 220, 255]]);
+        assert_eq!(part_coloree(&gris), 0.0);
+        assert_eq!(part_coloree(&couleurs), 1.0);
     }
 
     #[test]

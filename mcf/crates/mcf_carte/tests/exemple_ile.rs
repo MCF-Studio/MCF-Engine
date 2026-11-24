@@ -51,6 +51,7 @@ fn ile_exemple_de_bout_en_bout() {
             -40.0,
             600.0,
             relief_image::lissage_conseille(-40.0, 600.0, 4.0),
+            &relief_image::Niveaux::default(),
         )
         .expect("relief");
     println!("MESURE relief : {n} points en {:?}", t.elapsed());

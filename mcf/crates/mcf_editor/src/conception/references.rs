@@ -22,6 +22,11 @@ use super::{COUCHE_3D, COUCHE_PLAN, CibleGlisse, Edition, Projet, textures::mipm
 const DRAPE: usize = 128;
 /// Hauteur du drapé au-dessus du sol (m) : évite le scintillement avec le terrain.
 const DRAPE_DESSUS_M: f64 = 0.35;
+/// Écart vertical entre deux calques superposés dans le Plan (m) : 16 calques au plus tiennent sous le voile des
+/// quartiers (+10 m au-dessus des calques).
+const ETAGE_PLAN_M: f32 = 0.5;
+/// Même écart pour le drapé 3D (m).
+const ETAGE_3D_M: f64 = 0.08;
 
 pub struct ReferencesPlugin;
 
@@ -110,7 +115,10 @@ fn afficher(
         a_poser.push((r, texture));
     }
     let sol = &projet.carte.derive().terrain;
-    for (r, texture) in a_poser {
+    // Chaque calque un peu au-dessus du précédent (ordre de la liste) : deux calques à la même hauteur se disputent
+    // l'affichage d'une image à l'autre et scintillent.
+    for (k, (r, texture)) in a_poser.into_iter().enumerate() {
+        let etage = k as f32;
         let materiau = materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 1.0, 1.0, r.opacite),
             base_color_texture: Some(texture),
@@ -121,14 +129,14 @@ fn afficher(
         });
         commands.spawn((
             Calque,
-            Mesh3d(meshes.add(quadrilatere(r, altitude))),
+            Mesh3d(meshes.add(quadrilatere(r, altitude + ETAGE_PLAN_M * etage))),
             MeshMaterial3d(materiau.clone()),
             Transform::IDENTITY,
             RenderLayers::layer(COUCHE_PLAN),
         ));
         commands.spawn((
             Calque,
-            Mesh3d(meshes.add(drape(r, sol))),
+            Mesh3d(meshes.add(drape(r, sol, DRAPE_DESSUS_M + ETAGE_3D_M * f64::from(etage)))),
             MeshMaterial3d(materiau),
             Transform::IDENTITY,
             RenderLayers::layer(COUCHE_3D),
@@ -175,8 +183,8 @@ fn quadrilatere(r: &Reference, y: f32) -> Mesh {
 }
 
 /// Image drapée sur le terrain : grille de `DRAPE` × `DRAPE` mailles entre les quatre coins du calque, chaque
-/// point posé `DRAPE_DESSUS_M` au-dessus du sol (hors de la carte : hauteur du bord le plus proche, cf. `Relief::hauteur`).
-fn drape(r: &Reference, sol: &Relief) -> Mesh {
+/// point posé `dessus` mètres au-dessus du sol (hors de la carte : hauteur du bord le plus proche, cf. `Relief::hauteur`).
+fn drape(r: &Reference, sol: &Relief, dessus: f64) -> Mesh {
     let [hg, hd, bd, bg] = r.coins();
     let lerp = |a: [f64; 2], b: [f64; 2], t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
     let n = DRAPE + 1;
@@ -188,7 +196,7 @@ fn drape(r: &Reference, sol: &Relief) -> Mesh {
         for i in 0..n {
             let u = i as f64 / DRAPE as f64;
             let p = lerp(gauche, droite, u);
-            let y = sol.hauteur(p) + DRAPE_DESSUS_M;
+            let y = sol.hauteur(p) + dessus;
             positions.push([p[0] as f32, y as f32, p[1] as f32]);
             uvs.push([u as f32, v as f32]);
         }

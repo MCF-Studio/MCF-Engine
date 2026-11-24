@@ -286,6 +286,8 @@ pub struct Edition {
     pub relief_blanc_m: f64,
     /// Relief depuis un calque : lissage (m).
     pub relief_lissage_m: f64,
+    /// Relief depuis un calque : niveaux (équilibre clair / foncé).
+    pub relief_niveaux: mcf_carte::relief_image::Niveaux,
     /// Plage d'altitude d'une nouvelle carte (m) : minimum et maximum.
     pub nouvelle_plage_m: (f64, f64),
 }
@@ -323,6 +325,7 @@ impl Default for Edition {
             relief_noir_m: 0.0,
             relief_blanc_m: 400.0,
             relief_lissage_m: 20.0,
+            relief_niveaux: mcf_carte::relief_image::Niveaux::default(),
             nouvelle_plage_m: (-64.0, 448.0),
         }
     }

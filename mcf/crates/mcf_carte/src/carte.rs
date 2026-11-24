@@ -807,7 +807,9 @@ impl Carte {
     }
 
     /// Relief tiré d'un calque de référence en niveaux de gris (convention `docs/CONVENTION_CARTES_SOURCE.md`) :
-    /// sous l'image, chaque échantillon prend l'altitude `bas + gris × (haut − bas)` (noir = `bas`, blanc = `haut`).
+    /// sous l'image, chaque échantillon prend l'altitude `bas + niveaux(gris) × (haut − bas)` (noir = `bas`, blanc =
+    /// `haut` ; `niveaux` rééquilibre clair et foncé). Un calque **en couleurs** est refusé (c'est la carte couleurs, pas la
+    /// carte de relief : la lire en gris inverserait montagnes et plaines).
     /// Un pixel transparent ne porte pas de donnée : le relief y reste tel quel. `lissage_m` adoucit les marches des
     /// 256 niveaux de gris (moyenne glissante, 0 = aucune). Une seule étape d'historique ; renvoie le nombre
     /// d'échantillons modifiés.
@@ -817,8 +819,9 @@ impl Carte {
         bas: f64,
         haut: f64,
         lissage_m: f64,
+        niveaux: &crate::relief_image::Niveaux,
     ) -> Result<usize, String> {
-        use crate::relief_image::{LISSAGE_MAX_M, altitude_sous, lisser};
+        use crate::relief_image::{LISSAGE_MAX_M, altitude_sous, lisser, part_coloree};
         self.fin_trait();
         let (min, max) = (self.manifeste.altitude_min_m, self.manifeste.altitude_max_m);
         let plage = min..=max;
@@ -830,6 +833,7 @@ impl Carte {
         if !(lissage_m.is_finite() && (0.0..=LISSAGE_MAX_M).contains(&lissage_m)) {
             return Err(format!("lissage hors limites (0 à {LISSAGE_MAX_M} m)"));
         }
+        niveaux.valider()?;
         let reference = self
             .references
             .references
@@ -841,6 +845,14 @@ impl Carte {
             .get(&id)
             .ok_or("image du calque absente")?
             .clone();
+        let couleur = part_coloree(&image);
+        if couleur > 0.05 {
+            return Err(format!(
+                "« {} » est en couleurs ({:.0} % des pixels) : choisissez le calque de relief en niveaux de gris",
+                reference.nom,
+                couleur * 100.0
+            ));
+        }
         // Échantillons sous l'emprise du calque.
         let coins = reference.coins();
         let (a, b) = coins
@@ -865,7 +877,7 @@ impl Carte {
         for iz in 0..h {
             for ix in 0..w {
                 let p = r.position(zone.x0 + ix, zone.z0 + iz);
-                if let Some(alt) = altitude_sous(&reference, &image, p, bas, haut) {
+                if let Some(alt) = altitude_sous(&reference, &image, p, bas, haut, niveaux) {
                     cible[iz * w + ix] = alt as f32;
                 }
             }
@@ -1182,7 +1194,9 @@ mod tests {
             .expect("import");
         // 128 m par pixel : centres des pixels à x = −192, −64, 64 et 192 m, image haute de 128 m (z de −256 à −128).
         let (noir, gris, blanc, trou) = ([-192.0, -192.0], [-64.0, -192.0], [64.0, -192.0], [192.0, -192.0]);
-        let n = c.relief_depuis_reference(id, 0.0, 400.0, 0.0).expect("relief");
+        let n = c
+            .relief_depuis_reference(id, 0.0, 400.0, 0.0, &Default::default())
+            .expect("relief");
         assert!(n > 0);
         assert_eq!(c.relief.hauteur(noir), 0.0);
         assert!((c.relief.hauteur(gris) - 400.0 * 128.0 / 255.0).abs() < 0.01);
@@ -1196,9 +1210,18 @@ mod tests {
         assert_eq!(c.annuler().as_deref(), Some("Relief depuis un calque"));
         assert_eq!(c.relief.hauteur(blanc), 0.0);
         // Bornes : hors de la plage de la carte, ou noir au-dessus du blanc.
-        assert!(c.relief_depuis_reference(id, 0.0, 1000.0, 0.0).is_err());
-        assert!(c.relief_depuis_reference(id, 300.0, 100.0, 0.0).is_err());
-        assert!(c.relief_depuis_reference(id, 0.0, 400.0, f64::NAN).is_err());
+        assert!(
+            c.relief_depuis_reference(id, 0.0, 1000.0, 0.0, &Default::default())
+                .is_err()
+        );
+        assert!(
+            c.relief_depuis_reference(id, 300.0, 100.0, 0.0, &Default::default())
+                .is_err()
+        );
+        assert!(
+            c.relief_depuis_reference(id, 0.0, 400.0, f64::NAN, &Default::default())
+                .is_err()
+        );
     }
 
     #[test]
