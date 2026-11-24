@@ -2,6 +2,7 @@
 
 > **Obsolète depuis le 2026-11-22** (ADR-0001). Remplacée par `SPEC_CONCEPTION_CARTE_2D_3D.md`. Le convertisseur
 > `mcf_map_import_2d` et l'exemple `port_demo` ont été retirés ; ce document n'est gardé que pour l'historique.
+> Pour préparer une carte qui sert de modèle à l'éditeur : [`CONVENTION_CARTES_SOURCE.md`](CONVENTION_CARTES_SOURCE.md).
 
 Ce document définit le contrat du futur outil de création de cartes 2D. Il
 permet de transformer sans ambiguïté un plan, ses routes et ses zones en

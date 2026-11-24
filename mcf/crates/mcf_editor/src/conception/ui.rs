@@ -320,13 +320,47 @@ fn cadre(
         )
     };
     ui.label(egui::RichText::new(texte).small().color(couleur));
+    // Plage d'altitude fixée à la création (codage 16 bits du relief : 4 096 m d'écart au plus).
+    ui.horizontal(|ui| {
+        ui.label("Altitudes");
+        let (bas, haut) = &mut edition.nouvelle_plage_m;
+        ui.add(
+            egui::DragValue::new(bas)
+                .range(-1000.0..=8999.0)
+                .speed(1.0)
+                .suffix(" m"),
+        );
+        ui.label("à");
+        ui.add(
+            egui::DragValue::new(haut)
+                .range(-999.0..=9000.0)
+                .speed(1.0)
+                .suffix(" m"),
+        );
+    })
+    .response
+    .on_hover_text(
+        "Plus bas et plus haut point possibles de la carte (fond marin, sommets). Écart de 4 096 m au plus ; \
+         précision du relief = écart / 65 535.",
+    );
+    let (bas, haut) = edition.nouvelle_plage_m;
+    ui.label(
+        egui::RichText::new(format!(
+            "Précision du relief : {:.1} cm.",
+            (haut - bas) / 65_535.0 * 100.0
+        ))
+        .small()
+        .weak(),
+    );
     if ui.button("Créer (vierge, plate)").clicked() {
         edition.nouvelle_taille = Manifeste::arrondir_taille(edition.nouvelle_taille);
         let nom = edition.nouveau_nom.trim().to_owned();
+        let mut manifeste = Manifeste::nouveau(&nom, edition.nouvelle_taille);
+        (manifeste.altitude_min_m, manifeste.altitude_max_m) = edition.nouvelle_plage_m;
         if !mcf_carte::manifeste::nom_sur(&nom) {
             projet.echec("Nom refusé : minuscules, chiffres, « _ » et « - » seulement (64 au plus).");
         } else {
-            match Carte::nouvelle(Manifeste::nouveau(&nom, edition.nouvelle_taille)) {
+            match Carte::nouvelle(manifeste) {
                 Ok(c) => {
                     remplacer(projet, edition, c, plan, orbite);
                     edition.chemin.clear();
@@ -1125,5 +1159,103 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
             });
             edition.points.clear();
         }
+    }
+    meme_calage(ui, projet, edition, id);
+    relief_depuis_calque(ui, projet, edition, id);
+}
+
+/// Recopie le calage d'un autre calque de même cadrage (carte couleurs et carte de relief d'une même zone) : même coin,
+/// même rotation, et une échelle ramenée à la largeur en pixels de ce calque.
+fn meme_calage(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, id: mcf_carte::Id) {
+    let autres: Vec<_> = projet
+        .carte
+        .references
+        .references
+        .iter()
+        .filter(|(i, _)| **i != id)
+        .map(|(i, r)| (*i, r.clone()))
+        .collect();
+    if autres.is_empty() {
+        return;
+    }
+    ui.menu_button("Même calage que…", |ui| {
+        for (_, modele) in autres {
+            if ui.button(&modele.nom).clicked() {
+                let r = projet.carte.modifier_reference(id, "Recopier un calage", |r| {
+                    r.coin = modele.coin;
+                    r.rotation_deg = modele.rotation_deg;
+                    r.m_par_px = modele.m_par_px * f64::from(modele.largeur_px) / f64::from(r.largeur_px);
+                    Ok(())
+                });
+                projet.resultat(r, |()| {
+                    format!("Calage recopié de « {} » (même cadrage supposé).", modele.nom)
+                });
+                edition.reference_saisie = None;
+                ui.close();
+            }
+        }
+    })
+    .response
+    .on_hover_text("Pour deux images du même cadrage : la carte couleurs déjà calée et sa carte de relief.");
+}
+
+/// Applique le calque actif comme carte de relief en niveaux de gris (noir = bas, blanc = haut, transparent = rien).
+fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, id: mcf_carte::Id) {
+    ui.add_space(4.0);
+    ui.strong("Relief depuis ce calque");
+    ui.label(
+        egui::RichText::new(
+            "Image en niveaux de gris : noir = altitude du noir, blanc = altitude du blanc, transparent = relief \
+             inchangé. Calez-la d'abord (« Même calage que… »).",
+        )
+        .small()
+        .weak(),
+    );
+    let (min, max) = (
+        projet.carte.manifeste.altitude_min_m,
+        projet.carte.manifeste.altitude_max_m,
+    );
+    egui::Grid::new("relief_calque").num_columns(2).show(ui, |ui| {
+        ui.label("Noir");
+        ui.add(
+            egui::DragValue::new(&mut edition.relief_noir_m)
+                .range(min..=max)
+                .speed(1.0)
+                .suffix(" m"),
+        );
+        ui.end_row();
+        ui.label("Blanc");
+        ui.add(
+            egui::DragValue::new(&mut edition.relief_blanc_m)
+                .range(min..=max)
+                .speed(1.0)
+                .suffix(" m"),
+        );
+        ui.end_row();
+        ui.label("Lissage");
+        ui.add(
+            egui::DragValue::new(&mut edition.relief_lissage_m)
+                .range(0.0..=mcf_carte::relief_image::LISSAGE_MAX_M)
+                .speed(1.0)
+                .suffix(" m"),
+        )
+        .on_hover_text("Adoucit les marches des 256 niveaux de gris (0 = aucun).");
+        ui.end_row();
+    });
+    ui.label(
+        egui::RichText::new(format!("Plage d'altitude de la carte : {min} à {max} m."))
+            .small()
+            .weak(),
+    );
+    if ui.button("⛰ Appliquer comme relief").clicked() {
+        let r = projet.carte.relief_depuis_reference(
+            id,
+            edition.relief_noir_m,
+            edition.relief_blanc_m,
+            edition.relief_lissage_m,
+        );
+        projet.resultat(r, |n| {
+            format!("Relief appliqué : {n} points modifiés (Ctrl+Z pour annuler).")
+        });
     }
 }

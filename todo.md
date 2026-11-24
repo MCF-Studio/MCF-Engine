@@ -28,10 +28,17 @@
       **morcelées** par les rues (Tolosa : plus grande tache 6,2 km² sur ~60) : monter « Combler ». A1 relevée **par
       tronçons** (4,4 km d'un clic) : le dessin est coupé aux panneaux et aux échangeurs. Les routes très fines ou
       en pointillés demandent un clic précis sur le trait.
-  - À trancher (Aroun) : `map_1.png` couvre **32 × 32 km**, la carte est plafonnée à **16 km** de côté (relief en
-    mémoire). Soit on vise une portion, soit on relève le plafond (à mesurer). À 1 254 pixels pour 32 km, l'image vaut
-    ~25 m par pixel : bonne pour les grands axes, villes et côtes, trop grossière pour les rues (les plans de ville
-    de `map/city/` serviront pour ça).
+  - [x] ~~À trancher : carte plafonnée à 16 km~~ → **plafond relevé à 32 km** (côté saisi librement ; relief à 1 m
+    jusqu'à 8 km, 2 m jusqu'à 16 km, 4 m au-delà). À 1 254 pixels pour 32 km, `map_1.png` vaut ~25 m par pixel :
+    bonne pour les grands axes, villes et côtes, trop grossière pour les rues (les plans de `map/city/` serviront).
+  - [x] **Étape 3 : relief depuis une carte en niveaux de gris** (codée, testée de bout en bout ; **pas encore vue à
+    l'écran**). Convention et exemple : `docs/CONVENTION_CARTES_SOURCE.md` (deux images au même cadrage : carte
+    couleurs + carte de relief). Sur le calque de relief : « Même calage que… » la carte couleurs, altitudes du noir
+    et du blanc, lissage, « ⛰ Appliquer comme relief ». Plage d'altitude réglable à la création de la carte.
+    - Exemple `docs/exemples/ile_exemple_*.png` (4 km) : relief 0,87 s, mer 0,89 s, ville et autoroute relevées d'un
+      clic (mesures brutes, `--release`).
+    - `map_1.png` et `map_sat.png` n'ont **pas** le relief en chiffres : demander une carte de relief au même cadrage
+      (prompts dans la convention).
 - [x] Rendu : luminosité, ciel, textures plus qualitatives → première passe codée. **Pas encore vue à l'écran**
   (compilée, testée, éditeur non lancé).
   - Ciel physique de Bevy (`Atmosphere`) au lieu du fond bleu uni et du brouillard : ciel, disque solaire, brume
@@ -53,3 +60,7 @@ Tant qu'on est à ce niveau-là de l'éditeur, j'ai prévu d'avoir les bâtiment
 et il faudra prévoir que l'on puisse importer des cartes 2D qui ont des tracés et que l'éditeur les convertisse pour pouvoir afficher les tracés correctement et refaire la map 2D aux conventions de l'éditeur. Ce qu'il faut c'est vraiment pouvoir relever le tracé des routes, les reliefs si on arrive à l'éditeur. Et les endroits où sont les bâtiments. C'est entre si on te donne une satmap ou une map un peu stylisée qu'on arrive à pouvoir s'en servir comme modèle. Je t'ai mis un chemin en référence du type de carte. Je l'ai bien dit du type de carte, c'est pas spécialement ça mais on pourrait obtenir avec l'éditeur si on pouvait obtenir ça. envoyé dans l'éditeur justement pour servir de modèle "G:\MCF-Remember-this-life\docs\map"
 Et bien entendu, il faudra travailler un peu le rendu parce que là la luminosité est vraiment pas ouf. Il faudra mettre quand même une skybox, on ait quand même l'impression d'être dans un monde. Et essayer de trouver des textures, mettre des textures un peu plus qualitatives. Si tu veux, donne moi un prompt, je peux faire générer des textures par ton grand copain qui s'appelle ChatGPT.
 et puis il faudrait qu'avec A et E on puisse monter et descendre avec la caméra
+
+
+
+

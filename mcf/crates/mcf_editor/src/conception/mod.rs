@@ -280,6 +280,14 @@ pub struct Edition {
     pub distance_calage: f64,
     /// Relevé assisté sur le calque actif (propositions en attente).
     pub releve: releve::EtatReleve,
+    /// Relief depuis un calque : altitude du noir (m).
+    pub relief_noir_m: f64,
+    /// Relief depuis un calque : altitude du blanc (m).
+    pub relief_blanc_m: f64,
+    /// Relief depuis un calque : lissage (m).
+    pub relief_lissage_m: f64,
+    /// Plage d'altitude d'une nouvelle carte (m) : minimum et maximum.
+    pub nouvelle_plage_m: (f64, f64),
 }
 
 impl Default for Edition {
@@ -312,6 +320,10 @@ impl Default for Edition {
             chemin_image: String::new(),
             distance_calage: 1000.0,
             releve: releve::EtatReleve::default(),
+            relief_noir_m: 0.0,
+            relief_blanc_m: 400.0,
+            relief_lissage_m: 20.0,
+            nouvelle_plage_m: (-64.0, 448.0),
         }
     }
 }

@@ -19,6 +19,7 @@ pub mod quartiers;
 pub mod references;
 pub mod releve;
 pub mod relief;
+pub mod relief_image;
 pub mod reseau;
 
 pub use batiments::{Batiment, Origine};

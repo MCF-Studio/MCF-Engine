@@ -260,7 +260,11 @@ impl Carte {
     /// Nouvelle carte vide (relief plat à 0 m), non encore enregistrée.
     pub fn nouvelle(manifeste: Manifeste) -> Result<Self, String> {
         manifeste.valider()?;
-        let relief = Relief::plat(&manifeste, 0.0);
+        // Plat à 0 m, ou au bord le plus proche si la plage d'altitude ne contient pas 0.
+        let relief = Relief::plat(
+            &manifeste,
+            0.0f64.clamp(manifeste.altitude_min_m, manifeste.altitude_max_m),
+        );
         let (tx, tz) = manifeste.tuiles();
         Ok(Self {
             dossier: None,
@@ -802,6 +806,109 @@ impl Carte {
         Ok(abaisses)
     }
 
+    /// Relief tiré d'un calque de référence en niveaux de gris (convention `docs/CONVENTION_CARTES_SOURCE.md`) :
+    /// sous l'image, chaque échantillon prend l'altitude `bas + gris × (haut − bas)` (noir = `bas`, blanc = `haut`).
+    /// Un pixel transparent ne porte pas de donnée : le relief y reste tel quel. `lissage_m` adoucit les marches des
+    /// 256 niveaux de gris (moyenne glissante, 0 = aucune). Une seule étape d'historique ; renvoie le nombre
+    /// d'échantillons modifiés.
+    pub fn relief_depuis_reference(
+        &mut self,
+        id: Id,
+        bas: f64,
+        haut: f64,
+        lissage_m: f64,
+    ) -> Result<usize, String> {
+        use crate::relief_image::{LISSAGE_MAX_M, altitude_sous, lisser};
+        self.fin_trait();
+        let (min, max) = (self.manifeste.altitude_min_m, self.manifeste.altitude_max_m);
+        let plage = min..=max;
+        if !(plage.contains(&bas) && plage.contains(&haut) && bas < haut) {
+            return Err(format!(
+                "altitudes du noir et du blanc : dans la plage de la carte ({min} à {max} m), noir plus bas que blanc"
+            ));
+        }
+        if !(lissage_m.is_finite() && (0.0..=LISSAGE_MAX_M).contains(&lissage_m)) {
+            return Err(format!("lissage hors limites (0 à {LISSAGE_MAX_M} m)"));
+        }
+        let reference = self
+            .references
+            .references
+            .get(&id)
+            .ok_or("calque de référence introuvable")?
+            .clone();
+        let image = self
+            .images_references
+            .get(&id)
+            .ok_or("image du calque absente")?
+            .clone();
+        // Échantillons sous l'emprise du calque.
+        let coins = reference.coins();
+        let (a, b) = coins
+            .iter()
+            .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(a, b), c| {
+                ([a[0].min(c[0]), a[1].min(c[1])], [b[0].max(c[0]), b[1].max(c[1])])
+            });
+        let r = &self.relief;
+        let indice = |v: f64, o: f64| ((v - o) / r.resolution).floor();
+        let borne = |v: f64, n: usize| v.clamp(0.0, n as f64) as usize;
+        let zone = Zone {
+            x0: borne(indice(a[0], r.origine[0]), r.nx),
+            z0: borne(indice(a[1], r.origine[1]), r.nz),
+            x1: borne(indice(b[0], r.origine[0]) + 2.0, r.nx),
+            z1: borne(indice(b[1], r.origine[1]) + 2.0, r.nz),
+        };
+        if zone.vide() {
+            return Err("le calque est hors de la carte".into());
+        }
+        let (w, h) = (zone.x1 - zone.x0, zone.z1 - zone.z0);
+        let mut cible = vec![f32::NAN; w * h];
+        for iz in 0..h {
+            for ix in 0..w {
+                let p = r.position(zone.x0 + ix, zone.z0 + iz);
+                if let Some(alt) = altitude_sous(&reference, &image, p, bas, haut) {
+                    cible[iz * w + ix] = alt as f32;
+                }
+            }
+        }
+        let rayon = (lissage_m / r.resolution).round() as usize;
+        lisser(&mut cible, w, h, rayon);
+        let mut etape = Etape {
+            libelle: "Relief depuis un calque".into(),
+            ..Default::default()
+        };
+        for (bx, bz) in blocs_de(zone) {
+            etape
+                .relief
+                .entry((bx, bz))
+                .or_insert_with(|| self.relief.copier(self.zone_bloc(bx, bz)));
+        }
+        let mut modifies = 0;
+        for iz in 0..h {
+            for ix in 0..w {
+                let v = cible[iz * w + ix];
+                if v.is_nan() {
+                    continue;
+                }
+                let v = v.clamp(min as f32, max as f32);
+                let i = self.relief.index(zone.x0 + ix, zone.z0 + iz);
+                if self.relief.h[i] != v {
+                    self.relief.h[i] = v;
+                    modifies += 1;
+                }
+            }
+        }
+        if modifies == 0 {
+            return Err("aucun échantillon de relief modifié (calque transparent, hors de la carte, ou déjà appliqué)".into());
+        }
+        self.marquer(&etape);
+        self.passe.push(etape);
+        if self.passe.len() > HISTORIQUE_MAX {
+            self.passe.remove(0);
+        }
+        self.futur.clear();
+        Ok(modifies)
+    }
+
     /// Calques valides et images présentes, aux bonnes dimensions.
     fn valider_references(&self) -> Result<(), String> {
         self.references
@@ -1053,6 +1160,45 @@ mod tests {
         assert_eq!(c.manifeste.niveau_eau_m, None);
         assert_eq!(c.relief.hauteur(dans), 0.0);
         assert!(c.creuser_eau(eau, 1e6, 6.0, 20.0).is_err());
+    }
+
+    #[test]
+    fn relief_depuis_un_calque_en_niveaux_de_gris() {
+        // Carte de 512 m (−64 à 448 m) ; image 4 × 1 étirée sur toute la largeur : noir, gris, blanc, transparent.
+        let mut c = Carte::nouvelle(Manifeste::nouveau("relief", 512.0)).expect("carte");
+        let px = |g: u8, a: u8| [g, g, g, a];
+        let image = ImageRgba {
+            largeur: 4,
+            hauteur: 1,
+            rgba: std::sync::Arc::new(
+                [px(0, 255), px(128, 255), px(255, 255), px(0, 0)]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+            ),
+        };
+        let id = c
+            .importer_reference("relief", &references::encoder_png(&image).expect("png"))
+            .expect("import");
+        // 128 m par pixel : centres des pixels à x = −192, −64, 64 et 192 m, image haute de 128 m (z de −256 à −128).
+        let (noir, gris, blanc, trou) = ([-192.0, -192.0], [-64.0, -192.0], [64.0, -192.0], [192.0, -192.0]);
+        let n = c.relief_depuis_reference(id, 0.0, 400.0, 0.0).expect("relief");
+        assert!(n > 0);
+        assert_eq!(c.relief.hauteur(noir), 0.0);
+        assert!((c.relief.hauteur(gris) - 400.0 * 128.0 / 255.0).abs() < 0.01);
+        assert_eq!(c.relief.hauteur(blanc), 400.0);
+        assert_eq!(c.relief.hauteur(trou), 0.0, "pixel transparent : relief intact");
+        assert_eq!(
+            c.relief.hauteur([0.0, 100.0]),
+            0.0,
+            "hors de l'image : relief intact"
+        );
+        assert_eq!(c.annuler().as_deref(), Some("Relief depuis un calque"));
+        assert_eq!(c.relief.hauteur(blanc), 0.0);
+        // Bornes : hors de la plage de la carte, ou noir au-dessus du blanc.
+        assert!(c.relief_depuis_reference(id, 0.0, 1000.0, 0.0).is_err());
+        assert!(c.relief_depuis_reference(id, 300.0, 100.0, 0.0).is_err());
+        assert!(c.relief_depuis_reference(id, 0.0, 400.0, f64::NAN).is_err());
     }
 
     #[test]
