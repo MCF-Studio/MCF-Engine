@@ -56,6 +56,8 @@ fn remplacer(
     edition.selection = Selection::Rien;
     edition.points.clear();
     edition.glisse = None;
+    edition.reference_active = None;
+    edition.reference_saisie = None;
 }
 
 /// Thème de l'éditeur : police plus grande, accents de couleur.
@@ -348,6 +350,8 @@ fn cadre(
             Err(e) => projet.echec(e),
         }
     }
+    ui.separator();
+    calques_reference(ui, projet, edition);
     ui.separator();
     ui.strong("Carte");
     let m = projet.carte.manifeste.clone();
@@ -828,4 +832,197 @@ fn statistiques(ui: &mut egui::Ui, projet: &mut Projet) {
             ui.end_row();
         }
     });
+}
+
+/// Calques de référence : importer une image, la régler, la caler (spec §8). Les réglages s'affichent en direct et
+/// ne sont écrits (une étape d'historique) qu'avec « Appliquer ».
+fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
+    ui.strong("Calques de référence");
+    ui.label(
+        egui::RichText::new(
+            "Une image (plan, satmap, croquis) posée dans le Plan pour décalquer routes, relief et bâti. \
+             Elle ne crée rien toute seule.",
+        )
+        .small()
+        .weak(),
+    );
+    ui.horizontal(|ui| {
+        ui.label("Image PNG");
+        ui.text_edit_singleline(&mut edition.chemin_image);
+    });
+    if ui.button("Importer l'image").clicked() {
+        let chemin = PathBuf::from(edition.chemin_image.trim().trim_matches('"'));
+        match projet.carte.importer_reference_fichier(&chemin) {
+            Ok(id) => {
+                edition.reference_active = Some(id);
+                edition.reference_saisie = None;
+                edition.disposition = Disposition::Partagee;
+                projet.info(
+                    "Calque importé sur toute la largeur de la carte. Calez-le : « Caler » (deux repères \
+                     de distance connue), puis « Déplacer ».",
+                );
+            }
+            Err(e) => projet.echec(format!("Import refusé : {e}")),
+        }
+    }
+    // Calque retiré (annuler, autre carte) : on oublie la saisie.
+    if edition
+        .reference_active
+        .is_some_and(|id| !projet.carte.references.references.contains_key(&id))
+    {
+        edition.reference_active = None;
+        edition.reference_saisie = None;
+    }
+    let liste: Vec<_> = projet
+        .carte
+        .references
+        .references
+        .iter()
+        .map(|(id, r)| (*id, r.nom.clone(), r.visible))
+        .collect();
+    for (id, nom, visible) in liste {
+        ui.horizontal(|ui| {
+            let mut v = visible;
+            if ui.checkbox(&mut v, "").on_hover_text("Afficher").changed() {
+                let r = projet.carte.modifier_reference(id, "Afficher un calque", |r| {
+                    r.visible = v;
+                    Ok(())
+                });
+                if let Err(e) = r {
+                    projet.echec(e);
+                }
+            }
+            let actif = edition.reference_active == Some(id);
+            if ui.selectable_label(actif, nom).clicked() && !actif {
+                edition.reference_active = Some(id);
+                edition.reference_saisie = None;
+            }
+            if ui
+                .small_button("🗑")
+                .on_hover_text("Retirer (annulable)")
+                .clicked()
+            {
+                let r = projet.carte.retirer_reference(id);
+                projet.resultat(r, |()| "Calque retiré (Ctrl+Z pour l'annuler).".into());
+            }
+        });
+    }
+    let Some(id) = edition.reference_active else {
+        return;
+    };
+    let Some(enregistre) = projet.carte.references.references.get(&id).cloned() else {
+        return;
+    };
+    if edition.reference_saisie.as_ref().is_none_or(|(i, _)| *i != id) {
+        edition.reference_saisie = Some((id, enregistre.clone()));
+    }
+    let Some((_, saisie)) = edition.reference_saisie.as_mut() else {
+        return;
+    };
+    let (min, max) = mcf_carte::references::ECHELLE_M_PAR_PX;
+    egui::Grid::new("reference").num_columns(2).show(ui, |ui| {
+        ui.label("Opacité");
+        ui.add(egui::Slider::new(&mut saisie.opacite, 0.05..=1.0));
+        ui.end_row();
+        ui.label("Échelle");
+        let vitesse = saisie.m_par_px * 0.002;
+        ui.add(
+            egui::DragValue::new(&mut saisie.m_par_px)
+                .speed(vitesse)
+                .range(min..=max)
+                .suffix(" m/pixel"),
+        );
+        ui.end_row();
+        ui.label("Rotation");
+        ui.add(
+            egui::DragValue::new(&mut saisie.rotation_deg)
+                .speed(0.1)
+                .range(-360.0..=360.0)
+                .suffix(" °"),
+        );
+        ui.end_row();
+        ui.label("Coin haut gauche");
+        ui.horizontal(|ui| {
+            ui.add(egui::DragValue::new(&mut saisie.coin[0]).speed(1.0).prefix("x "));
+            ui.add(egui::DragValue::new(&mut saisie.coin[1]).speed(1.0).prefix("z "));
+        });
+        ui.end_row();
+    });
+    let largeur = f64::from(saisie.largeur_px) * saisie.m_par_px;
+    let hauteur = f64::from(saisie.hauteur_px) * saisie.m_par_px;
+    ui.label(
+        egui::RichText::new(format!(
+            "Image : {} × {} pixels, soit {largeur:.0} × {hauteur:.0} m.",
+            saisie.largeur_px, saisie.hauteur_px
+        ))
+        .small(),
+    );
+    let modifie = *saisie != enregistre;
+    let nouveau = saisie.clone();
+    ui.horizontal(|ui| {
+        if ui.add_enabled(modifie, egui::Button::new("Appliquer")).clicked() {
+            let r = projet
+                .carte
+                .modifier_reference(id, "Régler un calque de référence", |r| {
+                    *r = nouveau;
+                    Ok(())
+                });
+            projet.resultat(r, |()| "Réglages du calque appliqués.".into());
+            edition.reference_saisie = None;
+        }
+        if ui.add_enabled(modifie, egui::Button::new("Rétablir")).clicked() {
+            edition.reference_saisie = None;
+        }
+    });
+    ui.horizontal(|ui| {
+        for (outil, texte, aide) in [
+            (
+                Outil::DeplacerReference,
+                "✋ Déplacer",
+                "Glisser dans le Plan pour déplacer le calque.",
+            ),
+            (
+                Outil::CalerReference,
+                "📏 Caler",
+                "Cliquer deux repères de l'image dont on connaît la distance (graduations de l'échelle, deux villes…).",
+            ),
+        ] {
+            if ui
+                .selectable_label(edition.outil == outil, texte)
+                .on_hover_text(aide)
+                .clicked()
+            {
+                edition.outil = outil;
+                edition.points.clear();
+                edition.reference_saisie = None;
+            }
+        }
+    });
+    if edition.outil == Outil::CalerReference {
+        ui.label(egui::RichText::new(format!("Repères posés : {} / 2", edition.points.len().min(2))).small());
+        ui.horizontal(|ui| {
+            ui.label("Distance réelle");
+            ui.add(
+                egui::DragValue::new(&mut edition.distance_calage)
+                    .speed(10.0)
+                    .range(0.1..=1_000_000.0)
+                    .suffix(" m"),
+            );
+        });
+        if ui
+            .add_enabled(edition.points.len() >= 2, egui::Button::new("Caler l'échelle"))
+            .clicked()
+        {
+            let (a, b, dist) = (edition.points[0], edition.points[1], edition.distance_calage);
+            let r = projet
+                .carte
+                .modifier_reference(id, "Caler un calque de référence", |r| {
+                    r.caler_distance(a, b, dist)
+                });
+            projet.resultat(r, |()| {
+                "Échelle calée : le premier repère n'a pas bougé. « Déplacer » pour le poser au bon endroit.".into()
+            });
+            edition.points.clear();
+        }
+    }
 }

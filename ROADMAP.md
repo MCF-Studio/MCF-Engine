@@ -167,6 +167,9 @@ orthographique + 3D sur les mêmes maillages, étapes Cadre / Relief (5 pinceaux
 Quartiers (îlots, zones libres) / Bâti (lotir, déplacer, verrou, niveaux) / Export (aperçu, tuiles, minimap, graphe).
 Lancé une fois sur le PC (scène reconstruite en 116 ms, mode dev) ; outils pas encore essayés un par un à la main, budgets
 du §12 pas encore mesurés en `bench-release`.
+2026-11-24 : vue 3D avec ciel physique (`Atmosphere`), soleil en lux réels et textures Poly Haven ; calques de référence
+(J7, partie « calques image » : import PNG validé, calage par distance, déplacement, enregistrés). Compilés et testés,
+**pas encore vus à l'écran**.
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la

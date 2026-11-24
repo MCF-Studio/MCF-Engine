@@ -340,6 +340,31 @@ fn souris(
                 });
             }
         }
+        Outil::DeplacerReference => {
+            if appui {
+                match edition.reference_active {
+                    Some(id) => {
+                        edition.glisse = Some(Glisse {
+                            depart: p,
+                            actuel: p,
+                            cible: CibleGlisse::Reference(id),
+                        });
+                    }
+                    None => projet.echec("Choisissez d'abord un calque de référence (étape 1)."),
+                }
+            }
+        }
+        Outil::CalerReference => {
+            if appui {
+                if edition.points.len() >= 2 {
+                    edition.points.clear();
+                }
+                edition.points.push(p);
+                if edition.points.len() == 2 {
+                    projet.info("Deux repères posés : saisissez leur distance réelle, puis « Caler ».");
+                }
+            }
+        }
         Outil::Lotir => {
             if appui {
                 match quartier_en(&mut projet.carte, p) {
@@ -520,6 +545,15 @@ fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse) {
         return;
     }
     match g.cible {
+        CibleGlisse::Reference(id) => {
+            let r = projet
+                .carte
+                .modifier_reference(id, "Déplacer un calque de référence", |r| {
+                    r.coin = [r.coin[0] + delta[0], r.coin[1] + delta[1]];
+                    Ok(())
+                });
+            projet.resultat(r, |()| "Calque déplacé.".into());
+        }
         CibleGlisse::Batiments => {
             let Selection::Batiments(ids) = &edition.selection else {
                 return;
@@ -742,6 +776,18 @@ fn dessiner(
             .and_then(|t| carte.reseau.controle(t)),
         _ => None,
     };
+    // Calque de référence actif : son cadre, au-dessus des images (Plan).
+    let alt_dessus = carte.manifeste.altitude_max_m as f32 + 25.0;
+    if let Some(r) = edition.reference_active.and_then(|id| {
+        super::references::references_affichees(carte, &edition)
+            .into_iter()
+            .find(|(i, _)| *i == id)
+    }) {
+        let c =
+            r.1.coins()
+                .map(|q| Vec3::new(q[0] as f32, alt_dessus, q[1] as f32));
+        plan.linestrip([c[0], c[1], c[2], c[3], c[0]], Color::srgb(0.95, 0.45, 0.1));
+    }
     let d = carte.derive();
     let terrain = &d.terrain;
     // Limites de la carte.
@@ -871,6 +917,16 @@ fn dessiner(
         }
         Outil::ZoneLibre if pts.len() >= 2 => {
             dessus.linestrip(drape(terrain, &pts, true, 0.5), jaune);
+        }
+        Outil::CalerReference if pts.len() >= 2 => {
+            // Segment entre les deux repères (le second suit le curseur tant qu'il n'est pas posé).
+            let (a, b) = (pts[0], pts[1]);
+            let y = alt_dessus;
+            plan.line(
+                Vec3::new(a[0] as f32, y, a[1] as f32),
+                Vec3::new(b[0] as f32, y, b[1] as f32),
+                rouge,
+            );
         }
         Outil::Pinceau(_) => {
             if let Some((p, h)) = edition.curseur {

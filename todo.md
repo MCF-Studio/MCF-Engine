@@ -8,6 +8,19 @@
 - [x] A / E pour monter / descendre la caméra 3D (touches physiques : Q / E en QWERTY). *Pas encore vérifié à l'écran.*
 - [ ] Réseau électrique : gaines (lignes, pas forcément aériennes), compteurs de bâtiment, compteur général qui coupe tout un quartier.
 - [ ] Import de cartes 2D (satmap ou plan stylisé, réf. `G:\MCF-Remember-this-life\docs\map`) comme modèle : relever routes, relief, emplacements de bâtiments, aux conventions de l'éditeur.
+  - [x] **Étape 1 : calques de référence** (codée, testée ; **pas encore vue à l'écran**). Étape 1 « Cadre » →
+    « Calques de référence » : chemin d'un PNG → « Importer l'image ». L'image se pose sur toute la largeur de la
+    carte, à moitié transparente, dans le Plan. Réglages (opacité, échelle, rotation, position) en direct puis
+    « Appliquer » ; « 📏 Caler » : cliquer deux repères de l'image (ex. les graduations 0 et 4 km de l'échelle), taper
+    leur distance réelle, « Caler l'échelle » ; « ✋ Déplacer » : glisser le calque. Tout est annulable et enregistré
+    avec le projet (`references.json` + `references/`). On décalque ensuite avec les outils habituels.
+  - [ ] Étape 2 : relevé assisté sur un calque calé — trait de côte / eau par la couleur (→ niveau d'eau, zones),
+    taches urbaines (→ quartiers à affecter), proposition de tracés routiers à valider un par un. Rien d'automatique
+    sans validation.
+  - À trancher (Aroun) : `map_1.png` couvre **32 × 32 km**, la carte est plafonnée à **16 km** de côté (relief en
+    mémoire). Soit on vise une portion, soit on relève le plafond (à mesurer). À 1 254 pixels pour 32 km, l'image vaut
+    ~25 m par pixel : bonne pour les grands axes, villes et côtes, trop grossière pour les rues (les plans de ville
+    de `map/city/` serviront pour ça).
 - [x] Rendu : luminosité, ciel, textures plus qualitatives → première passe codée. **Pas encore vue à l'écran**
   (compilée, testée, éditeur non lancé).
   - Ciel physique de Bevy (`Atmosphere`) au lieu du fond bleu uni et du brouillard : ciel, disque solaire, brume

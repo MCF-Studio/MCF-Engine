@@ -7,6 +7,7 @@
 
 mod camera;
 mod outils;
+mod references;
 mod scene;
 mod textures;
 mod ui;
@@ -156,6 +157,10 @@ pub enum Outil {
     ZoneLibre,
     /// Faire pousser le bâti du quartier cliqué.
     Lotir,
+    /// Faire glisser le calque de référence actif.
+    DeplacerReference,
+    /// Cliquer deux repères du calque actif (distance connue), puis caler son échelle.
+    CalerReference,
 }
 
 /// Ce qui est sélectionné.
@@ -177,6 +182,8 @@ pub enum Selection {
 pub enum CibleGlisse {
     /// Les bâtiments sélectionnés.
     Batiments,
+    /// Un calque de référence.
+    Reference(Id),
     /// Un point de contrôle d'un tronçon (`index` dans la polyligne de contrôle, extrémités comprises).
     Poignee {
         /// Tronçon.
@@ -258,6 +265,15 @@ pub struct Edition {
     pub plan_pinceau: Option<f64>,
     /// Nom de voie en cours de saisie (tronçon, texte).
     pub nom_saisi: Option<(Id, String)>,
+    /// Calque de référence actif (réglages, outils Déplacer / Caler).
+    pub reference_active: Option<Id>,
+    /// Réglages du calque actif en cours de saisie : affichés en direct, écrits dans la carte (une étape
+    /// d'historique) par « Appliquer ».
+    pub reference_saisie: Option<(Id, mcf_carte::Reference)>,
+    /// Chemin saisi de l'image à importer.
+    pub chemin_image: String,
+    /// Distance réelle entre les deux repères du calage (m).
+    pub distance_calage: f64,
 }
 
 impl Default for Edition {
@@ -285,6 +301,10 @@ impl Default for Edition {
             duree_scene_ms: 0.0,
             plan_pinceau: None,
             nom_saisi: None,
+            reference_active: None,
+            reference_saisie: None,
+            chemin_image: String::new(),
+            distance_calage: 1000.0,
         }
     }
 }
@@ -355,6 +375,7 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
             scene::ScenePlugin,
             outils::OutilsPlugin,
             textures::TexturesPlugin,
+            references::ReferencesPlugin,
         ))
         .add_systems(Startup, preparer)
         .add_systems(EguiPrimaryContextPass, ui::interface)

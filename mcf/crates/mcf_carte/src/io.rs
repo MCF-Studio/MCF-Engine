@@ -220,6 +220,25 @@ impl Carte {
         Ok(())
     }
 
+    /// Importe une image PNG choisie par l'utilisateur comme calque de référence (lecture bornée, liens refusés). Le
+    /// nom affiché est celui du fichier.
+    pub fn importer_reference_fichier(&mut self, chemin: &Path) -> Result<Id, String> {
+        let octets = lire_borne(chemin, references::MAX_OCTETS)?;
+        let nom: String = chemin
+            .file_stem()
+            .map(|n| {
+                n.to_string_lossy()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(references::MAX_NOM)
+                    .collect()
+            })
+            .filter(|n: &String| !n.trim().is_empty())
+            .unwrap_or_else(|| "calque".into());
+        self.importer_reference(&nom, &octets)
+            .map_err(|e| erreur(chemin, e))
+    }
+
     /// Ouvre un projet de carte. Tout est validé avant d'être rendu ; un fichier refusé fait échouer l'ouverture.
     pub fn ouvrir(dossier: &Path) -> Result<Carte, String> {
         verifier_pas_lien(dossier)?;
