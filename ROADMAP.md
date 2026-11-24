@@ -267,7 +267,14 @@ La bibliothèque est choisie par le test B.
   2 × vec4 par capsule, 256 octets par personnage pour 8). Mesuré par le Studio sur la robe : traversées tibia
   31 → 5,3 mm, avant-bras 35 → 5,6 mm. Côté moteur : à porter en phase 7. Les capsules s'appliquent à tous les
   maillages du skin 0 (vêtements simulés ou skinnés), **sauf** les nœuds marqués `extras.mcfTissuRole == "body"`
-  (le corps, que le Studio marque à l'export).
+  (le corps, que le Studio marque à l'export). Le Studio en écrit 11 (membres, mains, une capsule de torse
+  horizontale) : nombre et ordre lus dans le bloc, jamais supposés. Robe sur la marche : pire traversée 25,6 → 5,2 mm.
+  **Main qui traverse le flanc d'une robe** (bras qui balance) : hors de portée des capsules. Décision d'Aroun
+  (2026-11-24) : **bras légèrement écartés dans les animations** (règle de contenu « tenue ample → abduction ≥ N° »,
+  vérifiée par un test sur tous les clips du jeu, y compris achetés ou retargetés ; N mesuré par le Studio). Pas de
+  liberté du tissu aux hanches ni de repoussement orienté pour l'instant.
+  À trancher en phase 7 : les décalages du proxy déplacent les positions, pas les normales (normales du skinning →
+  éclairage faux là où le tissu s'écarte) ; décalage de normale par sommet ou normales recalculées.
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
