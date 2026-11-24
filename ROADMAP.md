@@ -142,6 +142,12 @@ Critère de fin : les deux rapports sont écrits dans `bancs-essai.md` (bruts + 
 Bevy n'a **pas d'éditeur** (l'équipe Bevy en prépare un, pas prêt). On construit le nôtre, utilisable par des
 personnes **sans connaissance technique** pour la carte, et assez complet pour les devs.
 
+**Outillage IA** (demande d'Aroun, 2026-11-24) : un **MCP `mcf-engine`** qui donne accès au moteur en cours
+d'exécution (état exact, capture d'une vue, caméra, commandes annulables de l'éditeur, mesures), sur le Bevy Remote
+Protocol en local avec un jeton, feature `remote` absente des builds distribués ; et un **LSP** (rust-analyzer limité
+à `mcf/` tout de suite, puis un `mcf_lsp` pour les fichiers de carte). Spec, permissions et menaces :
+[`docs/SPEC_MCP_LSP_MOTEUR.md`](docs/SPEC_MCP_LSP_MOTEUR.md). Prévu, rien de codé.
+
 ### Technique retenue
 
 - Interface : **`bevy_egui` + `egui_dock`** (panneaux ancrables, onglets, mise en page sauvegardée), versions
