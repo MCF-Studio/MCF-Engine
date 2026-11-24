@@ -19,6 +19,8 @@ pub enum Cible {
     ImageReference,
     /// Dossier d'un projet de carte (à ouvrir, ou neuf / vide pour enregistrer).
     DossierProjet,
+    /// Image quelconque (vue satellite, plan) à convertir vers la convention des cartes sources.
+    ImageAConvertir,
 }
 
 /// Fenêtre de choix en cours (une seule à la fois).
@@ -46,6 +48,10 @@ impl Dialogue {
                 let choix = match cible {
                     Cible::ImageReference => rfd::FileDialog::new()
                         .set_title("Importer un calque de référence (PNG)")
+                        .add_filter("Image PNG", &["png"])
+                        .pick_file(),
+                    Cible::ImageAConvertir => rfd::FileDialog::new()
+                        .set_title("Convertir une carte (vue satellite, plan) vers la convention")
                         .add_filter("Image PNG", &["png"])
                         .pick_file(),
                     Cible::DossierProjet => rfd::FileDialog::new()

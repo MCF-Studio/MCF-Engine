@@ -220,6 +220,44 @@ impl Carte {
         Ok(())
     }
 
+    /// Convertit une image quelconque (vue satellite, plan) vers la convention des cartes sources et importe les deux
+    /// résultats comme calques : la carte couleurs (visible) et la carte de relief **proposée** (masquée, même calage
+    /// puisque même cadrage). Rien n'est appliqué au relief : l'auteur cale, vérifie, puis « Appliquer comme relief ».
+    /// Renvoie les identifiants (couleurs, relief) et la conversion (altitudes du noir et du blanc, parts).
+    pub fn convertir_et_importer_fichier(
+        &mut self,
+        chemin: &Path,
+    ) -> Result<(Id, Id, crate::conversion::Conversion), String> {
+        let octets = lire_borne(chemin, references::MAX_OCTETS)?;
+        let image = references::decoder_png(&octets).map_err(|e| erreur(chemin, e))?;
+        let c = crate::conversion::convertir(&image, &crate::conversion::Reglages::default())
+            .map_err(|e| erreur(chemin, e))?;
+        let base: String = chemin
+            .file_stem()
+            .map(|n| {
+                n.to_string_lossy()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(40)
+                    .collect()
+            })
+            .filter(|n: &String| !n.trim().is_empty())
+            .unwrap_or_else(|| "carte".into());
+        let couleurs = self.importer_reference(
+            &format!("{base} (couleurs)"),
+            &references::encoder_png(&c.couleurs)?,
+        )?;
+        let relief = self.importer_reference(
+            &format!("{base} (relief proposé)"),
+            &references::encoder_png(&c.relief)?,
+        )?;
+        self.modifier_reference(relief, "Masquer le relief proposé", |r| {
+            r.visible = false;
+            Ok(())
+        })?;
+        Ok((couleurs, relief, c))
+    }
+
     /// Importe une image PNG choisie par l'utilisateur comme calque de référence (lecture bornée, liens refusés). Le
     /// nom affiché est celui du fichier.
     pub fn importer_reference_fichier(&mut self, chemin: &Path) -> Result<Id, String> {

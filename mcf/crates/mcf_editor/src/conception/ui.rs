@@ -928,6 +928,55 @@ fn importer_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
     }
 }
 
+/// Convertit une image (vue satellite, plan) vers la convention des cartes sources et importe la carte couleurs et
+/// la carte de relief proposée ; prépare les altitudes du noir et du blanc et le lissage conseillé.
+fn convertir_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
+    let debut = std::time::Instant::now();
+    match projet.carte.convertir_et_importer_fichier(chemin) {
+        Ok((couleurs, relief, c)) => {
+            if edition.etape != Etape::Cadre {
+                edition.aller_a(Etape::Cadre);
+            }
+            edition.reference_active = Some(couleurs);
+            edition.reference_saisie = None;
+            edition.disposition = Disposition::Partagee;
+            edition.relief_noir_m = c.noir_m;
+            edition.relief_blanc_m = c.blanc_m;
+            let m_par_px = projet
+                .carte
+                .references
+                .references
+                .get(&relief)
+                .map_or(1.0, |r| r.m_par_px);
+            edition.relief_lissage_m =
+                mcf_carte::relief_image::lissage_conseille(c.noir_m, c.blanc_m, m_par_px);
+            let parts: Vec<String> = c
+                .parts
+                .iter()
+                .filter(|(_, p)| *p >= 0.005)
+                .map(|(k, p)| format!("{} {:.0} %", k.nom(), p * 100.0))
+                .collect();
+            let m = &projet.carte.manifeste;
+            let plage = if m.altitude_min_m <= c.noir_m && c.blanc_m <= m.altitude_max_m {
+                String::new()
+            } else {
+                format!(
+                    " ⚠ La plage d'altitude de la carte ({} à {} m) ne contient pas {} à {} m : créez la carte avec \
+                     ces altitudes pour appliquer le relief.",
+                    m.altitude_min_m, m.altitude_max_m, c.noir_m, c.blanc_m
+                )
+            };
+            projet.info(format!(
+                "Converti en {:.1} s : {}. Calez le calque couleurs, puis sur le relief proposé « Même calage que… » \
+                 et « Appliquer comme relief » (relief déduit, à vérifier ; routes non extraites).{plage}",
+                debut.elapsed().as_secs_f64(),
+                parts.join(", ")
+            ));
+        }
+        Err(e) => projet.echec(format!("Conversion refusée : {e}")),
+    }
+}
+
 /// Chemins choisis dans une fenêtre native ou déposés sur la fenêtre de l'éditeur.
 fn recevoir_fichiers(
     projet: &mut Projet,
@@ -953,6 +1002,7 @@ fn recevoir_fichiers(
         });
         match cible {
             Cible::ImageReference => importer_image(projet, edition, &chemin),
+            Cible::ImageAConvertir => convertir_image(projet, edition, &chemin),
             Cible::DossierProjet => {
                 edition.chemin = chemin.display().to_string();
                 if edition.etape != Etape::Cadre {
@@ -988,6 +1038,16 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
             .clicked()
         {
             dialogue.ouvrir(Cible::ImageReference);
+        }
+        if ui
+            .add_enabled(!ouvert, egui::Button::new("🪄 Convertir une carte…"))
+            .on_hover_text(
+                "Vue satellite ou plan illustré → carte couleurs (aplats de la convention) + relief proposé (déduit, \
+                 à vérifier). Les routes ne sont pas extraites.",
+            )
+            .clicked()
+        {
+            dialogue.ouvrir(Cible::ImageAConvertir);
         }
         if ouvert {
             ui.spinner();

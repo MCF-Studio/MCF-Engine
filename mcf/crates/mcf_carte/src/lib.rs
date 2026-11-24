@@ -6,6 +6,7 @@ pub mod batiments;
 pub mod carte;
 pub mod carte_de_test;
 pub mod contours;
+pub mod conversion;
 pub mod export;
 pub mod gabarits;
 pub mod geometrie;

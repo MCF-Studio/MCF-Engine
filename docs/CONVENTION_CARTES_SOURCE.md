@@ -92,6 +92,32 @@ rue 14 m) à l'échelle de l'image.
    « Routes » (clic sur un trait, classe choisie avant). Valider / rejeter chaque proposition.
 6. Tout s'annule (Ctrl+Z), étape par étape.
 
+## Convertir une image existante (satellite, plan illustré)
+
+Pour une image qui ne suit pas la convention, le **convertisseur** produit les deux images automatiquement :
+
+- **Dans l'éditeur** : Cadre → Calques de référence → « 🪄 Convertir une carte… » → choisir le PNG. Les deux calques
+  arrivent : « … (couleurs) » visible, « … (relief proposé) » masqué ; altitudes du noir et du blanc et lissage
+  conseillé déjà remplis. Caler le calque couleurs, puis sur le relief « Même calage que… » et « ⛰ Appliquer comme
+  relief ».
+- **En ligne de commande** (pour regarder ou retoucher les images avant) :
+  `cargo run -p mcf_carte --example convertir_carte --release -- <image.png> [dossier de sortie]` →
+  `<nom>_couleurs.png` et `<nom>_relief.png`.
+
+Ce qu'il faut en attendre (mesuré sur `map_sat.png`, 1 254 px, 0,3 à 0,4 s) :
+
+| Élément | Résultat |
+| --- | --- |
+| Mer, Grand Lac, rivières | bien reconnus ; les versants à l'ombre du massif (bleu sombre comme la mer) sont ramenés en roche |
+| Massif du Nord | en roche ; devient le relief le plus haut |
+| Forêts, champs | bien reconnus |
+| Tolosa, Alavak, Bellic City | reconnues (toits brique) ; zones grises (industrie, port, aéroports) en mauve |
+| Région chaude (sud) | **partiellement prise pour de la ville** (terre brun-rouge proche des toits) : à corriger |
+| Relief | **déduit, pas mesuré** : monte avec la distance à la côte (plateau ~250 m), massifs d'après la densité de roche et de neige, lacs plats. Petites bosses discutables sur Bellic City, l'île de l'aéroport et une carrière au sud de Tolosa |
+| Routes, A1 | **non extraites** : relevé assisté sur un plan (`map_1.png`) ou tracé à la main |
+
+Le relief proposé va de −50 m (noir) à 2 500 m (blanc) : créer la carte avec cette plage d'altitudes.
+
 ## Et nos cartes actuelles (`map_1.png`, `map_sat.png`) ?
 
 - `map_1.png` (plan directeur) **ne suit pas cette convention** : textes, pictogrammes, quadrillage, dégradés et

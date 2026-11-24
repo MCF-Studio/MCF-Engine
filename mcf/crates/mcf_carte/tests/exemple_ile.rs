@@ -95,3 +95,31 @@ fn ile_exemple_de_bout_en_bout() {
     println!("MESURE autoroute : {:.0} m relevés d'un clic", longueur);
     assert!(longueur > 1500.0, "autoroute relevée : {longueur} m");
 }
+
+#[test]
+fn convertir_un_fichier_importe_deux_calques() {
+    let chemin =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../docs/exemples/ile_exemple_couleurs.png");
+    let mut c = Carte::nouvelle(Manifeste::nouveau("conversion", 4096.0)).expect("carte");
+    let (couleurs, relief, conv) = c.convertir_et_importer_fichier(&chemin).expect("conversion");
+    let refs = &c.references.references;
+    assert!(refs[&couleurs].visible);
+    assert!(!refs[&relief].visible, "le relief proposé arrive masqué");
+    assert_eq!(
+        refs[&couleurs].coin, refs[&relief].coin,
+        "même cadrage, même calage"
+    );
+    assert!(refs[&relief].nom.ends_with("(relief proposé)"));
+    // La mer de l'exemple (bleu de la palette) est reconnue comme de l'eau.
+    let eau = conv
+        .parts
+        .iter()
+        .find(|(k, _)| *k == mcf_carte::conversion::Classe::Eau)
+        .expect("eau")
+        .1;
+    assert!(eau > 0.4, "part d'eau : {eau}");
+    assert!(
+        c.convertir_et_importer_fichier(&chemin.with_file_name("absent.png"))
+            .is_err()
+    );
+}
