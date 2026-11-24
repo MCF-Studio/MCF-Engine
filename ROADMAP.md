@@ -294,6 +294,22 @@ Classé par impact estimé pour un RP 3D multijoueur mid poly. Chaque ligne = un
 
 ---
 
+## Capacités moteur exigées par le jeu
+
+Le game design vit dans [`docs/jeu/`](docs/jeu/README.md), **séparé** du moteur. Ici, seulement ce que le moteur
+doit savoir faire pour lui, sans gameplay. Ces points sont à prévoir dans les phases indiquées, pas avant.
+
+| Capacité | Phase | Exigée par |
+| --- | --- | --- |
+| Plusieurs zones par serveur (repère local chacune), transfert de joueurs / véhicules décidé par le serveur | 6 | [Centre spatial](docs/jeu/CENTRE_SPATIAL.md) |
+| Ciel à l'échelle (*scaled space*) : caméra de fond pour objets célestes lointains | 7 | Centre spatial |
+| Planète vue de l'espace (sphère + atmosphère vue de l'extérieur + nuages), depuis l'export satellite de la carte | banc à prévoir | Centre spatial |
+| Gravité par zone, contrôleur de personnage en apesanteur | 7 | Centre spatial |
+| Plafond d'altitude par type de véhicule, vérifié par le serveur | 7 | Centre spatial |
+| Trajectoires mises en scène (véhicule sur chemin serveur, passagers à bord) | 7 | Centre spatial |
+
+---
+
 ## Modèle de permissions (qui voit / fait quoi)
 
 | Acteur | Peut | Ne peut pas |
