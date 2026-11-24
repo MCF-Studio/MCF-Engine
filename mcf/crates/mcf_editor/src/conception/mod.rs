@@ -369,7 +369,7 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
             }),
             ..default()
         }))
-        .add_plugins(EguiPlugin::default())
+        .add_plugins((EguiPlugin::default(), crate::icone::IconePlugin))
         .insert_resource(Projet {
             carte,
             message,

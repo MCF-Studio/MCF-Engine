@@ -19,6 +19,7 @@ mcf_carte.workspace = true
 mcf_core.workspace = true
 mcf_geo.workspace = true
 rfd.workspace = true
+winit.workspace = true
 
 [lints]
 workspace = true

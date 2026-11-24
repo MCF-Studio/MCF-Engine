@@ -172,6 +172,7 @@ fn commit_drag(drag: &mut DragState, history: &mut TransformHistory, document: &
 }
 
 mod conception;
+mod icone;
 
 fn main() -> AppExit {
     match std::env::args_os().nth(1).map(PathBuf::from) {
@@ -191,7 +192,7 @@ fn editeur_calque() -> AppExit {
             }),
             ..default()
         }))
-        .add_plugins((McfCorePlugin, EguiPlugin::default()))
+        .add_plugins((McfCorePlugin, EguiPlugin::default(), icone::IconePlugin))
         .insert_resource(EditorState {
             grid_visible: true,
             snap_enabled: true,

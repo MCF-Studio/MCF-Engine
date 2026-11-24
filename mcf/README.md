@@ -1,4 +1,9 @@
+<p align="center"><img src="branding/logo_512.png" alt="Logo MCF Engine" width="256"></p>
+
 # `mcf/` — le code de MCF Studio
+
+Logo du moteur : `branding/` (`logo_source.png` original, `logo_512.png` pour les docs, `icone_256.png` incluse
+dans l'éditeur comme icône de fenêtre).
 
 Tout ce qui est propre à MCF Engine vit ici, dans un **workspace Cargo séparé** de celui de Bevy (racine du
 dépôt). Ainsi, le `Cargo.toml` de Bevy reste intact (synchronisation amont sans conflit), et on a nos propres

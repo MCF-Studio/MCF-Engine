@@ -26,6 +26,8 @@ bevy_egui = "0.43.1"
 egui_dock = "0.21.0"
 # Fenêtres natives « ouvrir un fichier / un dossier » de l'éditeur (MIT).
 rfd = "0.18"
+# Icône de fenêtre de l'éditeur : même version que bevy_winit (Apache-2.0), sans fonctionnalité en plus.
+winit = { version = "0.30", default-features = false }
 
 mcf_bench = { path = "crates/mcf_bench" }
 mcf_carte = { path = "crates/mcf_carte" }
