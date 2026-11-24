@@ -19,8 +19,6 @@ use super::{
     outils,
 };
 
-const TAILLES: [f64; 8] = [256.0, 512.0, 1024.0, 1536.0, 2048.0, 3072.0, 4096.0, 5120.0];
-
 fn pastille(ui: &mut egui::Ui, c: [u8; 3]) {
     let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
     ui.painter()
@@ -284,21 +282,46 @@ fn cadre(
         ui.label("Nom");
         ui.text_edit_singleline(&mut edition.nouveau_nom);
     });
-    egui::ComboBox::from_label("Côté")
-        .selected_text(format!("{} m", edition.nouvelle_taille))
-        .show_ui(ui, |ui| {
-            for t in TAILLES {
-                ui.selectable_value(&mut edition.nouvelle_taille, t, format!("{t} m"));
-            }
-        });
-    if edition.nouvelle_taille > 2048.0 {
-        ui.label(
-            egui::RichText::new("Grande carte : sculpture plus lente (relief à 1 m).")
-                .small()
-                .color(egui::Color32::from_rgb(220, 160, 60)),
+    ui.horizontal(|ui| {
+        ui.label("Côté");
+        // Saisie libre en km (taper « 32 » pour 32 km), arrondie au multiple de tuile en sortant du champ.
+        let mut km = edition.nouvelle_taille / 1000.0;
+        let reponse = ui.add(
+            egui::DragValue::new(&mut km)
+                .range(0.256..=mcf_carte::manifeste::TAILLE_MAX_M / 1000.0)
+                .speed(0.05)
+                .max_decimals(3)
+                .suffix(" km"),
         );
-    }
+        if reponse.changed() {
+            edition.nouvelle_taille = km * 1000.0;
+        }
+        if !reponse.has_focus() {
+            edition.nouvelle_taille = Manifeste::arrondir_taille(edition.nouvelle_taille);
+        }
+    })
+    .response
+    .on_hover_text("Côté de la carte carrée, 0,256 à 32,768 km (arrondi à 256 m). Double-clic pour taper.");
+    let resolution = Manifeste::resolution_pour(edition.nouvelle_taille);
+    let (couleur, texte) = if resolution > 1.0 {
+        (
+            egui::Color32::from_rgb(220, 160, 60),
+            format!("Très grande carte : relief à {resolution} m par point (garde-fou mémoire).",),
+        )
+    } else if edition.nouvelle_taille > 2048.0 {
+        (
+            egui::Color32::from_rgb(220, 160, 60),
+            "Grande carte : sculpture plus lente (relief à 1 m).".to_owned(),
+        )
+    } else {
+        (
+            ui.visuals().weak_text_color(),
+            "Relief à 1 m par point.".to_owned(),
+        )
+    };
+    ui.label(egui::RichText::new(texte).small().color(couleur));
     if ui.button("Créer (vierge, plate)").clicked() {
+        edition.nouvelle_taille = Manifeste::arrondir_taille(edition.nouvelle_taille);
         let nom = edition.nouveau_nom.trim().to_owned();
         if !mcf_carte::manifeste::nom_sur(&nom) {
             projet.echec("Nom refusé : minuscules, chiffres, « _ » et « - » seulement (64 au plus).");

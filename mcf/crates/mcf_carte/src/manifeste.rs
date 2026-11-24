@@ -11,8 +11,11 @@ pub const FORMAT: &str = "mcfcarte";
 pub const VERSION: u32 = 1;
 /// Côté minimal et maximal de la carte (m).
 pub const TAILLE_MIN_M: f64 = 128.0;
-/// Côté maximal (16 km).
-pub const TAILLE_MAX_M: f64 = 16_384.0;
+/// Côté maximal (32 km). Au-delà de 8 km, le relief d'une nouvelle carte passe à 2 puis 4 m par échantillon pour
+/// rester sous `MAX_ECHANTILLONS` (voir `Manifeste::nouveau`).
+pub const TAILLE_MAX_M: f64 = 32_768.0;
+/// Tuile d'une nouvelle carte (m) : la taille saisie est arrondie à un multiple de cette valeur.
+pub const TUILE_DEFAUT_M: u32 = 256;
 /// Tailles de tuile autorisées (m).
 pub const TUILES_M: [u32; 3] = [128, 256, 512];
 /// Résolutions de relief autorisées (m par échantillon).
@@ -59,15 +62,33 @@ pub fn nom_sur(s: &str) -> bool {
 }
 
 impl Manifeste {
-    /// Nouveau manifeste avec les valeurs par défaut de la spec.
+    /// Côté saisi ramené à un côté valide : multiple de la tuile par défaut, entre une tuile et `TAILLE_MAX_M`.
+    pub fn arrondir_taille(taille_m: f64) -> f64 {
+        let tuile = f64::from(TUILE_DEFAUT_M);
+        let t = if taille_m.is_finite() { taille_m } else { tuile };
+        ((t / tuile).round() * tuile).clamp(tuile, TAILLE_MAX_M)
+    }
+
+    /// Résolution de relief la plus fine (parmi 1, 2 et 4 m) qui tient dans `MAX_ECHANTILLONS` pour ce côté.
+    pub fn resolution_pour(taille_m: f64) -> f64 {
+        [1.0, 2.0, 4.0]
+            .into_iter()
+            .find(|r| {
+                let n = (taille_m / r).round() as usize + 1;
+                n.saturating_mul(n) <= MAX_ECHANTILLONS
+            })
+            .unwrap_or(4.0)
+    }
+
+    /// Nouveau manifeste avec les valeurs par défaut de la spec (relief à 1 m jusqu'à 8 km, plus grossier au-delà).
     pub fn nouveau(nom: &str, taille_m: f64) -> Self {
         Self {
             format: FORMAT.into(),
             version: VERSION,
             nom: nom.into(),
             taille_m: [taille_m, taille_m],
-            tuile_m: 256,
-            resolution_relief_m: 1.0,
+            tuile_m: TUILE_DEFAUT_M,
+            resolution_relief_m: Self::resolution_pour(taille_m),
             altitude_min_m: -64.0,
             altitude_max_m: 448.0,
             niveau_eau_m: None,
@@ -163,5 +184,26 @@ mod tests {
         m.nom = "ok".into();
         m.altitude_max_m = f64::INFINITY;
         assert!(m.valider().is_err());
+        let mut m = Manifeste::nouveau("ok", 32_768.0);
+        m.taille_m = [65_536.0, 65_536.0];
+        assert!(m.valider().is_err());
+    }
+
+    #[test]
+    fn grandes_cartes_jusqu_a_32_km() {
+        for (cote, resolution) in [(1536.0, 1.0), (8192.0, 1.0), (16_384.0, 2.0), (32_768.0, 4.0)] {
+            let m = Manifeste::nouveau("grande", cote);
+            assert_eq!(m.resolution_relief_m, resolution, "côté {cote}");
+            assert_eq!(m.valider(), Ok(()), "côté {cote}");
+        }
+    }
+
+    #[test]
+    fn taille_saisie_arrondie() {
+        assert_eq!(Manifeste::arrondir_taille(32_000.0), 32_000.0);
+        assert_eq!(Manifeste::arrondir_taille(1000.0), 1024.0);
+        assert_eq!(Manifeste::arrondir_taille(10.0), 256.0);
+        assert_eq!(Manifeste::arrondir_taille(1e9), TAILLE_MAX_M);
+        assert_eq!(Manifeste::arrondir_taille(f64::NAN), 256.0);
     }
 }
