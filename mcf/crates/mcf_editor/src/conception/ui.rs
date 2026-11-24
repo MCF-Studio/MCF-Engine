@@ -330,9 +330,9 @@ fn cadre(
                 Ok(c) => {
                     remplacer(projet, edition, c, plan, orbite);
                     edition.chemin.clear();
-                    edition.aller_a(Etape::Relief);
+                    // On reste dans le Cadre : c'est là qu'on importe et cale les calques de référence.
                     projet.info(format!(
-                        "Carte « {nom} » créée. Sculptez le relief, puis tracez le réseau."
+                        "Carte « {nom} » créée. Importez un calque de référence si besoin, puis passez au relief."
                     ));
                 }
                 Err(e) => projet.echec(e),
