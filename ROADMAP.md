@@ -269,10 +269,11 @@ La bibliothèque est choisie par le test B.
   maillages du skin 0 (vêtements simulés ou skinnés), **sauf** les nœuds marqués `extras.mcfTissuRole == "body"`
   (le corps, que le Studio marque à l'export). Le Studio en écrit 11 (membres, mains, une capsule de torse
   horizontale) : nombre et ordre lus dans le bloc, jamais supposés. Robe sur la marche : pire traversée 25,6 → 5,2 mm.
-  **Tache claire sur le flanc des robes** : coutures de côté qui s'ouvraient (jusqu'à 2 cm), pas la main. Corrigé
-  dans `mcf-tissu` **v0.6.0, minimum à prendre** (coutures refermées après les collisions : 0 ouverte). La décision
-  d'Aroun « bras écartés » (2026-11-24) reste en réserve : sans besoin mesuré (abduction des clips du Studio 6–7°,
-  aucun contact main/tissu), aucune règle de contenu n'est figée ; mesure prête (`min_arm_abduction_deg`).
+  **Coutures** qui s'ouvraient (jusqu'à 2 cm) : corrigé dans `mcf-tissu` **v0.6.0, minimum à prendre** (refermées
+  après les collisions : 0 ouverte). **Tache claire sur le devant des robes** : la cuisse avant traverse la robe
+  (vérifié à l'écran par le Studio, poids d'os), pas la main ni les coutures ; correction chiffrée attendue (rayon de
+  la capsule de cuisse et/ou proxy). La décision d'Aroun « bras écartés » (2026-11-24) reste en réserve, sans besoin
+  mesuré ; mesure prête (`min_arm_abduction_deg`).
   À trancher en phase 7 : les décalages du proxy déplacent les positions, pas les normales (normales du skinning →
   éclairage faux là où le tissu s'écarte) ; décalage de normale par sommet ou normales recalculées.
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
