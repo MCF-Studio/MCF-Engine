@@ -253,11 +253,19 @@ fn reconstruire(
                        mesh: Mesh,
                        mat: Handle<StandardMaterial>,
                        couche: usize| {
+        // Plan : routes et bâti passent au-dessus des calques de référence (altitude max + 10 à + 18 m) et du voile
+        // des quartiers (+ 20 m), sinon un calque opaque les cache. En vue verticale l'altitude ne sert qu'à l'ordre
+        // d'affichage : le relief est écrasé (× 0,001, quelques mètres) et posé au-dessus.
+        let transform = match (couche, partie) {
+            (COUCHE_PLAN, Partie::Routes) => plan_au_dessus(alt_max + 30.0),
+            (COUCHE_PLAN, Partie::Bati) => plan_au_dessus(alt_max + 34.0),
+            _ => Transform::IDENTITY,
+        };
         commands.spawn((
             partie,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(mat),
-            Transform::IDENTITY,
+            transform,
             RenderLayers::layer(couche),
         ));
     };
@@ -600,6 +608,11 @@ fn teinte_3d(f: Famille) -> [f32; 4] {
 }
 
 /// Un bloc : toit à plat + murs, posé sur le terrain (pieds enterrés jusqu'au point le plus bas).
+/// Écrase un maillage du Plan à quelques mètres d'épaisseur et le pose à `y` (l'ordre relatif est gardé).
+fn plan_au_dessus(y: f32) -> Transform {
+    Transform::from_translation(Vec3::Y * y).with_scale(Vec3::new(1.0, 0.001, 1.0))
+}
+
 fn bloc(plan: &mut Tampon, toits: &mut Tampon, murs: &mut Tampon, b: &mcf_carte::Batiment, terrain: &Relief) {
     if b.empreinte.len() < 3 {
         return;

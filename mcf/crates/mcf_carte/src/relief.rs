@@ -366,12 +366,19 @@ pub fn altitudes_reseau(
             .collect();
         let terrain = h.clone();
         let (ha, hb) = (alt.noeuds.get(&t.de).copied(), alt.noeuds.get(&t.vers).copied());
-        for _ in 0..4 {
-            let prec = h.clone();
-            for (i, hi) in h.iter_mut().enumerate().skip(1).take(n - 1) {
-                let a = i.saturating_sub(3);
-                let b = (i + 3).min(n);
-                *hi = prec[a..=b].iter().sum::<f64>() / (b - a + 1) as f64;
+        // Moyenne glissante sur ±LISSAGE_PROFIL_M, trois passes (≈ gaussienne) : la route ne suit pas chaque bosse
+        // du relief (un relief de 4 m de maille porte le bruit de l'image source), extrémités tenues aux carrefours.
+        let k = ((LISSAGE_PROFIL_M / pas).round() as usize).max(1);
+        for _ in 0..3 {
+            let mut cumul = Vec::with_capacity(n + 2);
+            cumul.push(0.0);
+            for v in &h {
+                cumul.push(cumul.last().copied().unwrap_or(0.0) + v);
+            }
+            for (i, hi) in h.iter_mut().enumerate().skip(1).take(n.saturating_sub(1)) {
+                let a = i.saturating_sub(k);
+                let b = (i + k).min(n);
+                *hi = (cumul[b + 1] - cumul[a]) / (b - a + 1) as f64;
             }
             if let Some(v) = ha {
                 h[0] = v;
@@ -406,10 +413,13 @@ pub fn altitudes_reseau(
     alt
 }
 
-/// Pente maximale des talus (largeur horizontale / hauteur).
-pub const TALUS: f64 = 2.0;
-/// Largeur maximale d'un talus (m).
-pub const TALUS_MAX_M: f64 = 30.0;
+/// Demi-fenêtre de lissage du profil en long (m).
+pub const LISSAGE_PROFIL_M: f64 = 40.0;
+/// Pente des talus (largeur horizontale / hauteur) : 1 pour 3, un talus herbeux qui se raccorde au paysage.
+pub const TALUS: f64 = 3.0;
+/// Largeur maximale d'un talus (m). Au-delà de `TALUS_MAX_M / TALUS` de dénivelé, le talus se raidit (il reste
+/// raccordé en douceur) ; un ouvrage d'art (pont, tranchée couverte) sera alors le bon outil.
+pub const TALUS_MAX_M: f64 = 120.0;
 /// Accotement terrassé de chaque côté de l'emprise (m).
 pub const BANQUETTE_M: f64 = 1.0;
 
@@ -468,7 +478,10 @@ pub fn terrain_final(
                             if d - w >= largeur {
                                 continue;
                             }
-                            route + (h_src - route) * ((d - w) / largeur.max(1e-6))
+                            // Raccord en S (tangent à la plate-forme et au terrain) : ni arête au pied du talus, ni
+                            // falaise à son sommet.
+                            let u = ((d - w) / largeur.max(1e-6)).clamp(0.0, 1.0);
+                            route + (h_src - route) * u * u * (3.0 - 2.0 * u)
                         };
                         meilleur[i] = d as f32;
                         sortie.h[i] = h as f32;
@@ -652,6 +665,40 @@ mod tests {
         assert!((a - profil.altitude(110.0)).abs() < 0.05);
         // Loin de la route : terrain d'origine.
         assert_eq!(fin.hauteur([10.0, 100.0]), src.hauteur([10.0, 100.0]));
+    }
+
+    /// Une route qui traverse une colline de 40 m : talus en pente douce, pas de falaise au bord de la plate-forme.
+    #[test]
+    fn talus_sans_falaise_dans_une_colline() {
+        let m = Manifeste::nouveau("t", 1024.0);
+        let mut src = Relief::plat(&m, 0.0);
+        for iz in 0..src.nz {
+            for ix in 0..src.nx {
+                let p = src.position(ix, iz);
+                let i = src.index(ix, iz);
+                let r2 = (p[0] * p[0] + p[1] * p[1]) / (120.0 * 120.0);
+                src.h[i] = (40.0 * (-r2).exp()) as f32;
+            }
+        }
+        let mut res = Reseau::default();
+        res.tracer(ClasseRoute::Route, &[[-240.0, 0.0], [240.0, 0.0]], 2.0, &m)
+            .expect("route");
+        let geo = geometrie::calculer(&res, &m.profils);
+        let alt = altitudes_reseau(&res, &geo, &src, &m.profils);
+        let fin = terrain_final(&src, &geo, &alt, &m.profils);
+        let mut pire: f64 = 0.0;
+        for x in (-200..=200).step_by(4) {
+            for z in (6..150).step_by(2) {
+                let (a, b) = (
+                    fin.hauteur([f64::from(x), f64::from(z)]),
+                    fin.hauteur([f64::from(x), f64::from(z + 2)]),
+                );
+                pire = pire.max((b - a).abs() / 2.0);
+            }
+        }
+        // Pente du terrain d'origine au plus ≈ 0,26 ; talus au 1/3 raccordé en S : ≈ 0,5 au plus. L'ancien talus
+        // plafonné à 30 m dépassait 1 (falaise).
+        assert!(pire < 0.6, "pente transversale maximale {pire:.2}");
     }
 
     #[test]
