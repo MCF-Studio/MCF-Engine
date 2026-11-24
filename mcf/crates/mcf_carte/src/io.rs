@@ -297,8 +297,12 @@ impl Carte {
                     continue;
                 }
                 let f: FichierBatiments = lire_json(&chemin, MAX_CELLULE)?;
-                if f.format != batiments::FORMAT || f.version != batiments::VERSION {
+                if f.format != batiments::FORMAT || !batiments::VERSIONS_LUES.contains(&f.version) {
                     return Err(erreur(&chemin, "format de bâti non géré"));
+                }
+                // Migration 1 → 2 : rien à convertir, mais un fichier v1 ne peut pas contenir de modèle.
+                if f.version == 1 && f.batiments.values().any(|b| b.modele.is_some()) {
+                    return Err(erreur(&chemin, "bâti v1 avec un modèle (réservé à la v2)"));
                 }
                 for (id, b) in f.batiments {
                     if tous.insert(id, b).is_some() {
@@ -503,6 +507,55 @@ mod tests {
         // Dossier non vide refusé.
         let mut autre = Carte::nouvelle(Manifeste::nouveau("autre", 256.0)).expect("carte");
         assert!(autre.enregistrer(Some(&d)).is_err());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn batiments_modelises_aller_retour_et_migration_v1() {
+        let fiche = crate::catalogue::Fiche {
+            id: "superette".into(),
+            nom: "Supérette".into(),
+            famille: Famille::Commerce,
+            fichier: "superette/Superette.glb".into(),
+            largeur_m: 17.0,
+            profondeur_m: 12.7,
+            hauteur_m: 5.22,
+            centre_m: [0.0, 0.35],
+        };
+        let mut c = Carte::nouvelle(Manifeste::nouveau("modeles", 512.0)).expect("carte");
+        let id = c.poser_modele(&fiche, [40.0, -30.0], 30.0).expect("poser");
+        c.transformer_batiments(&[id], [2.0, 1.0], 45.0, [40.0, -30.0])
+            .expect("tourner");
+        assert_eq!(c.batiments[&id].modele.as_ref().map(|m| m.cap_deg), Some(75.0));
+        let d = dossier_test("modeles");
+        c.enregistrer(Some(&d)).expect("enregistrer");
+        assert_eq!(Carte::ouvrir(&d).expect("ouvrir").batiments, c.batiments);
+        // Un fichier v1 (sans modèle) se lit toujours ; un v1 qui contient un modèle est refusé.
+        let cellule = fs::read_dir(d.join("batiments"))
+            .expect("dossier")
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == "json"))
+            .expect("cellule");
+        let v2 = fs::read_to_string(&cellule).expect("lire");
+        assert!(v2.contains("\"version\": 2"), "{v2}");
+        fs::write(&cellule, v2.replace("\"version\": 2", "\"version\": 1")).expect("écrire");
+        assert!(Carte::ouvrir(&d).is_err());
+        c.modifier("Retirer le modèle", |tx| {
+            if let Some(b) = tx.batiment(id) {
+                b.modele = None;
+            }
+            Ok(())
+        })
+        .expect("retirer");
+        let sans = serde_json::to_string_pretty(&batiments::FichierBatiments {
+            format: batiments::FORMAT.into(),
+            version: 1,
+            batiments: c.batiments.clone(),
+        })
+        .expect("json");
+        fs::write(&cellule, sans).expect("écrire");
+        assert_eq!(Carte::ouvrir(&d).expect("v1 lue").batiments, c.batiments);
         let _ = fs::remove_dir_all(&d);
     }
 

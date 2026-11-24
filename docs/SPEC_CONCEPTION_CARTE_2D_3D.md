@@ -185,9 +185,27 @@ Chaque bâtiment porte une origine, `genere` ou `manuel`. Un bloc qu'on déplace
 `manuel` ; relancer le lotissement ne touche **que** les blocs `genere`. Si une route modifiée coupe un bâtiment
 `manuel`, il est **signalé**, jamais supprimé en silence.
 
-### 6.5 Plus tard
-Un bloc référence une **fiche de catalogue** facultative (kit de façade, bâtiment modélisé). Le bloc reste l'empreinte
-de vérité : le modèle 3D s'y ajuste, et un modèle qui déborde de l'empreinte est refusé par la validation.
+### 6.5 Bâtiments modélisés, gizmo
+Un bâtiment peut référencer une **fiche de catalogue** (bâtiment modélisé, `.glb`). L'empreinte reste la vérité :
+pour un bâtiment modélisé, c'est le rectangle de la fiche (largeur × profondeur, mesurées sur le modèle sans ses
+maillages de collision `-col`) tourné de son **cap** autour de son centre. Routes, conflits et terrain la voient
+comme un bloc ; le modèle s'y pose (sol au centre de l'empreinte, comme un bloc).
+
+- **Champ** `modele` facultatif du bâtiment : `{ fiche, cap_deg }`. Fichiers de bâti en **version 2** (la
+  version 1, sans modèles, se lit toujours ; migration explicite).
+- **Cap** : rotation autour de +Y (main droite, vue de dessus : +X tourne vers −Z), en degrés, ramené à
+  [0 ; 360[. Cap 0 = le modèle tel qu'exporté (avant = −Z).
+- **Catalogue** (`mcf_editor/assets/batiments/catalogue.json`, versionné ; les `.glb` sont des assets du jeu, non
+  versionnés) : `id` sûr, nom, famille, fichier `.glb` (relatif, confiné au dossier), largeur, profondeur, hauteur,
+  centre de l'emprise dans le repère du modèle. Validé strictement. Une fiche ou un `.glb` absent n'empêche pas
+  d'ouvrir la carte : le bâtiment s'affiche en bloc et l'éditeur le signale.
+- **Gizmo** (bâtiments sélectionnés, Plan et 3D) : flèches X et Z (déplacement sur un axe), carré central
+  (déplacement libre), anneau (rotation autour du centre de la sélection, crans de 5°, Alt : libre). Un geste =
+  une annulation. Un bloc tourne son empreinte ; un bâtiment modélisé tourne son cap. Le verrou bloque les deux.
+- **Inspecteur** : position du centre et cap saisis au clavier.
+- **Pose** : liste des bâtiments du catalogue (étape Bâti), clic pour poser au curseur, `R` tourne de 90°
+  pendant la pose ; le bâtiment posé est `manuel`.
+- **Plus tard** : catalogue commun avec le jeu (`mcf_map::Catalog`), kits de façade, portes animées.
 
 ## 7. Édition croisée 2D ↔ 3D
 
@@ -266,6 +284,8 @@ sans Bevy, le serveur et `mcf_big_map` l'utilisent tels quels.
 | Conflits d'édition à deux | fichiers par famille et par cellule ; verrou de projet en option plus tard |
 | Carte énorme qui gèle l'éditeur | limites (sommets, tronçons, bâtiments, tuiles), calculs lourds en tâche de fond |
 | Dépendance compromise | `cargo deny` et revue avant tout ajout de crate (règle du dépôt) |
+| Fiche de catalogue piégée (chemin vers un autre fichier, dimensions absurdes) | identifiants sûrs, fichier `.glb` relatif sans `..` ni séparateur absolu, confiné au dossier du catalogue, dimensions bornées (0,5 à 200 m), refus des champs inconnus |
+| Bâtiment modélisé incohérent (empreinte ne correspondant pas à la fiche) | l'empreinte est **recalculée** depuis la fiche et le cap à chaque modification ; la validation vérifie un rectangle |
 
 ### 10.3 Isolation
 Il n'y a pas de clients tiers : c'est un outil interne. L'isolation porte sur deux frontières :

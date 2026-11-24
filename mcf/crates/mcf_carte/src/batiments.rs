@@ -1,5 +1,8 @@
-//! Bâti (`batiments/c_<x>_<z>.json`) : des blocs (empreinte × niveaux), générés ou posés à la main. Rangés par
-//! cellule pour limiter les conflits Git quand deux personnes travaillent sur des quartiers différents.
+//! Bâti (`batiments/c_<x>_<z>.json`) : des blocs (empreinte × niveaux), générés ou posés à la main, et des bâtiments
+//! modélisés (fiche du catalogue + cap, spec §6.5). Rangés par cellule pour limiter les conflits Git quand deux
+//! personnes travaillent sur des quartiers différents.
+//!
+//! Version 2 : champ facultatif `modele`. La version 1 (sans modèles) se lit toujours, telle quelle.
 
 use std::collections::BTreeMap;
 
@@ -12,8 +15,10 @@ use crate::manifeste::Manifeste;
 
 /// Valeur du champ `format`.
 pub const FORMAT: &str = "mcfbatiments";
-/// Version du format.
-pub const VERSION: u32 = 1;
+/// Version écrite.
+pub const VERSION: u32 = 2;
+/// Versions lues (la 1 n'a pas de bâtiments modélisés : même structure, champ absent).
+pub const VERSIONS_LUES: [u32; 2] = [1, 2];
 /// Bâtiments maximum sur une carte.
 pub const MAX_BATIMENTS: usize = 200_000;
 /// Sommets maximum d'une empreinte.
@@ -49,12 +54,59 @@ pub struct Batiment {
     /// Affectation de quartier qui l'a généré.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub affectation: Option<Id>,
+    /// Bâtiment modélisé : l'empreinte est alors le rectangle de la fiche, tourné du cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modele: Option<ModelePose>,
+}
+
+/// Fiche de catalogue posée et son orientation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelePose {
+    /// Identifiant de la fiche (`crate::catalogue`).
+    pub fiche: String,
+    /// Cap (degrés, [0 ; 360[) : rotation autour de +Y, main droite (vue de dessus, +X tourne vers −Z).
+    pub cap_deg: f64,
+}
+
+/// Ramène un angle en degrés dans [0 ; 360[.
+pub fn normaliser_cap(deg: f64) -> f64 {
+    let c = deg.rem_euclid(360.0);
+    // `rem_euclid` peut rendre 360 pour un très petit négatif.
+    if c >= 360.0 { 0.0 } else { c }
+}
+
+/// Tourne `p` de `deg` autour de `pivot`, comme `Quat::from_rotation_y` (x' = x cos + z sin, z' = −x sin + z cos).
+pub fn tourner(p: P2, pivot: P2, deg: f64) -> P2 {
+    let (s, c) = deg.to_radians().sin_cos();
+    let (x, z) = (p[0] - pivot[0], p[1] - pivot[1]);
+    [pivot[0] + x * c + z * s, pivot[1] - x * s + z * c]
+}
+
+/// Empreinte d'un bâtiment modélisé : rectangle `largeur` (X du modèle) × `profondeur` (Z du modèle) centré sur
+/// `centre`, tourné de `cap_deg`. Sens trigonométrique dans `(x, z)`, comme toute empreinte.
+pub fn empreinte_rectangle(centre: P2, largeur: f64, profondeur: f64, cap_deg: f64) -> Vec<P2> {
+    let (a, b) = (largeur * 0.5, profondeur * 0.5);
+    let coins = [[-a, -b], [a, -b], [a, b], [-a, b]]
+        .map(|q| tourner([centre[0] + q[0], centre[1] + q[1]], centre, cap_deg));
+    mcf_geo::polygone::oriente_positif(&coins)
 }
 
 impl Batiment {
     /// Hauteur totale (m).
     pub fn hauteur(&self) -> f64 {
         f64::from(self.niveaux) * self.hauteur_niveau_m
+    }
+
+    /// Tourne le bâtiment de `deg` autour de `pivot` puis le décale de `delta` (empreinte et cap).
+    pub fn transformer(&mut self, delta: P2, deg: f64, pivot: P2) {
+        for p in &mut self.empreinte {
+            let q = tourner(*p, pivot, deg);
+            *p = [q[0] + delta[0], q[1] + delta[1]];
+        }
+        if let Some(m) = &mut self.modele {
+            m.cap_deg = normaliser_cap(m.cap_deg + deg);
+        }
     }
 
     /// Centre de l'empreinte.
@@ -72,6 +124,17 @@ impl Batiment {
         }
         if !(1..=MAX_NIVEAUX).contains(&self.niveaux) || !(2.0..=12.0).contains(&self.hauteur_niveau_m) {
             return Err("niveaux ou hauteur hors bornes".into());
+        }
+        if let Some(m) = &self.modele {
+            if !crate::manifeste::nom_sur(&m.fiche) {
+                return Err("fiche de modèle : identifiant non sûr".into());
+            }
+            if !(m.cap_deg.is_finite() && (0.0..360.0).contains(&m.cap_deg)) {
+                return Err("cap hors de [0 ; 360[".into());
+            }
+            if self.empreinte.len() != 4 {
+                return Err("bâtiment modélisé : l'empreinte doit être un rectangle".into());
+            }
         }
         Ok(())
     }

@@ -212,6 +212,7 @@ pub fn construire() -> Result<Carte, String> {
                         origine: Origine::Manuel,
                         verrou: false,
                         affectation: Some(zone),
+                        modele: None,
                     },
                 );
             }

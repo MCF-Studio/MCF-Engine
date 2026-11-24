@@ -1144,6 +1144,7 @@ impl Carte {
                         origine: Origine::Genere,
                         verrou: false,
                         affectation: Some(id),
+                        modele: None,
                     },
                 );
             }
@@ -1176,21 +1177,45 @@ impl Carte {
 
     /// Déplace des bâtiments (ils deviennent manuels). Les verrouillés ne bougent pas.
     pub fn deplacer_batiments(&mut self, ids: &[Id], delta: P2) -> Result<usize, String> {
-        self.modifier("Déplacer des bâtiments", |tx| {
+        self.transformer_batiments(ids, delta, 0.0, [0.0, 0.0])
+    }
+
+    /// Tourne des bâtiments de `deg` autour de `pivot` puis les décale de `delta`, en une étape d'historique
+    /// (gizmo). Ils deviennent manuels ; les verrouillés ne bougent pas. Refusé en entier si un bâtiment sortirait
+    /// de la carte.
+    pub fn transformer_batiments(&mut self, ids: &[Id], delta: P2, deg: f64, pivot: P2) -> Result<usize, String> {
+        let libelle = if deg == 0.0 {
+            "Déplacer des bâtiments"
+        } else {
+            "Tourner des bâtiments"
+        };
+        self.modifier(libelle, |tx| {
             let mut n = 0;
             for id in ids {
                 if let Some(b) = tx.batiment(*id)
                     && !b.verrou
                 {
-                    for p in &mut b.empreinte {
-                        p[0] += delta[0];
-                        p[1] += delta[1];
-                    }
+                    b.transformer(delta, deg, pivot);
                     b.origine = Origine::Manuel;
                     n += 1;
                 }
             }
             Ok(n)
+        })
+    }
+
+    /// Pose un bâtiment modélisé de la fiche `fiche`, centré sur `centre`, orienté de `cap_deg`. Il est manuel.
+    pub fn poser_modele(
+        &mut self,
+        fiche: &crate::catalogue::Fiche,
+        centre: P2,
+        cap_deg: f64,
+    ) -> Result<Id, String> {
+        let b = fiche.batiment(centre, cap_deg);
+        let id = Id::nouveau();
+        self.modifier(&format!("Poser « {} »", fiche.nom), |tx| {
+            tx.poser_batiment(id, b);
+            Ok(id)
         })
     }
 
