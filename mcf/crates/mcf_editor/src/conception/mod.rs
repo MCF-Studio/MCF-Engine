@@ -202,13 +202,8 @@ pub enum CibleGlisse {
         /// Indice du sommet.
         index: usize,
     },
-    /// Une poignée du gizmo des bâtiments sélectionnés, autour de `pivot` (centre de la sélection au début).
-    Gizmo {
-        /// Poignée saisie.
-        poignee: gizmo::Poignee,
-        /// Centre de rotation (m).
-        pivot: P2,
-    },
+    /// Une poignée du gizmo des bâtiments sélectionnés (poignée, pivot, repères d'écran pris à la saisie).
+    Gizmo(gizmo::Saisie),
     /// Un point de contrôle d'un tronçon (`index` dans la polyligne de contrôle, extrémités comprises).
     Poignee {
         /// Tronçon.
@@ -227,6 +222,9 @@ pub struct Glisse {
     pub depart: P2,
     /// Point courant (m).
     pub actuel: P2,
+    /// Curseur à l'écran (pixels) au départ et maintenant : gestes qui ne suivent pas le sol (hauteur,
+    /// inclinaison). Mis à jour même quand le curseur ne vise plus le terrain (ciel).
+    pub ecran: [Vec2; 2],
     /// Cible.
     pub cible: CibleGlisse,
 }

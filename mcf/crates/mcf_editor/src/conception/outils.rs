@@ -24,9 +24,54 @@ pub struct GizmosPlan;
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct Gizmos3d;
 
-/// Repères visibles partout, toujours au premier plan (sélection, tracé en cours).
+/// Repères de la 3D toujours au premier plan (sélection, tracé en cours), posés sur le terrain.
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct GizmosDessus;
+
+/// Les mêmes repères dans le Plan, à plat au-dessus de tout (voir [`Reperes`]).
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct GizmosPlanDessus;
+
+/// Altitude des repères dans le Plan, au-dessus de l'altitude maximale : au-dessus des calques (+10 à +18 m), du
+/// voile des quartiers (+20 m), des routes (+30 m) et du bâti (+34 m) du Plan (`scene`), qui les cachaient.
+pub const REPERES_PLAN_M: f64 = 45.0;
+
+/// Repères de sélection et de tracé, dessinés deux fois : dans la 3D aux points donnés (sur le terrain), dans le
+/// Plan aux mêmes `(x, z)` mais à l'altitude `y_plan`. En vue verticale, l'altitude ne change pas la place à
+/// l'écran, seulement ce qui passe devant.
+pub struct Reperes<'a, 'w, 's, 'w2, 's2> {
+    /// Groupe de la 3D.
+    pub d3: &'a mut Gizmos<'w, 's, GizmosDessus>,
+    /// Groupe du Plan.
+    pub plan: &'a mut Gizmos<'w2, 's2, GizmosPlanDessus>,
+    /// Altitude des repères dans le Plan.
+    pub y_plan: f32,
+}
+
+impl Reperes<'_, '_, '_, '_, '_> {
+    /// Polyligne.
+    pub fn linestrip(&mut self, pts: impl IntoIterator<Item = Vec3>, c: Color) {
+        let pts: Vec<Vec3> = pts.into_iter().collect();
+        let y = self.y_plan;
+        self.plan.linestrip(pts.iter().map(|p| p.with_y(y)), c);
+        self.d3.linestrip(pts, c);
+    }
+
+    /// Cercle (l'isométrie donne son centre et son plan).
+    pub fn circle(&mut self, iso: Isometry3d, rayon: f32, c: Color) {
+        let mut a_plat = iso;
+        a_plat.translation.y = self.y_plan;
+        self.plan.circle(a_plat, rayon, c);
+        self.d3.circle(iso, rayon, c);
+    }
+
+    /// Flèche.
+    pub fn arrow(&mut self, de: Vec3, vers: Vec3, c: Color) {
+        let y = self.y_plan;
+        self.plan.arrow(de.with_y(y), vers.with_y(y), c);
+        self.d3.arrow(de, vers, c);
+    }
+}
 
 pub struct OutilsPlugin;
 
@@ -39,6 +84,7 @@ impl Plugin for OutilsPlugin {
         app.init_gizmo_group::<GizmosPlan>()
             .init_gizmo_group::<Gizmos3d>()
             .init_gizmo_group::<GizmosDessus>()
+            .init_gizmo_group::<GizmosPlanDessus>()
             .add_systems(Startup, regler_gizmos)
             .add_systems(Update, (souris, clavier, dessiner).chain().in_set(SystemesOutils));
     }
@@ -51,8 +97,12 @@ fn regler_gizmos(mut store: ResMut<GizmoConfigStore>) {
     let (c, _) = store.config_mut::<Gizmos3d>();
     c.render_layers = RenderLayers::layer(COUCHE_3D);
     c.line.width = 2.0;
+    let (c, _) = store.config_mut::<GizmosPlanDessus>();
+    c.render_layers = RenderLayers::layer(COUCHE_PLAN);
+    c.depth_bias = -1.0;
+    c.line.width = 2.5;
     let (c, _) = store.config_mut::<GizmosDessus>();
-    c.render_layers = RenderLayers::from_layers(&[COUCHE_PLAN, COUCHE_3D]);
+    c.render_layers = RenderLayers::layer(COUCHE_3D);
     c.depth_bias = -1.0;
     c.line.width = 2.5;
 }
@@ -170,18 +220,18 @@ fn batiment_vise(carte: &mut Carte, o: bevy::math::DVec3, d: bevy::math::DVec3, 
         [o2[0].min(fin[0]), o2[1].min(fin[1])],
         [o2[0].max(fin[0]), o2[1].max(fin[1])],
     );
-    let candidats: Vec<(Id, Vec<P2>, f64)> = carte
+    let candidats: Vec<(Id, Vec<P2>, f64, f64)> = carte
         .batiments
         .iter()
         .filter(|(_, b)| {
             let (a, c) = polygone::englobant(&b.empreinte);
             !(c[0] < bmin[0] || bmax[0] < a[0] || c[1] < bmin[1] || bmax[1] < a[1])
         })
-        .map(|(id, b)| (*id, b.empreinte.clone(), b.hauteur()))
+        .map(|(id, b)| (*id, b.empreinte.clone(), b.hauteur(), b.decalage_y_m))
         .collect();
     let terrain = &carte.derive().terrain;
     let mut meilleur: Option<(f64, Id)> = None;
-    for (id, e, hauteur) in candidats {
+    for (id, e, hauteur, decalage) in candidats {
         if e.len() < 3 {
             continue;
         }
@@ -189,9 +239,10 @@ fn batiment_vise(carte: &mut Carte, o: bevy::math::DVec3, d: bevy::math::DVec3, 
             .iter()
             .map(|q| terrain.hauteur(*q))
             .fold(f64::INFINITY, f64::min)
-            - 0.3;
+            - 0.3
+            + decalage.min(0.0);
         let centre = polygone::centroide(&e);
-        let haut = terrain.hauteur(centre).max(bas + 0.3) + hauteur;
+        let haut = terrain.hauteur(centre).max(bas + 0.3) + decalage + hauteur;
         // Tranche verticale [bas, haut].
         let (mut ta, mut tb) = if d.y.abs() < 1e-9 {
             if (bas..=haut).contains(&o.y) {
@@ -381,6 +432,13 @@ fn souris(
         let origine = *vue_glisse.get_or_insert(vue);
         if vue.is_some()
             && vue == origine
+            && let Some(c) = curseur
+        {
+            g.ecran[1] = c;
+            edition.glisse = Some(g);
+        }
+        if vue.is_some()
+            && vue == origine
             && let Some((p, _)) = edition.curseur
         {
             g.actuel = p;
@@ -422,13 +480,13 @@ fn souris(
         && matches!(edition.outil, Outil::Selection | Outil::Lotir)
         && let Selection::Batiments(ids) = &edition.selection
         && let (Some((v, cam, gt)), Some(c)) = (camera, curseur)
-        && let Some(pivot) = super::gizmo::pivot(&projet, ids)
-        && let Some(poignee) = super::gizmo::poignee_sous(*v, cam, gt, c, &mut projet, pivot)
+        && let Some(saisie) = super::gizmo::poignee_sous(*v, cam, gt, c, &mut projet, &ids.clone())
     {
         edition.glisse = Some(Glisse {
             depart: p,
             actuel: p,
-            cible: CibleGlisse::Gizmo { poignee, pivot },
+            ecran: [c, c],
+            cible: CibleGlisse::Gizmo(saisie),
         });
         return;
     }
@@ -494,6 +552,7 @@ fn souris(
                         edition.glisse = Some(Glisse {
                             depart: p,
                             actuel: p,
+                            ecran: [Vec2::ZERO; 2],
                             cible: CibleGlisse::Reference(id),
                         });
                     }
@@ -621,6 +680,7 @@ fn selectionner(
                 edition.glisse = Some(Glisse {
                     depart: poly[index],
                     actuel: poly[index],
+                    ecran: [Vec2::ZERO; 2],
                     cible: CibleGlisse::SommetZone { zone: id, index },
                 });
                 return;
@@ -683,6 +743,7 @@ fn selectionner(
                 edition.glisse = Some(Glisse {
                     depart: *q,
                     actuel: *q,
+                    ecran: [Vec2::ZERO; 2],
                     cible: CibleGlisse::Poignee {
                         troncon: id,
                         index,
@@ -727,6 +788,7 @@ fn selectionner(
             edition.glisse = Some(Glisse {
                 depart: p,
                 actuel: p,
+                ecran: [Vec2::ZERO; 2],
                 cible: CibleGlisse::Batiments,
             });
         }
@@ -830,26 +892,32 @@ fn supprimer_point(projet: &mut Projet, id: Id, index: usize, nombre: usize) {
 
 fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse, alt: bool) {
     let delta = [g.actuel[0] - g.depart[0], g.actuel[1] - g.depart[1]];
-    if delta[0].hypot(delta[1]) < 0.05 {
+    // Les gestes du gizmo qui ne suivent pas le sol (hauteur, inclinaison) ont leur propre seuil.
+    if delta[0].hypot(delta[1]) < 0.05 && !matches!(g.cible, CibleGlisse::Gizmo(_)) {
         return;
     }
     match g.cible {
-        CibleGlisse::Batiments | CibleGlisse::Gizmo { .. } => {
-            let (Selection::Batiments(ids), Some((d, deg, pivot))) =
+        CibleGlisse::Batiments | CibleGlisse::Gizmo(_) => {
+            let (Selection::Batiments(ids), Some(t)) =
                 (&edition.selection, super::gizmo::transformation(&g, alt))
             else {
                 return;
             };
-            if d[0].hypot(d[1]) < 0.05 && deg.abs() < 1e-6 {
+            if t.est_nulle() {
                 return;
             }
-            let r = projet.carte.transformer_batiments(ids, d, deg, pivot);
+            let r = projet.carte.transformer_batiments(ids, &t);
             projet.resultat(r, |n| {
-                if deg == 0.0 {
-                    format!("{n} bâtiment(s) déplacé(s) (désormais « manuels »).")
+                let quoi = if t.cap_deg != 0.0 {
+                    format!("tourné(s) de {:.1}°", t.cap_deg)
+                } else if t.tangage_deg != 0.0 || t.roulis_deg != 0.0 {
+                    format!("incliné(s) de {:.1}°", t.tangage_deg + t.roulis_deg)
+                } else if t.dy_m != 0.0 {
+                    format!("monté(s) de {:+.2} m", t.dy_m)
                 } else {
-                    format!("{n} bâtiment(s) tourné(s) de {deg:.1}° (désormais « manuels »).")
-                }
+                    "déplacé(s)".to_string()
+                };
+                format!("{n} bâtiment(s) {quoi} (désormais « manuels »).")
             });
         }
         CibleGlisse::Reference(id) => {
@@ -988,7 +1056,9 @@ pub fn tourner_90(projet: &mut Projet, edition: &mut Edition, deg: f64) {
     let Some(pivot) = super::gizmo::pivot(projet, ids) else {
         return;
     };
-    let r = projet.carte.transformer_batiments(ids, [0.0, 0.0], deg, pivot);
+    let r = projet
+        .carte
+        .transformer_batiments(ids, &mcf_carte::Transformation::rotation(deg, pivot));
     projet.resultat(r, |n| format!("{n} bâtiment(s) tourné(s) de {deg:.0}°."));
 }
 
@@ -1064,12 +1134,12 @@ fn drape(terrain: &mcf_carte::relief::Relief, pts: &[P2], ferme: bool, dessus: f
 
 /// Contour d'un bâtiment (au sol et au toit) ; pour un bâtiment modélisé, flèche de sa façade avant (−Z du modèle).
 fn contour_batiment(
-    g: &mut Gizmos<GizmosDessus>,
+    g: &mut Reperes,
     terrain: &mcf_carte::relief::Relief,
     b: &mcf_carte::Batiment,
     couleur: Color,
 ) {
-    let base = terrain.hauteur(b.centre());
+    let base = terrain.hauteur(b.centre()) + b.decalage_y_m;
     let pts: Vec<Vec3> = b
         .empreinte
         .iter()
@@ -1102,7 +1172,8 @@ fn horizontal(c: Vec3) -> Isometry3d {
 fn dessiner(
     mut plan: Gizmos<GizmosPlan>,
     mut trois_d: Gizmos<Gizmos3d>,
-    mut dessus: Gizmos<GizmosDessus>,
+    mut dessus_3d: Gizmos<GizmosDessus>,
+    mut dessus_plan: Gizmos<GizmosPlanDessus>,
     affiche: Res<Affiche>,
     edition: Res<Edition>,
     orbite: Res<super::camera::Orbite>,
@@ -1154,6 +1225,11 @@ fn dessiner(
     };
     // Calque de référence actif : son cadre, au-dessus des images (Plan).
     let alt_dessus = carte.manifeste.altitude_max_m as f32 + 25.0;
+    let mut dessus = Reperes {
+        d3: &mut dessus_3d,
+        plan: &mut dessus_plan,
+        y_plan: (carte.manifeste.altitude_max_m + REPERES_PLAN_M) as f32,
+    };
     if let Some(r) = edition.reference_active.and_then(|id| {
         super::references::references_affichees(carte, &edition)
             .into_iter()
@@ -1210,10 +1286,10 @@ fn dessiner(
             for id in ids {
                 if let Some(b) = batiments.get(id) {
                     let mut b = b.clone();
-                    if let Some((d, deg, pivot)) = apercu
+                    if let Some(t) = &apercu
                         && !b.verrou
                     {
-                        b.transformer(d, deg, pivot);
+                        b.transformer(t);
                     }
                     contour_batiment(&mut dessus, terrain, &b, jaune);
                 }
@@ -1328,7 +1404,7 @@ fn dessiner(
         }
         _ => {}
     }
-    super::releve::dessiner(&mut plan, &mut dessus, &edition, terrain, alt_dessus);
+    super::releve::dessiner(&mut plan, dessus.d3, &edition, terrain, alt_dessus);
     for q in &edition.points {
         let c = Vec3::new(q[0] as f32, (terrain.hauteur(*q) + 0.5) as f32, q[1] as f32);
         dessus.circle(horizontal(c), 1.2, jaune);

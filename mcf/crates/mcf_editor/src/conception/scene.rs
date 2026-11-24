@@ -628,8 +628,9 @@ fn bloc(
         return;
     }
     let hs: Vec<f64> = b.empreinte.iter().map(|p| terrain.hauteur(*p)).collect();
-    let bas = hs.iter().copied().fold(f64::INFINITY, f64::min) - 0.3;
-    let sol = terrain.hauteur(b.centre()).max(bas + 0.3);
+    // Décalage vertical : socle (vers le haut) ou bâtiment enfoncé (vers le bas, murs prolongés d'autant).
+    let bas = hs.iter().copied().fold(f64::INFINITY, f64::min) - 0.3 + b.decalage_y_m.min(0.0);
+    let sol = terrain.hauteur(b.centre()).max(bas + 0.3) + b.decalage_y_m;
     let haut = sol + b.hauteur();
     let toit = mcf_geo::maillage_polygone(&b.empreinte, |_| haut);
     plan.ajouter(&toit, lin([150, 140, 132], 1.0));

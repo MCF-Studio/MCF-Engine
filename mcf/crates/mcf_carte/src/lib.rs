@@ -24,7 +24,7 @@ pub mod relief;
 pub mod relief_image;
 pub mod reseau;
 
-pub use batiments::{Batiment, ModelePose, Origine};
+pub use batiments::{Batiment, ModelePose, Origine, Transformation};
 pub use carte::{Carte, Derive, Revisions, Sale, Transaction};
 pub use catalogue::{CatalogueBatiments, Fiche};
 pub use contours::{Contour, Contours, UsageContour};

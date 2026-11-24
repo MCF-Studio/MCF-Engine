@@ -269,6 +269,7 @@ mod tests {
         edition.glisse = Some(Glisse {
             depart: [0.0, 0.0],
             actuel: [10.0, -5.0],
+            ecran: [Vec2::ZERO; 2],
             cible: CibleGlisse::Reference(id),
         });
         let enregistre = carte.references.references[&id].clone();

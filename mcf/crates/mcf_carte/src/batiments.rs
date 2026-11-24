@@ -23,6 +23,14 @@ pub const VERSIONS_LUES: [u32; 2] = [1, 2];
 pub const MAX_BATIMENTS: usize = 200_000;
 /// Sommets maximum d'une empreinte.
 pub const MAX_SOMMETS: usize = 64;
+/// Décalage vertical maximal d'un bâtiment par rapport au sol (m), vers le haut comme vers le bas.
+pub const DECALAGE_Y_MAX_M: f64 = 50.0;
+/// Inclinaison maximale d'un bâtiment modélisé autour de ses axes X et Z (degrés).
+pub const INCLINAISON_MAX_DEG: f64 = 45.0;
+
+fn est_zero(v: &f64) -> bool {
+    *v == 0.0
+}
 
 /// D'où vient un bâtiment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +65,10 @@ pub struct Batiment {
     /// Bâtiment modélisé : l'empreinte est alors le rectangle de la fiche, tourné du cap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modele: Option<ModelePose>,
+    /// Décalage vertical par rapport au sol sous son centre (m, + vers le haut) : socle, bâtiment enfoncé dans
+    /// une pente. Borné à ± [`DECALAGE_Y_MAX_M`].
+    #[serde(default, skip_serializing_if = "est_zero")]
+    pub decalage_y_m: f64,
 }
 
 /// Fiche de catalogue posée et son orientation.
@@ -67,6 +79,66 @@ pub struct ModelePose {
     pub fiche: String,
     /// Cap (degrés, [0 ; 360[) : rotation autour de +Y, main droite (vue de dessus, +X tourne vers −Z).
     pub cap_deg: f64,
+    /// Tangage (degrés) : inclinaison autour de l'axe X du modèle, appliquée après le cap. Borné à
+    /// ± [`INCLINAISON_MAX_DEG`]. L'empreinte reste le rectangle non incliné.
+    #[serde(default, skip_serializing_if = "est_zero")]
+    pub tangage_deg: f64,
+    /// Roulis (degrés) : inclinaison autour de l'axe Z du modèle, appliquée après le tangage. Mêmes bornes.
+    #[serde(default, skip_serializing_if = "est_zero")]
+    pub roulis_deg: f64,
+}
+
+/// Transformation d'un geste sur des bâtiments (gizmo, inspecteur, touche R).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Transformation {
+    /// Décalage horizontal `(x, z)` (m), appliqué après la rotation.
+    pub delta: P2,
+    /// Décalage vertical (m).
+    pub dy_m: f64,
+    /// Rotation autour de +Y (degrés), autour de `pivot`.
+    pub cap_deg: f64,
+    /// Centre de la rotation.
+    pub pivot: P2,
+    /// Tangage ajouté (degrés, bâtiments modélisés seulement).
+    pub tangage_deg: f64,
+    /// Roulis ajouté (degrés, bâtiments modélisés seulement).
+    pub roulis_deg: f64,
+}
+
+impl Transformation {
+    /// Déplacement horizontal seul.
+    pub fn deplacement(delta: P2) -> Self {
+        Self {
+            delta,
+            ..Self::default()
+        }
+    }
+
+    /// Rotation seule autour de +Y.
+    pub fn rotation(cap_deg: f64, pivot: P2) -> Self {
+        Self {
+            cap_deg,
+            pivot,
+            ..Self::default()
+        }
+    }
+
+    /// Rien ne bouge (à 5 cm et un centième de degré près).
+    pub fn est_nulle(&self) -> bool {
+        self.delta[0].hypot(self.delta[1]) < 0.05
+            && self.dy_m.abs() < 0.005
+            && [self.cap_deg, self.tangage_deg, self.roulis_deg]
+                .iter()
+                .all(|a| a.abs() < 0.01)
+    }
+
+    /// Ne touche que l'inclinaison (sans effet sur un bloc).
+    pub fn inclinaison_seule(&self) -> bool {
+        (self.tangage_deg != 0.0 || self.roulis_deg != 0.0)
+            && self.delta == [0.0, 0.0]
+            && self.dy_m == 0.0
+            && self.cap_deg == 0.0
+    }
 }
 
 /// Ramène un angle en degrés dans [0 ; 360[.
@@ -98,14 +170,19 @@ impl Batiment {
         f64::from(self.niveaux) * self.hauteur_niveau_m
     }
 
-    /// Tourne le bâtiment de `deg` autour de `pivot` puis le décale de `delta` (empreinte et cap).
-    pub fn transformer(&mut self, delta: P2, deg: f64, pivot: P2) {
+    /// Applique `t` : rotation autour de `t.pivot` puis décalage (empreinte et cap), décalage vertical et
+    /// inclinaison (modélisés), ramenés dans leurs bornes plutôt que refusés.
+    pub fn transformer(&mut self, t: &Transformation) {
         for p in &mut self.empreinte {
-            let q = tourner(*p, pivot, deg);
-            *p = [q[0] + delta[0], q[1] + delta[1]];
+            let q = tourner(*p, t.pivot, t.cap_deg);
+            *p = [q[0] + t.delta[0], q[1] + t.delta[1]];
         }
+        self.decalage_y_m = (self.decalage_y_m + t.dy_m).clamp(-DECALAGE_Y_MAX_M, DECALAGE_Y_MAX_M);
         if let Some(m) = &mut self.modele {
-            m.cap_deg = normaliser_cap(m.cap_deg + deg);
+            let borne = |v: f64| v.clamp(-INCLINAISON_MAX_DEG, INCLINAISON_MAX_DEG);
+            m.cap_deg = normaliser_cap(m.cap_deg + t.cap_deg);
+            m.tangage_deg = borne(m.tangage_deg + t.tangage_deg);
+            m.roulis_deg = borne(m.roulis_deg + t.roulis_deg);
         }
     }
 
@@ -125,7 +202,16 @@ impl Batiment {
         if !(1..=MAX_NIVEAUX).contains(&self.niveaux) || !(2.0..=12.0).contains(&self.hauteur_niveau_m) {
             return Err("niveaux ou hauteur hors bornes".into());
         }
+        if !(self.decalage_y_m.is_finite() && self.decalage_y_m.abs() <= DECALAGE_Y_MAX_M) {
+            return Err(format!("décalage vertical hors de ± {DECALAGE_Y_MAX_M} m"));
+        }
         if let Some(m) = &self.modele {
+            if ![m.tangage_deg, m.roulis_deg]
+                .iter()
+                .all(|a| a.is_finite() && a.abs() <= INCLINAISON_MAX_DEG)
+            {
+                return Err(format!("inclinaison hors de ± {INCLINAISON_MAX_DEG}°"));
+            }
             if !crate::manifeste::nom_sur(&m.fiche) {
                 return Err("fiche de modèle : identifiant non sûr".into());
             }

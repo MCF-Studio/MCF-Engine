@@ -11,9 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use bevy::{camera::visibility::RenderLayers, prelude::*, world_serialization::WorldInstanceReady};
-use mcf_carte::{
-    Batiment, CatalogueBatiments, Fiche, Id, Revisions, batiments::tourner, catalogue::MAX_OCTETS,
-};
+use mcf_carte::{Batiment, CatalogueBatiments, Fiche, Id, ModelePose, Revisions, catalogue::MAX_OCTETS};
 
 use super::{COUCHE_3D, Edition, Projet};
 
@@ -119,12 +117,24 @@ struct Instances(HashMap<Id, (Entity, String)>);
 #[derive(Component)]
 struct ModeleBatiment;
 
-/// Place des modèles : `Transform` d'une fiche posée au centre `centre`, au sol `sol`, avec le cap `cap_deg`.
-pub fn placement(fiche: &Fiche, centre: [f64; 2], sol: f64, cap_deg: f64) -> Transform {
-    let rot = Quat::from_rotation_y((cap_deg as f32).to_radians());
+/// Orientation d'un modèle posé : cap autour de +Y, puis tangage autour de son axe X, puis roulis autour de son axe
+/// Z (`Ry · Rx · Rz`) ; tourner autour de l'axe X du modèle ajoute donc exactement au tangage, et de même pour le
+/// roulis (anneaux du gizmo).
+pub fn rotation(m: &ModelePose) -> Quat {
+    let r = |deg: f64| (deg as f32).to_radians();
+    Quat::from_rotation_y(r(m.cap_deg))
+        * Quat::from_rotation_x(r(m.tangage_deg))
+        * Quat::from_rotation_z(r(m.roulis_deg))
+}
+
+/// Place des modèles : `Transform` du bâtiment modélisé `b` (fiche `fiche`), le sol sous son centre étant à `sol`.
+/// Le centre de l'encombrement du modèle tombe sur le centre de l'empreinte, au sol plus le décalage vertical.
+pub fn placement(fiche: &Fiche, b: &Batiment, sol: f64) -> Option<Transform> {
+    let rot = rotation(b.modele.as_ref()?);
+    let c = b.centre();
     let decal = rot * Vec3::new(fiche.centre_m[0] as f32, 0.0, fiche.centre_m[1] as f32);
-    Transform::from_translation(Vec3::new(centre[0] as f32, sol as f32, centre[1] as f32) - decal)
-        .with_rotation(rot)
+    let ancre = Vec3::new(c[0] as f32, (sol + b.decalage_y_m) as f32, c[1] as f32);
+    Some(Transform::from_translation(ancre - decal).with_rotation(rot))
 }
 
 /// Garde les modèles en accord avec la carte (pose, retrait, déplacement) et montre l'aperçu d'un geste en cours.
@@ -166,16 +176,16 @@ fn synchroniser(
         let Some(fiche) = catalogue.fiche(&m.fiche) else {
             continue;
         };
-        let (mut centre, mut cap) = (b.centre(), m.cap_deg);
-        if let Some((d, deg, pivot)) = apercu
+        let mut vu_ici = b.clone();
+        if let Some(t) = &apercu
             && selection.contains(&id)
             && !b.verrou
         {
-            let q = tourner(centre, pivot, deg);
-            centre = [q[0] + d[0], q[1] + d[1]];
-            cap += deg;
+            vu_ici.transformer(t);
         }
-        let t = placement(fiche, centre, terrain.hauteur(centre), cap);
+        let Some(t) = placement(fiche, &vu_ici, terrain.hauteur(vu_ici.centre())) else {
+            continue;
+        };
         gardes.insert(id);
         match instances.0.get(&id) {
             Some((e, f)) if *f == m.fiche => {
@@ -234,6 +244,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hauteur_et_inclinaison_du_modele() {
+        let c = charger(&dossier());
+        let f = c.fiche("superette").expect("fiche").clone();
+        let mut b = f.batiment([0.0, 0.0], 90.0);
+        b.transformer(&mcf_carte::Transformation {
+            dy_m: -0.8,
+            tangage_deg: 10.0,
+            ..Default::default()
+        });
+        let t = placement(&f, &b, 5.0).expect("modélisé");
+        // Le centre de l'encombrement reste ancré au sol + décalage, même incliné.
+        let w = t.transform_point(Vec3::new(f.centre_m[0] as f32, 0.0, f.centre_m[1] as f32));
+        assert!((w - Vec3::new(0.0, 4.2, 0.0)).length() < 1e-4, "{w}");
+        // Tangage : l'axe X du modèle (après le cap) ne bouge pas, l'avant (−Z) monte.
+        let x = t.rotation * Vec3::X;
+        assert!((x - Quat::from_rotation_y(90f32.to_radians()) * Vec3::X).length() < 1e-5);
+        assert!((t.rotation * Vec3::NEG_Z).y > 0.1);
+    }
+
+    #[test]
     fn catalogue_du_depot_valide() {
         let c = charger(&dossier());
         assert!(c.erreur.is_none(), "{:?}", c.erreur);
@@ -258,7 +288,7 @@ mod tests {
         let f = c.fiche("maison_a").expect("fiche").clone();
         for cap in [0.0, 37.0, 90.0, 215.0] {
             let b = f.batiment([100.0, -50.0], cap);
-            let t = placement(&f, b.centre(), 12.0, cap);
+            let t = placement(&f, &b, 12.0).expect("modélisé");
             // Le centre de l'encombrement du modèle (repère du modèle) tombe sur le centre de l'empreinte.
             let w = t.transform_point(Vec3::new(f.centre_m[0] as f32, 0.0, f.centre_m[1] as f32));
             assert!(

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use mcf_geo::{ClasseRoute, P2, polygone};
 
-use crate::batiments::{Batiment, Origine};
+use crate::batiments::{Batiment, Origine, Transformation};
 use crate::contours::{Contour, Contours, UsageContour};
 use crate::gabarits::{Densite, Famille};
 use crate::geometrie::{self, GeoReseau};
@@ -1145,6 +1145,7 @@ impl Carte {
                         verrou: false,
                         affectation: Some(id),
                         modele: None,
+                        decalage_y_m: 0.0,
                     },
                 );
             }
@@ -1177,31 +1178,31 @@ impl Carte {
 
     /// Déplace des bâtiments (ils deviennent manuels). Les verrouillés ne bougent pas.
     pub fn deplacer_batiments(&mut self, ids: &[Id], delta: P2) -> Result<usize, String> {
-        self.transformer_batiments(ids, delta, 0.0, [0.0, 0.0])
+        self.transformer_batiments(ids, &Transformation::deplacement(delta))
     }
 
-    /// Tourne des bâtiments de `deg` autour de `pivot` puis les décale de `delta`, en une étape d'historique
-    /// (gizmo). Ils deviennent manuels ; les verrouillés ne bougent pas. Refusé en entier si un bâtiment sortirait
-    /// de la carte.
-    pub fn transformer_batiments(
-        &mut self,
-        ids: &[Id],
-        delta: P2,
-        deg: f64,
-        pivot: P2,
-    ) -> Result<usize, String> {
-        let libelle = if deg == 0.0 {
-            "Déplacer des bâtiments"
-        } else {
+    /// Applique une transformation (gizmo, inspecteur) à des bâtiments, en une étape d'historique. Ils deviennent
+    /// manuels ; les verrouillés ne bougent pas ; une inclinaison seule ne touche que les bâtiments modélisés (un
+    /// bloc ne s'incline pas). Refusé en entier si un bâtiment sortirait de la carte. Rend le nombre de bâtiments
+    /// modifiés.
+    pub fn transformer_batiments(&mut self, ids: &[Id], t: &Transformation) -> Result<usize, String> {
+        let libelle = if t.cap_deg != 0.0 {
             "Tourner des bâtiments"
+        } else if t.tangage_deg != 0.0 || t.roulis_deg != 0.0 {
+            "Incliner des bâtiments"
+        } else if t.dy_m != 0.0 && t.delta == [0.0, 0.0] {
+            "Monter / descendre des bâtiments"
+        } else {
+            "Déplacer des bâtiments"
         };
         self.modifier(libelle, |tx| {
             let mut n = 0;
             for id in ids {
                 if let Some(b) = tx.batiment(*id)
                     && !b.verrou
+                    && !(t.inclinaison_seule() && b.modele.is_none())
                 {
-                    b.transformer(delta, deg, pivot);
+                    b.transformer(t);
                     b.origine = Origine::Manuel;
                     n += 1;
                 }

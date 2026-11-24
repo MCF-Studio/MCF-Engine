@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use bevy::{prelude::*, window::FileDragAndDrop};
 use bevy_egui::{EguiContexts, egui};
 use mcf_carte::{
-    Carte, Densite, Famille, GrapheRoutier, Manifeste, Origine,
+    Carte, Densite, Famille, GrapheRoutier, Manifeste, Origine, Transformation,
     export::{self, StylePlan},
     relief::Pinceau,
 };
@@ -1008,7 +1008,7 @@ fn position_et_cap(ui: &mut egui::Ui, projet: &mut Projet, id: mcf_carte::Id, b:
             if rx.changed() || rz.changed() {
                 let r = projet
                     .carte
-                    .transformer_batiments(&[id], [x - c[0], z - c[1]], 0.0, c);
+                    .transformer_batiments(&[id], &Transformation::deplacement([x - c[0], z - c[1]]));
                 projet.resultat(r, |_| format!("Centre en ({x:.2} ; {z:.2})."));
             }
         });
@@ -1043,8 +1043,65 @@ fn position_et_cap(ui: &mut egui::Ui, projet: &mut Projet, id: mcf_carte::Id, b:
         });
     });
     if deg != 0.0 {
-        let r = projet.carte.transformer_batiments(&[id], [0.0, 0.0], deg, c);
+        let r = projet
+            .carte
+            .transformer_batiments(&[id], &Transformation::rotation(deg, c));
         projet.resultat(r, |_| format!("Tourné de {deg:.1}°."));
+    }
+    // Hauteur et inclinaison : valeurs absolues saisies, appliquées en écart.
+    let mut t = Transformation::default();
+    let mut dy = b.decalage_y_m;
+    ui.add_enabled_ui(!b.verrou, |ui| {
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    egui::DragValue::new(&mut dy)
+                        .range(
+                            -mcf_carte::batiments::DECALAGE_Y_MAX_M..=mcf_carte::batiments::DECALAGE_Y_MAX_M,
+                        )
+                        .speed(0.05)
+                        .fixed_decimals(2)
+                        .prefix("Y : ")
+                        .suffix(" m"),
+                )
+                .on_hover_text(
+                    "Hauteur par rapport au sol sous le centre (+ : socle, − : enfoncé dans la pente)",
+                )
+                .changed()
+            {
+                t.dy_m = dy - b.decalage_y_m;
+            }
+        });
+        if let Some(m) = &b.modele {
+            let borne = mcf_carte::batiments::INCLINAISON_MAX_DEG;
+            let (mut tg, mut rl) = (m.tangage_deg, m.roulis_deg);
+            ui.horizontal(|ui| {
+                let a = ui.add(
+                    egui::DragValue::new(&mut tg)
+                        .range(-borne..=borne)
+                        .speed(0.25)
+                        .fixed_decimals(1)
+                        .prefix("tangage : ")
+                        .suffix("°"),
+                );
+                let r = ui.add(
+                    egui::DragValue::new(&mut rl)
+                        .range(-borne..=borne)
+                        .speed(0.25)
+                        .fixed_decimals(1)
+                        .prefix("roulis : ")
+                        .suffix("°"),
+                );
+                if a.changed() || r.changed() {
+                    t.tangage_deg = tg - m.tangage_deg;
+                    t.roulis_deg = rl - m.roulis_deg;
+                }
+            });
+        }
+    });
+    if !t.est_nulle() {
+        let r = projet.carte.transformer_batiments(&[id], &t);
+        projet.resultat(r, |_| "Hauteur / inclinaison modifiées.".into());
     }
 }
 

@@ -199,10 +199,16 @@ comme un bloc ; le modèle s'y pose (sol au centre de l'empreinte, comme un bloc
   versionnés) : `id` sûr, nom, famille, fichier `.glb` (relatif, confiné au dossier), largeur, profondeur, hauteur,
   centre de l'emprise dans le repère du modèle. Validé strictement. Une fiche ou un `.glb` absent n'empêche pas
   d'ouvrir la carte : le bâtiment s'affiche en bloc et l'éditeur le signale.
-- **Gizmo** (bâtiments sélectionnés, Plan et 3D) : flèches X et Z (déplacement sur un axe), carré central
-  (déplacement libre), anneau (rotation autour du centre de la sélection, crans de 5°, Alt : libre). Un geste =
-  une annulation. Un bloc tourne son empreinte ; un bâtiment modélisé tourne son cap. Le verrou bloque les deux.
-- **Inspecteur** : position du centre et cap saisis au clavier.
+- **Hauteur** : `decalage_y_m` facultatif de tout bâtiment (socle ou bâtiment enfoncé dans une pente), borné à
+  ± 50 m, par rapport au sol sous le centre. **Inclinaison** (bâtiments modélisés) : `tangage_deg` et `roulis_deg`
+  du modèle, bornés à ± 45°, orientation `Ry(cap) · Rx(tangage) · Rz(roulis)`. L'empreinte reste le rectangle non
+  incliné.
+- **Gizmo** (bâtiments sélectionnés) aux couleurs d'axe habituelles (X rouge, Y vert, Z bleu) : flèches X, Y (3D)
+  et Z, carré central (déplacement libre au sol), anneau vert (cap autour du centre de la sélection) et, pour un
+  seul bâtiment modélisé en 3D, anneaux rouge et bleu (tangage, roulis autour des axes du modèle). Crans de 5° et
+  de 10 cm, Alt : libre. Un geste = une annulation. Un bloc tourne son empreinte et ne s'incline pas ; le verrou
+  bloque tout.
+- **Inspecteur** : position du centre, cap, hauteur et inclinaison saisis au clavier.
 - **Pose** : liste des bâtiments du catalogue (étape Bâti), clic pour poser au curseur, `R` tourne de 90°
   pendant la pose ; le bâtiment posé est `manuel`.
 - **Plus tard** : catalogue commun avec le jeu (`mcf_map::Catalog`), kits de façade, portes animées.

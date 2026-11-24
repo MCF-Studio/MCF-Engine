@@ -213,6 +213,7 @@ pub fn construire() -> Result<Carte, String> {
                         verrou: false,
                         affectation: Some(zone),
                         modele: None,
+                        decalage_y_m: 0.0,
                     },
                 );
             }

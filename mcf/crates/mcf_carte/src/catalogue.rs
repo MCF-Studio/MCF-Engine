@@ -105,7 +105,10 @@ impl Fiche {
             modele: Some(ModelePose {
                 fiche: self.id.clone(),
                 cap_deg,
+                tangage_deg: 0.0,
+                roulis_deg: 0.0,
             }),
+            decalage_y_m: 0.0,
         }
     }
 }
@@ -175,7 +178,7 @@ impl CatalogueBatiments {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::batiments::tourner;
+    use crate::batiments::{DECALAGE_Y_MAX_M, INCLINAISON_MAX_DEG, Transformation, tourner};
 
     fn maison() -> Fiche {
         Fiche {
@@ -275,7 +278,11 @@ mod tests {
     #[test]
     fn transformer_tourne_le_cap_et_l_empreinte() {
         let mut b = maison().batiment([0.0, 0.0], 350.0);
-        b.transformer([5.0, 0.0], 20.0, [0.0, 0.0]);
+        b.transformer(&Transformation {
+            delta: [5.0, 0.0],
+            cap_deg: 20.0,
+            ..Transformation::default()
+        });
         let m = b.modele.as_ref().expect("modèle");
         assert!(
             (m.cap_deg - 10.0).abs() < 1e-9,
@@ -286,6 +293,26 @@ mod tests {
         for (a, e) in b.empreinte.iter().zip(&attendu.empreinte) {
             assert!((a[0] - e[0]).abs() < 1e-9 && (a[1] - e[1]).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn hauteur_et_inclinaison_bornees() {
+        let mut b = maison().batiment([0.0, 0.0], 0.0);
+        let t = Transformation {
+            dy_m: 80.0,
+            tangage_deg: 30.0,
+            roulis_deg: -70.0,
+            ..Transformation::default()
+        };
+        b.transformer(&t);
+        let m = b.modele.as_ref().expect("modèle");
+        assert_eq!(b.decalage_y_m, DECALAGE_Y_MAX_M);
+        assert_eq!((m.tangage_deg, m.roulis_deg), (30.0, -INCLINAISON_MAX_DEG));
+        b.valider(&crate::Manifeste::nouveau("t", 512.0))
+            .expect("valide une fois borné");
+        // Une valeur forcée hors bornes (fichier piégé) est refusée.
+        b.decalage_y_m = 51.0;
+        assert!(b.valider(&crate::Manifeste::nouveau("t", 512.0)).is_err());
     }
 
     #[test]

@@ -524,8 +524,21 @@ mod tests {
         };
         let mut c = Carte::nouvelle(Manifeste::nouveau("modeles", 512.0)).expect("carte");
         let id = c.poser_modele(&fiche, [40.0, -30.0], 30.0).expect("poser");
-        c.transformer_batiments(&[id], [2.0, 1.0], 45.0, [40.0, -30.0])
-            .expect("tourner");
+        c.transformer_batiments(
+            &[id],
+            &batiments::Transformation {
+                delta: [2.0, 1.0],
+                dy_m: -1.5,
+                cap_deg: 45.0,
+                pivot: [40.0, -30.0],
+                tangage_deg: 4.0,
+                roulis_deg: 0.0,
+            },
+        )
+        .expect("tourner");
+        let b = &c.batiments[&id];
+        assert_eq!(b.decalage_y_m, -1.5);
+        assert_eq!(b.modele.as_ref().map(|m| m.tangage_deg), Some(4.0));
         assert_eq!(c.batiments[&id].modele.as_ref().map(|m| m.cap_deg), Some(75.0));
         let d = dossier_test("modeles");
         c.enregistrer(Some(&d)).expect("enregistrer");
