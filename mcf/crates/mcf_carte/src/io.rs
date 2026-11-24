@@ -5,6 +5,8 @@
 //!          /reseau.json            réseau routier
 //!          /quartiers.json         quartiers
 //!          /contours.json          contours nommés (entrées de souterrain…)
+//!          /references.json        calques de référence (facultatif)
+//!          /references/r_<id>.png  leurs images, réencodées à l'import
 //!          /batiments/c_X_Z.json   bâti par cellule
 //!          /relief/t_X_Z.png       heightmap source 16 bits par tuile (bords partagés)
 //!          /calques/<nom>.mcfmap   objets posés
@@ -27,8 +29,10 @@ use serde::de::DeserializeOwned;
 use crate::batiments::{self, FichierBatiments};
 use crate::carte::{Carte, Sale};
 use crate::contours::Contours;
+use crate::ids::Id;
 use crate::manifeste::{Manifeste, nom_sur};
 use crate::quartiers::Quartiers;
+use crate::references::{self, ImageRgba, References};
 use crate::relief::Relief;
 use crate::reseau::Reseau;
 
@@ -42,6 +46,8 @@ pub const MAX_RESEAU: u64 = 64 * 1024 * 1024;
 pub const MAX_QUARTIERS: u64 = 16 * 1024 * 1024;
 /// Contours.
 pub const MAX_CONTOURS: u64 = 16 * 1024 * 1024;
+/// Poids maximal de `references.json` (octets).
+pub const MAX_REFERENCES_JSON: u64 = 1024 * 1024;
 /// Une cellule de bâti.
 pub const MAX_CELLULE: u64 = 32 * 1024 * 1024;
 /// Une tuile PNG.
@@ -155,7 +161,65 @@ fn decoder_tuile(octets: Vec<u8>, m: &Manifeste, r: &mut Relief, tx: usize, tz: 
     Ok(())
 }
 
+/// `references.json` (facultatif : absent dans les projets antérieurs) et ses images, validés.
+fn lire_references(dossier: &Path, m: &Manifeste) -> Result<(References, BTreeMap<Id, ImageRgba>), String> {
+    let chemin = dossier.join("references.json");
+    if !chemin.exists() {
+        return Ok((References::default(), BTreeMap::new()));
+    }
+    let refs: References = lire_json(&chemin, MAX_REFERENCES_JSON)?;
+    refs.valider(m).map_err(|e| erreur(&chemin, e))?;
+    let d = dossier.join("references");
+    verifier_pas_lien(&d)?;
+    let mut images = BTreeMap::new();
+    for (id, r) in &refs.references {
+        let f = d.join(references::nom_fichier(*id));
+        let image =
+            references::decoder_png(&lire_borne(&f, references::MAX_OCTETS)?).map_err(|e| erreur(&f, e))?;
+        if image.largeur != r.largeur_px || image.hauteur != r.hauteur_px {
+            return Err(erreur(&f, "dimensions différentes de references.json"));
+        }
+        images.insert(*id, image);
+    }
+    Ok((refs, images))
+}
+
 impl Carte {
+    /// Écrit `references.json`, les images manquantes, et supprime nos images devenues orphelines.
+    fn ecrire_references(&self, cible: &Path) -> Result<(), String> {
+        let d = cible.join("references");
+        fs::create_dir_all(&d).map_err(|e| erreur(&d, e))?;
+        verifier_pas_lien(&d)?;
+        let mut a_garder = std::collections::BTreeSet::new();
+        for id in self.references.references.keys() {
+            let nom = references::nom_fichier(*id);
+            let f = d.join(&nom);
+            // Une image n'est jamais modifiée après import : présente = à jour.
+            if !f.exists() {
+                let image = self
+                    .images_references
+                    .get(id)
+                    .ok_or_else(|| format!("image du calque {id} absente"))?;
+                let octets = references::encoder_png(image)?;
+                mcf_map::write_atomic(&f, &octets).map_err(|e| erreur(&f, e))?;
+            }
+            a_garder.insert(nom);
+        }
+        ecrire_json(&cible.join("references.json"), &self.references)?;
+        // Seuls nos propres fichiers `r_<16 hex>.png` sont supprimés.
+        for entree in fs::read_dir(&d).map_err(|e| erreur(&d, e))?.flatten() {
+            let nom = entree.file_name().to_string_lossy().into_owned();
+            let a_nous = nom.len() == 22
+                && nom.starts_with("r_")
+                && nom.ends_with(".png")
+                && nom[2..18].bytes().all(|b| b.is_ascii_hexdigit());
+            if a_nous && !a_garder.contains(&nom) {
+                fs::remove_file(entree.path()).map_err(|e| erreur(&entree.path(), e))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Ouvre un projet de carte. Tout est validé avant d'être rendu ; un fichier refusé fait échouer l'ouverture.
     pub fn ouvrir(dossier: &Path) -> Result<Carte, String> {
         verifier_pas_lien(dossier)?;
@@ -164,6 +228,7 @@ impl Carte {
         let reseau: Reseau = lire_json(&dossier.join("reseau.json"), MAX_RESEAU)?;
         let quartiers: Quartiers = lire_json(&dossier.join("quartiers.json"), MAX_QUARTIERS)?;
         let contours: Contours = lire_json(&dossier.join("contours.json"), MAX_CONTOURS)?;
+        let references = lire_references(dossier, &manifeste)?;
         let mut tous = BTreeMap::new();
         let dossier_bat = dossier.join("batiments");
         if dossier_bat.exists() {
@@ -224,6 +289,7 @@ impl Carte {
             reseau,
             quartiers,
             contours,
+            references,
             tous,
             relief,
             calques,
@@ -253,6 +319,7 @@ impl Carte {
                     reseau: true,
                     quartiers: true,
                     contours: true,
+                    references: true,
                     batiments: true,
                     relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                     calques: self.calques.keys().cloned().collect(),
@@ -275,6 +342,9 @@ impl Carte {
         }
         if self.sale.contours {
             ecrire_json(&cible.join("contours.json"), &self.contours)?;
+        }
+        if self.sale.references {
+            self.ecrire_references(&cible)?;
         }
         if self.sale.batiments {
             let d = cible.join("batiments");
@@ -400,6 +470,80 @@ mod tests {
         }
         fs::write(d.join("relief").join(nom_tuile(0, 0)), petit).expect("écrire");
         assert!(Carte::ouvrir(&d).is_err());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    fn png_rgba(l: u32, h: u32) -> Vec<u8> {
+        let image = ImageRgba {
+            largeur: l,
+            hauteur: h,
+            rgba: std::sync::Arc::new((0..l * h * 4).map(|i| (i % 251) as u8).collect()),
+        };
+        references::encoder_png(&image).expect("png")
+    }
+
+    #[test]
+    fn calques_de_reference_aller_retour_annulation_et_pieges() {
+        let mut c = Carte::nouvelle(Manifeste::nouveau("refs", 512.0)).expect("carte");
+        let id = c
+            .importer_reference("Plan directeur", &png_rgba(40, 20))
+            .expect("import");
+        assert!((c.references.references[&id].m_par_px - 512.0 / 40.0).abs() < 1e-9);
+        c.modifier_reference(id, "Opacité", |r| {
+            r.opacite = 0.8;
+            Ok(())
+        })
+        .expect("modifier");
+        assert!(
+            c.modifier_reference(id, "Opacité", |r| {
+                r.opacite = 2.0;
+                Ok(())
+            })
+            .is_err(),
+            "une valeur invalide est refusée et rien n'est changé"
+        );
+        assert_eq!(c.references.references[&id].opacite, 0.8);
+        let d = dossier_test("refs");
+        c.enregistrer(Some(&d)).expect("enregistrer");
+        let relue = Carte::ouvrir(&d).expect("ouvrir");
+        assert_eq!(relue.references, c.references);
+        assert_eq!(relue.images_references, c.images_references);
+
+        // Retrait puis annulation : l'image revient sans être réimportée ; enregistrée, l'orpheline disparaît.
+        c.retirer_reference(id).expect("retirer");
+        c.enregistrer(None).expect("enregistrer");
+        assert!(!d.join("references").join(references::nom_fichier(id)).exists());
+        c.annuler();
+        c.enregistrer(None).expect("enregistrer");
+        assert!(
+            Carte::ouvrir(&d)
+                .expect("ouvrir")
+                .references
+                .references
+                .contains_key(&id)
+        );
+
+        // Image remplacée par une autre taille : refusée à l'ouverture.
+        let f = d.join("references").join(references::nom_fichier(id));
+        let bonne = fs::read(&f).expect("lire");
+        fs::write(&f, png_rgba(41, 20)).expect("écrire");
+        assert!(Carte::ouvrir(&d).is_err());
+        fs::write(&f, bonne).expect("écrire");
+        // Chemin glissé dans le JSON : champ inconnu, refusé.
+        let j = d.join("references.json");
+        let texte = fs::read_to_string(&j).expect("lire");
+        fs::write(
+            &j,
+            texte.replacen("\"nom\"", "\"fichier\": \"../../x.png\", \"nom\"", 1),
+        )
+        .expect("écrire");
+        assert!(Carte::ouvrir(&d).is_err());
+        fs::write(&j, texte).expect("écrire");
+        assert!(Carte::ouvrir(&d).is_ok());
+        // Image illisible à l'import : rien n'est ajouté.
+        let avant = c.references.clone();
+        assert!(c.importer_reference("x", b"pas une image").is_err());
+        assert_eq!(c.references, avant);
         let _ = fs::remove_dir_all(&d);
     }
 }

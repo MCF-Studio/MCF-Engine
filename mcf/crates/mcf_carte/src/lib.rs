@@ -16,6 +16,7 @@ pub mod io;
 pub mod lotissement;
 pub mod manifeste;
 pub mod quartiers;
+pub mod references;
 pub mod relief;
 pub mod reseau;
 
@@ -27,5 +28,6 @@ pub use geometrie::GeoReseau;
 pub use graphe::{AreteGraphe, GrapheRoutier, Itineraire, NoeudGraphe};
 pub use ids::Id;
 pub use manifeste::Manifeste;
+pub use references::{ImageRgba, Reference, References};
 pub use relief::{Pinceau, Relief};
 pub use reseau::Reseau;

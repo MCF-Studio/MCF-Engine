@@ -16,6 +16,7 @@ use crate::ilots::{self, Ilot};
 use crate::lotissement;
 use crate::manifeste::Manifeste;
 use crate::quartiers::{Affectation, Quartiers, ZoneLibre};
+use crate::references::{self, ImageRgba, Reference, References};
 use crate::relief::{self, AltitudesReseau, Pinceau, Relief, Zone};
 use crate::reseau::Reseau;
 
@@ -32,6 +33,7 @@ struct Etape {
     reseau: Option<Reseau>,
     quartiers: Option<Quartiers>,
     contours: Option<Contours>,
+    references: Option<References>,
     batiments: BTreeMap<Id, Option<Batiment>>,
     relief: BTreeMap<(usize, usize), Vec<f32>>,
     calques: BTreeMap<String, Option<mcf_map::McfMap>>,
@@ -43,6 +45,7 @@ impl Etape {
             && self.reseau.is_none()
             && self.quartiers.is_none()
             && self.contours.is_none()
+            && self.references.is_none()
             && self.batiments.is_empty()
             && self.relief.is_empty()
             && self.calques.is_empty()
@@ -60,6 +63,8 @@ pub struct Sale {
     pub quartiers: bool,
     /// Contours nommés.
     pub contours: bool,
+    /// Calques de référence (fichier et images).
+    pub references: bool,
     /// Cellules de bâti.
     pub batiments: bool,
     /// Tuiles de relief `(x, z)`.
@@ -86,6 +91,8 @@ pub struct Revisions {
     pub quartiers: u64,
     /// Contours nommés.
     pub contours: u64,
+    /// Calques de référence.
+    pub references: u64,
     /// Bâti.
     pub batiments: u64,
     /// Calques d'objets.
@@ -122,6 +129,11 @@ pub struct Carte {
     pub quartiers: Quartiers,
     /// Contours nommés (entrées de souterrain…).
     pub contours: Contours,
+    /// Calques de référence (placement ; les pixels sont dans `images_references`).
+    pub references: References,
+    /// Pixels des calques de référence, par identifiant. Hors historique : une image importée n'est jamais modifiée,
+    /// annuler son import retire seulement le calque (l'image reste en mémoire pour « refaire »).
+    pub images_references: BTreeMap<Id, ImageRgba>,
     /// Bâti.
     pub batiments: BTreeMap<Id, Batiment>,
     /// Relief source.
@@ -190,6 +202,14 @@ impl Transaction<'_> {
         &mut self.carte.contours
     }
 
+    /// Calques de référence modifiables.
+    pub fn references(&mut self) -> &mut References {
+        if self.etape.references.is_none() {
+            self.etape.references = Some(self.carte.references.clone());
+        }
+        &mut self.carte.references
+    }
+
     fn noter_batiment(&mut self, id: Id) {
         self.etape
             .batiments
@@ -247,6 +267,8 @@ impl Carte {
             reseau: Reseau::default(),
             quartiers: Quartiers::default(),
             contours: Contours::default(),
+            references: References::default(),
+            images_references: BTreeMap::new(),
             batiments: BTreeMap::new(),
             calques: BTreeMap::new(),
             sale: Sale {
@@ -254,6 +276,7 @@ impl Carte {
                 reseau: true,
                 quartiers: true,
                 contours: true,
+                references: true,
                 batiments: true,
                 relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                 calques: BTreeSet::new(),
@@ -273,6 +296,7 @@ impl Carte {
         reseau: Reseau,
         quartiers: Quartiers,
         contours: Contours,
+        (references, images_references): (References, BTreeMap<Id, ImageRgba>),
         batiments: BTreeMap<Id, Batiment>,
         relief: Relief,
         calques: BTreeMap<String, mcf_map::McfMap>,
@@ -283,6 +307,8 @@ impl Carte {
             reseau,
             quartiers,
             contours,
+            references,
+            images_references,
             batiments,
             relief,
             calques,
@@ -307,6 +333,7 @@ impl Carte {
         self.contours
             .valider(&self.manifeste)
             .map_err(|e| format!("contours : {e}"))?;
+        self.valider_references()?;
         if self.batiments.len() > crate::batiments::MAX_BATIMENTS {
             return Err("trop de bâtiments".into());
         }
@@ -351,6 +378,9 @@ impl Carte {
                 c.contours
                     .valider(&c.manifeste)
                     .map_err(|m| format!("contours : {m}"))?;
+            }
+            if e.references.is_some() || e.manifeste.is_some() {
+                c.valider_references()?;
             }
             for id in e.batiments.keys() {
                 if let Some(b) = c.batiments.get(id) {
@@ -397,6 +427,10 @@ impl Carte {
             self.sale.contours = true;
             self.revisions.contours += 1;
         }
+        if e.references.is_some() {
+            self.sale.references = true;
+            self.revisions.references += 1;
+        }
         if !e.batiments.is_empty() {
             self.sale.batiments = true;
             self.revisions.batiments += 1;
@@ -439,6 +473,9 @@ impl Carte {
         }
         if let Some(c) = e.contours {
             inverse.contours = Some(std::mem::replace(&mut self.contours, c));
+        }
+        if let Some(r) = e.references {
+            inverse.references = Some(std::mem::replace(&mut self.references, r));
         }
         for (id, avant) in e.batiments {
             let courant = match avant {
@@ -667,6 +704,76 @@ impl Carte {
                 },
             );
             Ok(id)
+        })
+    }
+
+    /// Calques valides et images présentes, aux bonnes dimensions.
+    fn valider_references(&self) -> Result<(), String> {
+        self.references
+            .valider(&self.manifeste)
+            .map_err(|e| format!("calques de référence : {e}"))?;
+        for (id, r) in &self.references.references {
+            match self.images_references.get(id) {
+                Some(i) if i.largeur == r.largeur_px && i.hauteur == r.hauteur_px => {}
+                _ => return Err(format!("calque {id} : image absente ou de mauvaise taille")),
+            }
+        }
+        Ok(())
+    }
+
+    /// Importe une image PNG (non fiable) comme calque de référence. Elle couvre d'abord la largeur de la carte, coin
+    /// haut gauche sur celui de la carte, à moitié transparente ; on la cale ensuite (`modifier_reference`).
+    pub fn importer_reference(&mut self, nom: &str, octets_png: &[u8]) -> Result<Id, String> {
+        let image = references::decoder_png(octets_png)?;
+        let (a, b) = self.manifeste.bornes();
+        let id = Id::nouveau();
+        let reference = Reference {
+            nom: nom.trim().to_owned(),
+            largeur_px: image.largeur,
+            hauteur_px: image.hauteur,
+            coin: a,
+            m_par_px: ((b[0] - a[0]) / f64::from(image.largeur))
+                .clamp(references::ECHELLE_M_PAR_PX.0, references::ECHELLE_M_PAR_PX.1),
+            rotation_deg: 0.0,
+            opacite: 0.5,
+            visible: true,
+        };
+        self.images_references.insert(id, image);
+        let r = self.modifier(&format!("Calque de référence : {}", nom.trim()), |tx| {
+            tx.references().references.insert(id, reference);
+            Ok(id)
+        });
+        if r.is_err() {
+            self.images_references.remove(&id);
+        }
+        r
+    }
+
+    /// Modifie le placement ou l'affichage d'un calque (une étape d'historique).
+    pub fn modifier_reference(
+        &mut self,
+        id: Id,
+        libelle: &str,
+        f: impl FnOnce(&mut Reference) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.modifier(libelle, |tx| {
+            let r = tx
+                .references()
+                .references
+                .get_mut(&id)
+                .ok_or("calque de référence introuvable")?;
+            f(r)
+        })
+    }
+
+    /// Retire un calque (annulable : l'image reste en mémoire).
+    pub fn retirer_reference(&mut self, id: Id) -> Result<(), String> {
+        self.modifier("Retirer un calque de référence", |tx| {
+            tx.references()
+                .references
+                .remove(&id)
+                .map(|_| ())
+                .ok_or_else(|| "calque de référence introuvable".to_owned())
         })
     }
 
