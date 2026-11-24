@@ -81,6 +81,112 @@ pub fn part_coloree(image: &ImageRgba) -> f64 {
     }
 }
 
+/// Pinceau sur un calque de relief en niveaux de gris (retouche de la carte de relief avant de l'appliquer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinceauCalque {
+    /// Plus clair = plus haut.
+    Eclaircir,
+    /// Plus sombre = plus bas.
+    Assombrir,
+    /// Vers un gris donné (plateau, fond de vallée, niveau d'un lac).
+    Niveau,
+    /// Moyenne locale : adoucit les ruptures.
+    Adoucir,
+    /// Rend transparent : « pas de donnée », le relief n'y sera pas touché.
+    Effacer,
+}
+
+impl PinceauCalque {
+    /// Tous les modes.
+    pub const TOUS: [Self; 5] = [
+        Self::Eclaircir,
+        Self::Assombrir,
+        Self::Niveau,
+        Self::Adoucir,
+        Self::Effacer,
+    ];
+
+    /// Nom affiché.
+    pub const fn nom(self) -> &'static str {
+        match self {
+            Self::Eclaircir => "Éclaircir (monter)",
+            Self::Assombrir => "Assombrir (creuser)",
+            Self::Niveau => "Niveau",
+            Self::Adoucir => "Adoucir",
+            Self::Effacer => "Effacer",
+        }
+    }
+}
+
+/// Un coup de pinceau sur des pixels RGBA gris (`largeur × hauteur`), centré en `(cx, cy)` pixels, de rayon `rayon`
+/// pixels. `force` (0 à 1) : part du chemin faite à ce coup au centre (le bord est adouci) ; `cible` : gris visé par
+/// « Niveau » (0 à 1). Peindre un pixel transparent le rend opaque (il porte alors une donnée), sauf « Effacer ».
+#[allow(clippy::too_many_arguments)]
+pub fn peindre(
+    rgba: &mut [u8],
+    largeur: usize,
+    hauteur: usize,
+    (cx, cy): (f64, f64),
+    rayon: f64,
+    mode: PinceauCalque,
+    force: f64,
+    cible: f64,
+) {
+    if !(rayon.is_finite() && rayon > 0.0 && cx.is_finite() && cy.is_finite())
+        || rgba.len() != largeur * hauteur * 4
+    {
+        return;
+    }
+    let x0 = (cx - rayon).floor().max(0.0) as usize;
+    let y0 = (cy - rayon).floor().max(0.0) as usize;
+    let x1 = ((cx + rayon).ceil().max(0.0) as usize).min(largeur);
+    let y1 = ((cy + rayon).ceil().max(0.0) as usize).min(hauteur);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    // « Adoucir » lit les voisins d'avant le coup.
+    let avant: Vec<u8> = if mode == PinceauCalque::Adoucir {
+        rgba.to_vec()
+    } else {
+        Vec::new()
+    };
+    let gris_avant = |x: usize, y: usize| f64::from(avant[(y * largeur + x) * 4]) / 255.0;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let d = ((x as f64 + 0.5 - cx).powi(2) + (y as f64 + 0.5 - cy).powi(2)).sqrt();
+            if d >= rayon {
+                continue;
+            }
+            let t = 1.0 - d / rayon;
+            let w = (t * t * (3.0 - 2.0 * t) * force).clamp(0.0, 1.0);
+            let i = (y * largeur + x) * 4;
+            if mode == PinceauCalque::Effacer {
+                rgba[i + 3] = (f64::from(rgba[i + 3]) * (1.0 - w)).round() as u8;
+                continue;
+            }
+            let g = f64::from(rgba[i]) / 255.0;
+            let nouveau = match mode {
+                PinceauCalque::Eclaircir => g + w,
+                PinceauCalque::Assombrir => g - w,
+                PinceauCalque::Niveau => g + (cible - g) * w,
+                PinceauCalque::Adoucir => {
+                    let (mut s, mut n) = (0.0, 0.0);
+                    for yy in y.saturating_sub(2)..(y + 3).min(hauteur) {
+                        for xx in x.saturating_sub(2)..(x + 3).min(largeur) {
+                            s += gris_avant(xx, yy);
+                            n += 1.0;
+                        }
+                    }
+                    g + (s / n - g) * w
+                }
+                PinceauCalque::Effacer => g,
+            };
+            let v = (nouveau.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[i..i + 4].copy_from_slice(&[v, v, v, 255]);
+        }
+    }
+}
+
 /// Lissage conseillé (m) pour effacer les marches des 256 niveaux : ~25 fois la hauteur d'une marche
 /// (`(blanc − noir) / 255`), et au moins 2 pixels de l'image. Constaté à l'écran sur l'exemple de la convention
 /// (2,5 m par niveau, 4 m par pixel) : 8 m laisse des arcs le long des courbes de niveau, 48 m les efface ; un critère
@@ -224,6 +330,41 @@ mod tests {
         assert_eq!(gris(&trou, 0.5, 0.5), None);
         // À côté du trou : le pixel le plus proche, sans mélange avec le trou.
         assert_eq!(gris(&trou, 1.2, 0.5), Some(1.0));
+    }
+
+    #[test]
+    fn pinceau_de_calque() {
+        let mut px = vec![100u8; 9 * 9 * 4];
+        peindre(&mut px, 9, 9, (4.5, 4.5), 3.0, PinceauCalque::Eclaircir, 1.0, 0.0);
+        assert_eq!(px[(4 * 9 + 4) * 4], 255, "centre éclairci au maximum");
+        assert_eq!(px[0], 100, "coin hors du pinceau intact");
+        peindre(&mut px, 9, 9, (4.5, 4.5), 3.0, PinceauCalque::Niveau, 1.0, 0.2);
+        assert_eq!(px[(4 * 9 + 4) * 4], 51, "centre ramené au gris 0,2");
+        peindre(&mut px, 9, 9, (4.5, 4.5), 3.0, PinceauCalque::Effacer, 1.0, 0.0);
+        assert_eq!(px[(4 * 9 + 4) * 4 + 3], 0, "centre transparent");
+        // Hors de l'image ou rayon absurde : rien.
+        let copie = px.clone();
+        peindre(
+            &mut px,
+            9,
+            9,
+            (-50.0, -50.0),
+            3.0,
+            PinceauCalque::Assombrir,
+            1.0,
+            0.0,
+        );
+        peindre(
+            &mut px,
+            9,
+            9,
+            (4.5, 4.5),
+            f64::NAN,
+            PinceauCalque::Assombrir,
+            1.0,
+            0.0,
+        );
+        assert_eq!(px, copie);
     }
 
     #[test]

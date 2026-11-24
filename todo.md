@@ -45,7 +45,21 @@
       convertir_carte --release -- <image>` : vue satellite / plan → carte couleurs + relief **proposé** (déduit).
       Essai sur `map_sat.png` : mer, lacs, rivières, massif, forêts, champs, villes reconnus en 0,3–0,4 s ; sud en
       partie pris pour de la ville ; routes non extraites. Bouton **pas encore vu à l'écran**.
-    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
+    - [x] Retours d'Aroun (2026-11-24) : niveaux (gris du noir / du blanc, courbe), garde-fou « calque en couleurs »,
+      plus de scintillement (calques étagés), pinceaux de relief jusqu'à 2 km. **Pinceau sur le calque de relief**
+      (Éclaircir, Assombrir, Niveau, Adoucir, Effacer ; Ctrl+clic = prendre le gris ; annulable ; image réécrite à
+      l'enregistrement) : codé et testé dans mcf_carte, boutons dans l'éditeur, **pas encore vu à l'écran**.
+    - [ ] **À FAIRE (repris ici si coupure)** :
+      1. **Bug relevé assisté** : il travaille sur le calque *actif* ; après une conversion c'est le relief gris →
+         un clic sur la mer sélectionne les taches claires du massif. Corriger dans
+         `mcf/crates/mcf_editor/src/conception/releve.rs` (`analyser` et `panneau`) : utiliser le calque actif s'il est
+         en couleurs (`relief_image::part_coloree` ≤ 0,05 = gris), sinon le calque visible en couleurs le plus haut ;
+         afficher « Relevé sur « … » » dans le panneau.
+      2. **Bouton « Copier la convention »** (pour donner à une IA) : écrire `docs/PROMPT_CARTE_IA.md` (palette, règles
+         de la carte couleurs et de la carte de relief noir/blanc, prompts de `CONVENTION_CARTES_SOURCE.md`), l'inclure
+         par `include_str!` et `ui.ctx().copy_text(...)` dans le panneau des calques.
+      3. Vérifier à l'écran : pinceau de calque (rafraîchissement ≤ 10 Hz pendant le geste), niveaux, absence de
+         scintillement.    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
       ou ombres ? non élucidé) ; terre-plein de l'autoroute pas encore regardé de près.
     - `map_1.png` et `map_sat.png` n'ont **pas** le relief en chiffres : demander une carte de relief au même cadrage
       (prompts dans la convention).

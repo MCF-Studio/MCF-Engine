@@ -1324,6 +1324,22 @@ fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Ed
             .on_hover_text("1 = linéaire. Plus de 1 : plaines plus basses, sommets gardés. Moins de 1 : plaines relevées.");
         ui.end_row();
     });
+    ui.label(egui::RichText::new("Peindre le calque (Ctrl+clic : prendre le gris)").small());
+    ui.horizontal_wrapped(|ui| {
+        for m in mcf_carte::relief_image::PinceauCalque::TOUS {
+            let outil = Outil::PeindreCalque(m);
+            if ui.selectable_label(edition.outil == outil, m.nom()).clicked() {
+                edition.outil = outil;
+            }
+        }
+    });
+    ui.add(
+        egui::Slider::new(&mut edition.calque_rayon_m, 5.0..=5000.0)
+            .logarithmic(true)
+            .text("rayon (m)"),
+    );
+    ui.add(egui::Slider::new(&mut edition.calque_force, 0.05..=1.0).text("force / s"));
+    ui.add(egui::Slider::new(&mut edition.calque_gris, 0.0..=1.0).text("gris visé (Niveau)"));
     if ui.small_button("Niveaux par défaut").clicked() {
         edition.relief_niveaux = mcf_carte::relief_image::Niveaux::default();
     }

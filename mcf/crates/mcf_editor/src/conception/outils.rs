@@ -383,6 +383,41 @@ fn souris(
                 super::releve::analyser(&mut projet, &mut edition, p);
             }
         }
+        Outil::PeindreCalque(mode) => {
+            let Some(id) = edition.reference_active else {
+                if appui {
+                    projet.echec("Choisissez d'abord le calque de relief (étape 1).");
+                }
+                return;
+            };
+            // Ctrl+clic : prendre le gris sous le curseur comme gris visé par « Niveau ».
+            if appui && ctrl {
+                let carte = &projet.carte;
+                if let (Some(r), Some(image)) = (
+                    carte.references.references.get(&id),
+                    carte.images_references.get(&id),
+                ) {
+                    let (px, py) = r.vers_image(p);
+                    if let Some(g) = mcf_carte::relief_image::gris(image, px, py) {
+                        edition.calque_gris = g;
+                        projet.info(format!("Gris visé : {g:.2}."));
+                    }
+                }
+                return;
+            }
+            if boutons.pressed(MouseButton::Left) && !ctrl {
+                // Force par seconde, ramenée à l'image (bornée si l'image ralentit).
+                let dt = f64::from(temps.delta_secs()).min(0.05);
+                let force = (edition.calque_force * dt).clamp(0.0, 1.0);
+                let (rayon, gris) = (edition.calque_rayon_m, edition.calque_gris);
+                if let Err(e) = projet.carte.peindre_reference(id, mode, p, rayon, force, gris)
+                    && appui
+                {
+                    // Une seule fois par geste (pas un message par image).
+                    projet.echec(e);
+                }
+            }
+        }
         Outil::Lotir => {
             if appui {
                 match quartier_en(&mut projet.carte, p) {

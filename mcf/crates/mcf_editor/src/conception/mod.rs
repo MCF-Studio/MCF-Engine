@@ -163,8 +163,10 @@ pub enum Outil {
     DeplacerReference,
     /// Cliquer deux repères du calque actif (distance connue), puis caler son échelle.
     CalerReference,
-    /// Relevé assisté : cliquer une couleur du calque actif (eau, tache, route) pour obtenir des propositions.
+    /// Relevé assisté : cliquer une couleur du calque en couleurs (eau, tache, route) pour obtenir des propositions.
     Releve,
+    /// Peindre sur le calque de relief actif (niveaux de gris) avant de l'appliquer.
+    PeindreCalque(mcf_carte::relief_image::PinceauCalque),
 }
 
 /// Ce qui est sélectionné.
@@ -288,6 +290,12 @@ pub struct Edition {
     pub relief_lissage_m: f64,
     /// Relief depuis un calque : niveaux (équilibre clair / foncé).
     pub relief_niveaux: mcf_carte::relief_image::Niveaux,
+    /// Pinceau de calque : rayon (m), force (part du chemin par seconde au centre) et gris visé par « Niveau ».
+    pub calque_rayon_m: f64,
+    /// Force du pinceau de calque (0 à 1 par seconde).
+    pub calque_force: f64,
+    /// Gris visé par « Niveau » (0 à 1).
+    pub calque_gris: f64,
     /// Plage d'altitude d'une nouvelle carte (m) : minimum et maximum.
     pub nouvelle_plage_m: (f64, f64),
 }
@@ -326,6 +334,9 @@ impl Default for Edition {
             relief_blanc_m: 400.0,
             relief_lissage_m: 20.0,
             relief_niveaux: mcf_carte::relief_image::Niveaux::default(),
+            calque_rayon_m: 500.0,
+            calque_force: 0.6,
+            calque_gris: 0.5,
             nouvelle_plage_m: (-64.0, 448.0),
         }
     }

@@ -38,6 +38,8 @@ struct Etape {
     batiments: BTreeMap<Id, Option<Batiment>>,
     relief: BTreeMap<(usize, usize), Vec<f32>>,
     calques: BTreeMap<String, Option<mcf_map::McfMap>>,
+    /// Pixels des calques de référence peints (image « avant »).
+    images: BTreeMap<Id, ImageRgba>,
 }
 
 impl Etape {
@@ -50,6 +52,7 @@ impl Etape {
             && self.batiments.is_empty()
             && self.relief.is_empty()
             && self.calques.is_empty()
+            && self.images.is_empty()
     }
 }
 
@@ -72,6 +75,8 @@ pub struct Sale {
     pub relief: BTreeSet<(usize, usize)>,
     /// Calques d'objets.
     pub calques: BTreeSet<String>,
+    /// Images de calques de référence peintes (à réécrire).
+    pub images: BTreeSet<Id>,
 }
 
 impl Sale {
@@ -132,9 +137,11 @@ pub struct Carte {
     pub contours: Contours,
     /// Calques de référence (placement ; les pixels sont dans `images_references`).
     pub references: References,
-    /// Pixels des calques de référence, par identifiant. Hors historique : une image importée n'est jamais modifiée,
-    /// annuler son import retire seulement le calque (l'image reste en mémoire pour « refaire »).
+    /// Pixels des calques de référence, par identifiant. Annuler un import retire seulement le calque (l'image reste
+    /// en mémoire pour « refaire ») ; les coups de pinceau sur un calque (`peindre_reference`) sont dans l'historique.
     pub images_references: BTreeMap<Id, ImageRgba>,
+    /// Version des pixels de chaque calque peint (l'éditeur ne renvoie au GPU que les images qui ont changé).
+    pub versions_images: BTreeMap<Id, u64>,
     /// Bâti.
     pub batiments: BTreeMap<Id, Batiment>,
     /// Relief source.
@@ -274,6 +281,7 @@ impl Carte {
             contours: Contours::default(),
             references: References::default(),
             images_references: BTreeMap::new(),
+            versions_images: BTreeMap::new(),
             batiments: BTreeMap::new(),
             calques: BTreeMap::new(),
             sale: Sale {
@@ -285,6 +293,7 @@ impl Carte {
                 batiments: true,
                 relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                 calques: BTreeSet::new(),
+                images: BTreeSet::new(),
             },
             revisions: Revisions::default(),
             manifeste,
@@ -314,6 +323,7 @@ impl Carte {
             contours,
             references,
             images_references,
+            versions_images: BTreeMap::new(),
             batiments,
             relief,
             calques,
@@ -459,6 +469,14 @@ impl Carte {
             self.revisions.calques += 1;
             self.sale.calques.extend(e.calques.keys().cloned());
         }
+        if !e.images.is_empty() {
+            self.sale.references = true;
+            self.revisions.references += 1;
+            for id in e.images.keys() {
+                self.sale.images.insert(*id);
+                *self.versions_images.entry(*id).or_default() += 1;
+            }
+        }
     }
 
     /// Remet l'image « avant » d'une étape et renvoie l'image inverse (pour refaire).
@@ -500,6 +518,11 @@ impl Carte {
                 None => self.calques.remove(&nom),
             };
             inverse.calques.insert(nom, courant);
+        }
+        for (id, avant) in e.images {
+            if let Some(courant) = self.images_references.insert(id, avant) {
+                inverse.images.insert(id, courant);
+            }
         }
         inverse
     }
@@ -921,6 +944,72 @@ impl Carte {
         Ok(modifies)
     }
 
+    /// Un coup de pinceau sur un calque de relief en niveaux de gris (`centre` et `rayon_m` en mètres de carte). Les
+    /// coups d'un même geste forment une seule étape d'historique (voir `fin_trait`). Un calque en couleurs est refusé.
+    pub fn peindre_reference(
+        &mut self,
+        id: Id,
+        mode: crate::relief_image::PinceauCalque,
+        centre: P2,
+        rayon_m: f64,
+        force: f64,
+        cible: f64,
+    ) -> Result<(), String> {
+        use crate::relief_image::{part_coloree, peindre};
+        if !(rayon_m.is_finite() && (0.5..=5000.0).contains(&rayon_m))
+            || !(0.0..=1.0).contains(&force)
+            || !(0.0..=1.0).contains(&cible)
+            || !(centre[0].is_finite() && centre[1].is_finite())
+        {
+            return Err("pinceau de calque : rayon (0,5 à 5 000 m), force et gris (0 à 1) invalides".into());
+        }
+        let reference = self
+            .references
+            .references
+            .get(&id)
+            .ok_or("calque de référence introuvable")?
+            .clone();
+        let avant = self
+            .images_references
+            .get(&id)
+            .ok_or("image du calque absente")?
+            .clone();
+        let mut etape = self.trait_en_cours.take().unwrap_or_else(|| Etape {
+            libelle: "Peindre un calque de relief".into(),
+            ..Default::default()
+        });
+        if !etape.images.contains_key(&id) {
+            // Début du geste sur ce calque : on vérifie une fois qu'il est bien en niveaux de gris.
+            if part_coloree(&avant) > 0.05 {
+                self.trait_en_cours = Some(etape);
+                return Err(format!(
+                    "« {} » est en couleurs : le pinceau ne retouche qu'une carte de relief en niveaux de gris",
+                    reference.nom
+                ));
+            }
+            etape.images.insert(id, avant);
+        }
+        let image = self
+            .images_references
+            .get_mut(&id)
+            .ok_or("image du calque absente")?;
+        let (l, h) = (image.largeur as usize, image.hauteur as usize);
+        peindre(
+            std::sync::Arc::make_mut(&mut image.rgba).as_mut_slice(),
+            l,
+            h,
+            reference.vers_image(centre),
+            rayon_m / reference.m_par_px,
+            mode,
+            force,
+            cible,
+        );
+        self.revisions.references += 1;
+        *self.versions_images.entry(id).or_default() += 1;
+        self.trait_en_cours = Some(etape);
+        Ok(())
+    }
+
     /// Calques valides et images présentes, aux bonnes dimensions.
     fn valider_references(&self) -> Result<(), String> {
         self.references
@@ -1220,6 +1309,53 @@ mod tests {
         );
         assert!(
             c.relief_depuis_reference(id, 0.0, 400.0, f64::NAN, &Default::default())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn peindre_un_calque_de_relief_s_annule_d_un_geste() {
+        use crate::relief_image::PinceauCalque;
+        let mut c = Carte::nouvelle(Manifeste::nouveau("peinture", 512.0)).expect("carte");
+        let gris = ImageRgba {
+            largeur: 8,
+            hauteur: 8,
+            rgba: std::sync::Arc::new(vec![100; 8 * 8 * 4]),
+        };
+        let id = c
+            .importer_reference("relief", &references::encoder_png(&gris).expect("png"))
+            .expect("import");
+        let avant = c.images_references[&id].clone();
+        // 64 m par pixel ; deux coups du même geste au centre de la carte.
+        for _ in 0..2 {
+            c.peindre_reference(id, PinceauCalque::Eclaircir, [0.0, 0.0], 100.0, 0.5, 0.0)
+                .expect("coup");
+        }
+        c.fin_trait();
+        assert_ne!(c.images_references[&id], avant);
+        assert!(c.sale.images.contains(&id), "image à réécrire à l'enregistrement");
+        assert_eq!(c.annuler().as_deref(), Some("Peindre un calque de relief"));
+        assert_eq!(
+            c.images_references[&id], avant,
+            "un seul geste, une seule annulation"
+        );
+        assert_eq!(c.refaire().as_deref(), Some("Peindre un calque de relief"));
+        assert_ne!(c.images_references[&id], avant);
+        // Un calque en couleurs est refusé.
+        let couleurs = ImageRgba {
+            largeur: 2,
+            hauteur: 1,
+            rgba: std::sync::Arc::new(vec![184, 217, 155, 255, 64, 150, 220, 255]),
+        };
+        let id2 = c
+            .importer_reference("couleurs", &references::encoder_png(&couleurs).expect("png"))
+            .expect("import");
+        assert!(
+            c.peindre_reference(id2, PinceauCalque::Eclaircir, [0.0, 0.0], 100.0, 0.5, 0.0)
+                .is_err()
+        );
+        assert!(
+            c.peindre_reference(id, PinceauCalque::Eclaircir, [0.0, 0.0], f64::NAN, 0.5, 0.0)
                 .is_err()
         );
     }

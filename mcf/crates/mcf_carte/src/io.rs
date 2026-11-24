@@ -194,8 +194,8 @@ impl Carte {
         for id in self.references.references.keys() {
             let nom = references::nom_fichier(*id);
             let f = d.join(&nom);
-            // Une image n'est jamais modifiée après import : présente = à jour.
-            if !f.exists() {
+            // Absente, ou peinte depuis le dernier enregistrement : (ré)écrite.
+            if !f.exists() || self.sale.images.contains(id) {
                 let image = self
                     .images_references
                     .get(id)
@@ -380,6 +380,7 @@ impl Carte {
                     batiments: true,
                     relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                     calques: self.calques.keys().cloned().collect(),
+                    images: std::collections::BTreeSet::new(),
                 };
                 d.to_path_buf()
             }
@@ -565,6 +566,33 @@ mod tests {
         let relue = Carte::ouvrir(&d).expect("ouvrir");
         assert_eq!(relue.references, c.references);
         assert_eq!(relue.images_references, c.images_references);
+
+        // Calque gris peint après un premier enregistrement : l'image (déjà sur le disque) est réécrite.
+        let gris = ImageRgba {
+            largeur: 16,
+            hauteur: 16,
+            rgba: std::sync::Arc::new(vec![90; 16 * 16 * 4]),
+        };
+        let relief = c
+            .importer_reference("relief", &references::encoder_png(&gris).expect("png"))
+            .expect("import");
+        c.enregistrer(None).expect("enregistrer");
+        c.peindre_reference(
+            relief,
+            crate::relief_image::PinceauCalque::Assombrir,
+            [0.0, 0.0],
+            80.0,
+            1.0,
+            0.0,
+        )
+        .expect("peindre");
+        c.fin_trait();
+        c.enregistrer(None).expect("enregistrer");
+        assert!(c.sale.propre());
+        let relue = Carte::ouvrir(&d).expect("ouvrir");
+        assert_eq!(relue.images_references[&relief], c.images_references[&relief]);
+        c.retirer_reference(relief).expect("retirer");
+        c.enregistrer(None).expect("enregistrer");
 
         // Retrait puis annulation : l'image revient sans être réimportée ; enregistrée, l'orpheline disparaît.
         c.retirer_reference(id).expect("retirer");

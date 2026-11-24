@@ -48,8 +48,10 @@ struct Affichees {
     altitude: f32,
     /// Révisions du terrain final sous le drapé 3D (relief, réseau, manifeste).
     terrain: (u64, u64, u64),
-    /// Textures déjà envoyées, par calque (une image importée ne change jamais).
-    textures: HashMap<Id, Handle<Image>>,
+    /// Textures déjà envoyées, par calque, avec la version des pixels envoyée (`Carte::versions_images`).
+    textures: HashMap<Id, (Handle<Image>, u64)>,
+    /// Dernier renvoi d'une image peinte (au plus 10 par seconde pendant un geste).
+    dernier_envoi: Option<std::time::Instant>,
 }
 
 /// Calques tels qu'ils doivent apparaître : ceux de la carte, avec les réglages en cours de saisie et le glisser en
@@ -86,7 +88,30 @@ fn afficher(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     existants: Query<Entity, With<Calque>>,
+    boutons: Res<ButtonInput<MouseButton>>,
 ) {
+    // Calque peint : on remplace les pixels de la texture existante (pas de reconstruction, pas de clignotement).
+    let attendre = boutons.pressed(MouseButton::Left)
+        && affichees
+            .dernier_envoi
+            .is_some_and(|t| t.elapsed().as_millis() < 100);
+    if !attendre {
+        let mut envoye = false;
+        for (id, (handle, version)) in affichees.textures.iter_mut() {
+            let courante = projet.carte.versions_images.get(id).copied().unwrap_or(0);
+            if courante != *version
+                && let (Some(image), Some(mut gpu)) =
+                    (projet.carte.images_references.get(id), images.get_mut(&*handle))
+            {
+                *gpu = texture(image);
+                *version = courante;
+                envoye = true;
+            }
+        }
+        if envoye {
+            affichees.dernier_envoi = Some(std::time::Instant::now());
+        }
+    }
     let voulu = references_affichees(&projet.carte, &edition);
     // Au-dessus de tout relief autorisé, sous le voile des quartiers (+20 m) et les repères (+25 m).
     let altitude = projet.carte.manifeste.altitude_max_m as f32 + 10.0;
@@ -107,10 +132,12 @@ fn afficher(
         let Some(image) = projet.carte.images_references.get(id) else {
             continue;
         };
+        let version = projet.carte.versions_images.get(id).copied().unwrap_or(0);
         let texture = affichees
             .textures
             .entry(*id)
-            .or_insert_with(|| images.add(texture(image)))
+            .or_insert_with(|| (images.add(texture(image)), version))
+            .0
             .clone();
         a_poser.push((r, texture));
     }
