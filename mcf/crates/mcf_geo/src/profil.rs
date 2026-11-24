@@ -19,13 +19,15 @@ pub enum ClasseRoute {
     Rue,
     /// Axe urbain, quatre voies et stationnement.
     Avenue,
-    /// Liaison entre les villes, 2 × 2 voies.
+    /// Voie express : 2 × 2 voies sans séparation (identifiant historique `voie_rapide`).
     VoieRapide,
+    /// Autoroute : 2 × 2 voies, bandes d'arrêt d'urgence, terre-plein central.
+    Autoroute,
 }
 
 impl ClasseRoute {
     /// Toutes les classes, dans l'ordre.
-    pub const TOUTES: [Self; 7] = [
+    pub const TOUTES: [Self; 8] = [
         Self::Sentier,
         Self::CheminTerre,
         Self::Route,
@@ -33,6 +35,7 @@ impl ClasseRoute {
         Self::Rue,
         Self::Avenue,
         Self::VoieRapide,
+        Self::Autoroute,
     ];
 
     /// Identifiant stable dans les fichiers.
@@ -45,6 +48,7 @@ impl ClasseRoute {
             Self::Rue => "rue",
             Self::Avenue => "avenue",
             Self::VoieRapide => "voie_rapide",
+            Self::Autoroute => "autoroute",
         }
     }
 
@@ -62,7 +66,8 @@ impl ClasseRoute {
             Self::Ruelle => "Ruelle",
             Self::Rue => "Rue",
             Self::Avenue => "Avenue",
-            Self::VoieRapide => "Voie rapide",
+            Self::VoieRapide => "Voie express",
+            Self::Autoroute => "Autoroute",
         }
     }
 }
@@ -105,7 +110,13 @@ pub struct ProfilRoute {
     pub pente_max: f64,
     /// Couleur sur le plan stylisé (sRGB).
     pub couleur_plan: [u8; 3],
+    /// Terre-plein central (m), compris dans la chaussée : sépare les deux sens (0 = aucun).
+    #[serde(default)]
+    pub terre_plein_m: f64,
 }
+
+/// Couleur du terre-plein central sur le plan stylisé (sRGB) : vert gris, lisible sur le bleu de l'autoroute.
+pub const COULEUR_TERRE_PLEIN: [u8; 3] = [118, 150, 104];
 
 /// Bornes de validation d'un profil.
 pub const CHAUSSEE_MIN_M: f64 = 0.5;
@@ -133,6 +144,9 @@ impl ProfilRoute {
         if (self.cote == Cote::Aucun) != (self.cote_m == 0.0) {
             return Err("un côté « aucun » doit avoir une largeur nulle, et inversement".into());
         }
+        if !(0.0..=self.chaussee_m - 2.0 * CHAUSSEE_MIN_M).contains(&self.terre_plein_m) {
+            return Err("terre-plein central hors bornes (0 à la chaussée moins deux voies)".into());
+        }
         if !(0.01..=1.0).contains(&self.pente_max) {
             return Err("pente maximale hors bornes (1 % à 100 %)".into());
         }
@@ -156,8 +170,15 @@ pub struct TableProfils {
     pub rue: ProfilRoute,
     /// Profil `avenue`.
     pub avenue: ProfilRoute,
-    /// Profil `voie_rapide`.
+    /// Profil `voie_rapide` (voie express).
     pub voie_rapide: ProfilRoute,
+    /// Profil `autoroute` (absent des cartes enregistrées avant son ajout : valeur par défaut).
+    #[serde(default = "autoroute_defaut")]
+    pub autoroute: ProfilRoute,
+}
+
+const fn autoroute_defaut() -> ProfilRoute {
+    TableProfils::DEFAUT.autoroute
 }
 
 const fn profil(
@@ -175,6 +196,7 @@ const fn profil(
         revetement,
         pente_max,
         couleur_plan,
+        terre_plein_m: 0.0,
     }
 }
 
@@ -231,6 +253,18 @@ impl TableProfils {
             0.05,
             [220, 70, 60],
         ),
+        // Par sens : bande d'arrêt d'urgence 2,5 m + 2 voies de 3,5 m + bande dérasée 1 m = 10,5 m ; terre-plein 3 m.
+        autoroute: ProfilRoute {
+            terre_plein_m: 3.0,
+            ..profil(
+                24.0,
+                3.0,
+                Cote::Accotement,
+                Revetement::Revetu,
+                0.05,
+                [70, 120, 210],
+            )
+        },
     };
 
     /// Profil d'une classe.
@@ -243,6 +277,7 @@ impl TableProfils {
             ClasseRoute::Rue => &self.rue,
             ClasseRoute::Avenue => &self.avenue,
             ClasseRoute::VoieRapide => &self.voie_rapide,
+            ClasseRoute::Autoroute => &self.autoroute,
         }
     }
 
@@ -273,6 +308,8 @@ mod tests {
         assert_eq!(t.rue.emprise_m(), 14.0);
         assert_eq!(t.avenue.emprise_m(), 24.0);
         assert_eq!(t.voie_rapide.emprise_m(), 22.0);
+        assert_eq!(t.autoroute.emprise_m(), 30.0);
+        assert_eq!(t.autoroute.terre_plein_m, 3.0);
         assert!(t.valider().is_ok());
     }
 
@@ -301,5 +338,26 @@ mod tests {
         assert_eq!(relu, TableProfils::DEFAUT);
         let piege = json.replacen("\"pente_max\"", "\"x\":1,\"pente_max\"", 1);
         assert!(serde_json::from_str::<TableProfils>(&piege).is_err());
+    }
+
+    #[test]
+    fn carte_enregistree_avant_l_autoroute_reste_lisible() {
+        let mut v = serde_json::to_value(TableProfils::DEFAUT).expect("sérialisation");
+        let objet = v.as_object_mut().expect("objet");
+        objet.remove("autoroute");
+        for p in objet.values_mut() {
+            p.as_object_mut().expect("profil").remove("terre_plein_m");
+        }
+        let relu: TableProfils = serde_json::from_value(v).expect("relecture");
+        assert_eq!(relu, TableProfils::DEFAUT);
+    }
+
+    #[test]
+    fn terre_plein_trop_large_refuse() {
+        let mut t = TableProfils::DEFAUT;
+        t.autoroute.terre_plein_m = 23.5;
+        assert!(t.valider().is_err());
+        t.autoroute.terre_plein_m = f64::NAN;
+        assert!(t.valider().is_err());
     }
 }

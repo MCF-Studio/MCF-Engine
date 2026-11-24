@@ -355,12 +355,20 @@ fn reconstruire(
             };
             let altitudes: Vec<f64> = g.abscisses_rognees().iter().map(|s| long.altitude(*s)).collect();
             for b in &g.bandes {
-                let m = mcf_geo::maillage_bande(b, &altitudes, 0.10);
+                // Le terre-plein central est un muret béton posé sur la chaussée : plus haut que les autres bandes.
+                let surelevation = if b.nature == NatureBande::TerrePlein {
+                    0.30
+                } else {
+                    0.10
+                };
+                let m = mcf_geo::maillage_bande(b, &altitudes, surelevation);
                 let cp = match b.nature {
                     NatureBande::Chaussee => lin(profil.couleur_plan, 1.0),
+                    NatureBande::TerrePlein => lin(mcf_geo::COULEUR_TERRE_PLEIN, 1.0),
                     _ => trottoir_plan,
                 };
                 let lot = match (b.nature, profil.revetement, profil.cote) {
+                    (NatureBande::TerrePlein, ..) => &mut voirie.trottoir,
                     (NatureBande::Chaussee, Revetement::Revetu, _) => &mut voirie.asphalte,
                     (NatureBande::Chaussee, Revetement::Terre, _) => &mut voirie.terre,
                     (_, _, Cote::Trottoir) => &mut voirie.trottoir,

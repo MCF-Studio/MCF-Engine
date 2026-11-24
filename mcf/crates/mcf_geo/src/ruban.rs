@@ -61,6 +61,8 @@ pub enum NatureBande {
     CoteGauche,
     /// Côté droit.
     CoteDroit,
+    /// Terre-plein central, posé sur la chaussée (sépare les deux sens).
+    TerrePlein,
 }
 
 /// Une bande : deux bords décalés de l'axe, point pour point.
@@ -88,7 +90,8 @@ impl Bande {
     }
 }
 
-/// Bandes du profil le long d'un axe déjà discrétisé : chaussée, puis côtés s'il y en a.
+/// Bandes du profil le long d'un axe déjà discrétisé : chaussée, puis côtés s'il y en a, puis terre-plein central
+/// (par-dessus la chaussée) s'il y en a un.
 pub fn bandes(axe: &[P2], profil: &ProfilRoute) -> Vec<Bande> {
     let c = profil.chaussee_m * 0.5;
     let e = profil.emprise_m() * 0.5;
@@ -107,6 +110,14 @@ pub fn bandes(axe: &[P2], profil: &ProfilRoute) -> Vec<Bande> {
             nature: NatureBande::CoteDroit,
             gauche: decaler(axe, -c),
             droite: decaler(axe, -e),
+        });
+    }
+    if profil.terre_plein_m > 0.0 {
+        let t = profil.terre_plein_m * 0.5;
+        sortie.push(Bande {
+            nature: NatureBande::TerrePlein,
+            gauche: decaler(axe, t),
+            droite: decaler(axe, -t),
         });
     }
     sortie
@@ -239,6 +250,7 @@ mod tests {
                 NatureBande::Chaussee => (3.5, 3.5),
                 NatureBande::CoteGauche => (7.0, 3.5),
                 NatureBande::CoteDroit => (3.5, 7.0),
+                NatureBande::TerrePlein => unreachable!("une rue n'a pas de terre-plein"),
             };
             for (bord, attendu) in [(&bande.gauche, dg), (&bande.droite, dd)] {
                 assert_eq!(bord.len(), axe.len());
@@ -312,5 +324,20 @@ mod tests {
             // identique dans les deux vues.
             assert!((distance_polyligne(facade, &axe) - profil.emprise_m() * 0.5).abs() < 0.03);
         }
+    }
+
+    #[test]
+    fn autoroute_a_un_terre_plein_central() {
+        let axe = [[0.0, 0.0], [100.0, 0.0]];
+        let profil = TableProfils::DEFAUT.get(ClasseRoute::Autoroute);
+        let b = bandes(&axe, profil);
+        let tp: Vec<_> = b.iter().filter(|x| x.nature == NatureBande::TerrePlein).collect();
+        assert_eq!(tp.len(), 1);
+        // 3 m centrés sur l'axe, à l'intérieur de la chaussée de 24 m.
+        assert_eq!(tp[0].gauche, vec![[0.0, -1.5], [100.0, -1.5]]);
+        assert_eq!(tp[0].droite, vec![[0.0, 1.5], [100.0, 1.5]]);
+        // Les routes ordinaires n'en ont pas.
+        let rue = bandes(&axe, TableProfils::DEFAUT.get(ClasseRoute::Rue));
+        assert!(rue.iter().all(|x| x.nature != NatureBande::TerrePlein));
     }
 }

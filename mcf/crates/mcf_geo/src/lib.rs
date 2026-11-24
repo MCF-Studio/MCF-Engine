@@ -13,7 +13,7 @@ pub mod ruban;
 pub mod trace;
 
 pub use carrefour::{Bras, Carrefour, carrefour};
-pub use profil::{ClasseRoute, Cote, ProfilRoute, Revetement, TableProfils};
+pub use profil::{COULEUR_TERRE_PLEIN, ClasseRoute, Cote, ProfilRoute, Revetement, TableProfils};
 pub use ruban::{Bande, Maillage, NatureBande, bandes, decaler, maillage_bande, maillage_polygone};
 pub use trace::{ECART_CORDE_M, discretiser};
 

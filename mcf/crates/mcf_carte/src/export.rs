@@ -151,10 +151,10 @@ pub fn rendre(
         for b in &g.bandes {
             let mut poly = b.gauche.clone();
             poly.extend(b.droite.iter().rev());
-            let c = if b.nature == NatureBande::Chaussee {
-                profils.get(g.classe).couleur_plan
-            } else {
-                trottoir
+            let c = match b.nature {
+                NatureBande::Chaussee => profils.get(g.classe).couleur_plan,
+                NatureBande::TerrePlein => mcf_geo::COULEUR_TERRE_PLEIN,
+                NatureBande::CoteGauche | NatureBande::CoteDroit => trottoir,
             };
             remplir(&mut pix, &poly, c, 1.0);
         }

@@ -97,6 +97,7 @@ pub const ROAD_TEMPLATES: &[&str] = &[
     "rue",
     "avenue",
     "voie_rapide",
+    "autoroute",
 ];
 /// Nombre minimal de points d'une route.
 pub const ROAD_MIN_POINTS: usize = 2;

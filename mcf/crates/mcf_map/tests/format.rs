@@ -253,7 +253,7 @@ fn routes_et_carrefours_controles() {
     v["roads"][0]["points"][2] = json!([100.0, 1.0, 600.0]);
     assert_refused(&v, "segment trop long (> 400 m)");
     let mut v = sample().to_value();
-    v["roads"][0]["template"] = json!("autoroute");
+    v["roads"][0]["template"] = json!("piste_cyclable");
     assert_refused(&v, "route 0 : modèle inconnu");
     let mut v = sample().to_value();
     v["junctions"][0]["kind"] = json!("echangeur");

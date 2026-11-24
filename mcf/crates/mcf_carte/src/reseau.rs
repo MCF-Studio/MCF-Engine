@@ -36,6 +36,8 @@ pub const fn rayon_defaut(classe: ClasseRoute) -> f64 {
         ClasseRoute::Rue => 10.0,
         ClasseRoute::Avenue => 20.0,
         ClasseRoute::VoieRapide => 150.0,
+        // Courbes larges d'autoroute (le rayon reste réglable par point).
+        ClasseRoute::Autoroute => 300.0,
     }
 }
 

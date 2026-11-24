@@ -88,7 +88,13 @@ Largeurs « façade à façade » cohérentes avec le doc 05 du jeu (rue ≈ 14 
 | `ruelle` | desserte urbaine | 5 m | 2 × 1,5 trottoir | 8 m | 12 % | blanc |
 | `rue` | rue standard, 2 voies | 7 m | 2 × 3,5 trottoir | 14 m | 10 % | blanc bordé gris |
 | `avenue` | axe urbain, 4 voies + stationnement | 19 m | 2 × 2,5 trottoir | 24 m | 6 % | orange |
-| `voie_rapide` | liaison entre les villes, 2 × 2 voies | 2 × 7 m + 3 m TPC | 2 × 2,5 accotement | 22 m | 5 % | rouge |
+| `voie_rapide` | **voie express** : liaison rapide, 2 × 2 voies sans séparation | 17 m | 2 × 2,5 accotement | 22 m | 5 % | rouge |
+| `autoroute` | **autoroute** : 2 × 2 voies, bandes d'arrêt d'urgence, terre-plein central (TPC) | 2 × 10,5 m + 3 m TPC = 24 m | 2 × 3 accotement | 30 m | 5 % | bleu |
+
+Le terre-plein central (`terre_plein_m` du profil, 0 par défaut) est compris dans la chaussée : une bande à part,
+posée dessus, qui sépare les deux sens (muret béton en 3D, vert gris sur le plan). L'identifiant `voie_rapide` est
+historique et reste stable dans les fichiers ; une carte enregistrée avant l'ajout de l'autoroute reçoit son profil
+par défaut à l'ouverture.
 
 Les profils sont des **données**, pas du code. La table ci-dessus est écrite dans le manifeste de chaque carte à sa
 création ; on peut ensuite la corriger carte par carte (largeurs, pentes, couleurs), et tout ce qui en dépend est
