@@ -251,6 +251,17 @@ La bibliothèque est choisie par le test B.
   (jupe, robe, cape, manteau long) le sont, **un seul par personnage**, via un **maillage de simulation allégé
   ≤ 350 particules** qui pilote le maillage de rendu (lien calculé dans `mcf-tissu`, identique Studio / moteur).
   6 × 350 × 30 × 1,85 µs ≈ 1,95 ms par image. Attendu : `mcf-tissu` v0.3.0 (`GAME_PROFILE_V2`).
+  **Disponible** (2026-11-24) : `mcf-tissu` v0.4.0, à prendre au minimum (collisions après la flexion : la robe ne
+  rentre plus dans le corps, résultats différents des 0.3.x ; ~1,3 µs par particule et par pas). Le proxy s'applique
+  au rendu skinné par `render_offsets` (v0.3.1) : skinning au GPU, seuls les décalages sont transmis.
+  **Capsules de repoussement** (feu vert d'Aroun, 2026-11-24) : contre les traversées restantes du rendu (ourlet /
+  tibia ~31 mm, avant-bras / flancs ~35 mm), les sommets de rendu sont repoussés hors de capsules des membres
+  (≤ 16, 8 visées), **dans le vertex shader** après skinning + décalages ; le CPU ne pose que les extrémités depuis
+  les os. Fonction CPU de référence dans `mcf-tissu` (Studio, tests ; 45 ns par sommet avec 8 capsules sur un cœur,
+  trop cher pour le jeu), test de concordance WGSL ↔ référence avec tolérance. Capsules dans un bloc versionné du
+  contrat, validées strictement ; vêtement sans capsules valide ; correctif visuel seulement, appliqué aussi aux
+  personnages seulement skinnés. Consigne d'Aroun : tout ce qui peut tourner sur la carte graphique y tourne, rendu
+  semi-réaliste, 60 à 80 joueurs sur une carte.
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
