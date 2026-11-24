@@ -17,6 +17,7 @@ pub mod lotissement;
 pub mod manifeste;
 pub mod quartiers;
 pub mod references;
+pub mod releve;
 pub mod relief;
 pub mod reseau;
 

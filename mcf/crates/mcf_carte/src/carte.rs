@@ -17,6 +17,7 @@ use crate::lotissement;
 use crate::manifeste::Manifeste;
 use crate::quartiers::{Affectation, Quartiers, ZoneLibre};
 use crate::references::{self, ImageRgba, Reference, References};
+use crate::releve;
 use crate::relief::{self, AltitudesReseau, Pinceau, Relief, Zone};
 use crate::reseau::Reseau;
 
@@ -707,6 +708,100 @@ impl Carte {
         })
     }
 
+    /// Creuse un plan d'eau relevé sur un calque (`releve::Eau`) : à l'intérieur, le relief descend sous `niveau`
+    /// jusqu'à `profondeur` mètres, en pente douce sur `rive` mètres depuis le bord ; il n'est jamais relevé. Le
+    /// niveau d'eau global de la carte devient `niveau`. Une seule étape d'historique. Renvoie le nombre
+    /// d'échantillons abaissés.
+    pub fn creuser_eau(
+        &mut self,
+        eau: &releve::Eau,
+        niveau: f64,
+        profondeur: f64,
+        rive: f64,
+    ) -> Result<usize, String> {
+        self.fin_trait();
+        let m = &self.manifeste;
+        if !(niveau.is_finite() && (m.altitude_min_m..=m.altitude_max_m).contains(&niveau)) {
+            return Err("niveau d'eau hors de la plage d'altitude de la carte".into());
+        }
+        if !(profondeur.is_finite() && (0.5..=500.0).contains(&profondeur)) {
+            return Err("profondeur hors limites (0,5 à 500 m)".into());
+        }
+        if !(rive.is_finite() && (0.0..=2000.0).contains(&rive)) {
+            return Err("largeur de rive hors limites (0 à 2 000 m)".into());
+        }
+        let fond = (niveau - profondeur).max(m.altitude_min_m);
+        let bord = (niveau + 0.2).min(m.altitude_max_m);
+        // Échantillons couvrant le plan d'eau, plus un rang autour (les échantillons secs servent de rivage).
+        let (a, b) = eau.englobant();
+        let r = &self.relief;
+        let indice = |v: f64, o: f64| ((v - o) / r.resolution).floor();
+        let borne = |v: f64, n: usize| v.clamp(0.0, n as f64) as usize;
+        let zone = Zone {
+            x0: borne(indice(a[0], r.origine[0]) - 1.0, r.nx),
+            z0: borne(indice(a[1], r.origine[1]) - 1.0, r.nz),
+            x1: borne(indice(b[0], r.origine[0]) + 3.0, r.nx),
+            z1: borne(indice(b[1], r.origine[1]) + 3.0, r.nz),
+        };
+        if zone.vide() {
+            return Err("le plan d'eau est hors de la carte".into());
+        }
+        let (w, h) = (zone.x1 - zone.x0, zone.z1 - zone.z0);
+        let mut dedans = releve::Masque::vide(w, h);
+        for iz in 0..h {
+            for ix in 0..w {
+                if eau.contient(r.position(zone.x0 + ix, zone.z0 + iz)) {
+                    dedans.v[iz * w + ix] = true;
+                }
+            }
+        }
+        if dedans.compte() == 0 {
+            return Err("aucun échantillon de relief dans ce plan d'eau (trop petit ?)".into());
+        }
+        // Distance au rivage (échantillon sec le plus proche), en mètres.
+        let distance = releve::distance_a(&dedans, false);
+        let pas = r.resolution / f64::from(releve::PAS_DROIT);
+        let mut etape = Etape {
+            libelle: "Relevé : plan d'eau".into(),
+            ..Default::default()
+        };
+        if self.manifeste.niveau_eau_m != Some(niveau) {
+            etape.manifeste = Some(self.manifeste.clone());
+            self.manifeste.niveau_eau_m = Some(niveau);
+        }
+        for (bx, bz) in blocs_de(zone) {
+            etape
+                .relief
+                .entry((bx, bz))
+                .or_insert_with(|| self.relief.copier(self.zone_bloc(bx, bz)));
+        }
+        let mut abaisses = 0;
+        for iz in 0..h {
+            for ix in 0..w {
+                let k = iz * w + ix;
+                if !dedans.v[k] {
+                    continue;
+                }
+                let d = f64::from(distance[k]) * pas;
+                let t = if rive <= 0.0 { 1.0 } else { (d / rive).min(1.0) };
+                let lisse = t * t * (3.0 - 2.0 * t);
+                let cible = (bord + (fond - bord) * lisse) as f32;
+                let i = self.relief.index(zone.x0 + ix, zone.z0 + iz);
+                if self.relief.h[i] > cible {
+                    self.relief.h[i] = cible;
+                    abaisses += 1;
+                }
+            }
+        }
+        self.marquer(&etape);
+        self.passe.push(etape);
+        if self.passe.len() > HISTORIQUE_MAX {
+            self.passe.remove(0);
+        }
+        self.futur.clear();
+        Ok(abaisses)
+    }
+
     /// Calques valides et images présentes, aux bonnes dimensions.
     fn valider_references(&self) -> Result<(), String> {
         self.references
@@ -895,6 +990,93 @@ mod tests {
                 .expect("v");
         }
         c
+    }
+
+    /// Calque synthétique de 256 × 256 pixels à 2 m : mer à gauche (x < 64), ville rose, route jaune horizontale.
+    fn carte_avec_calque() -> (Carte, Id) {
+        let mut c = Carte::nouvelle(Manifeste::nouveau("t", 512.0)).expect("carte");
+        let n = 256u32;
+        let mut rgba = Vec::new();
+        for y in 0..n {
+            for x in 0..n {
+                let p: [u8; 3] = if x < 64 {
+                    [60, 130, 200]
+                } else if (150..220).contains(&x) && (30..100).contains(&y) {
+                    [235, 150, 140]
+                } else if (160..=163).contains(&y) {
+                    [240, 200, 40]
+                } else {
+                    [150, 200, 110]
+                };
+                rgba.extend_from_slice(&[p[0], p[1], p[2], 255]);
+            }
+        }
+        let png = references::encoder_png(&ImageRgba {
+            largeur: n,
+            hauteur: n,
+            rgba: std::sync::Arc::new(rgba),
+        })
+        .expect("png");
+        let id = c.importer_reference("plan", &png).expect("import");
+        (c, id)
+    }
+
+    fn analyser(c: &Carte, id: Id, sorte: releve::Sorte, px: f64, py: f64) -> Vec<releve::Proposition> {
+        let r = &c.references.references[&id];
+        let g = releve::Grille::preparer(&c.images_references[&id], r, &c.manifeste).expect("grille");
+        let mut reglages = sorte.reglages();
+        reglages.aire_min_m2 = 100.0;
+        g.analyser(sorte, r.vers_carte(px, py), &reglages)
+            .expect("analyse")
+    }
+
+    #[test]
+    fn releve_eau_creuse_le_relief_et_s_annule() {
+        let (mut c, id) = carte_avec_calque();
+        assert_eq!(c.references.references[&id].m_par_px, 2.0);
+        let props = analyser(&c, id, releve::Sorte::Eau, 10.0, 10.0);
+        let releve::Proposition::Eau(eau) = &props[0] else {
+            panic!("{props:?}")
+        };
+        let (dans, loin_dans, sec) = ([-200.0, 0.0], [-250.0, 0.0], [0.0, 0.0]);
+        let n = c.creuser_eau(eau, -1.0, 6.0, 20.0).expect("creuser");
+        assert!(n > 0);
+        assert_eq!(c.manifeste.niveau_eau_m, Some(-1.0));
+        assert!(c.relief.hauteur(dans) < -1.0);
+        assert!(
+            (c.relief.hauteur(loin_dans) + 7.0).abs() < 0.01,
+            "{}",
+            c.relief.hauteur(loin_dans)
+        );
+        assert_eq!(c.relief.hauteur(sec), 0.0, "la terre n'est pas touchée");
+        assert_eq!(c.annuler().as_deref(), Some("Relevé : plan d'eau"));
+        assert_eq!(c.manifeste.niveau_eau_m, None);
+        assert_eq!(c.relief.hauteur(dans), 0.0);
+        assert!(c.creuser_eau(eau, 1e6, 6.0, 20.0).is_err());
+    }
+
+    #[test]
+    fn releve_zone_et_route_acceptees_par_la_carte() {
+        let (mut c, id) = carte_avec_calque();
+        let zones = analyser(&c, id, releve::Sorte::Zone, 180.0, 60.0);
+        let releve::Proposition::Zone { polygone, .. } = &zones[0] else {
+            panic!("{zones:?}")
+        };
+        c.ajouter_zone(
+            releve::borner(polygone, &c.manifeste),
+            Famille::Residentiel,
+            Densite::Moyenne,
+        )
+        .expect("zone acceptée");
+        let routes = analyser(&c, id, releve::Sorte::Routes, 128.0, 161.5);
+        assert_eq!(routes.len(), 1, "{routes:?}");
+        let releve::Proposition::Route { trace, .. } = &routes[0] else {
+            panic!()
+        };
+        let ids = c
+            .tracer_route(ClasseRoute::Route, &releve::borner(trace, &c.manifeste), 4.0)
+            .expect("route acceptée");
+        assert!(!ids.is_empty());
     }
 
     #[test]
