@@ -114,7 +114,7 @@ pub fn interface(
     recevoir_fichiers(projet, edition, &dialogue, &mut deposes);
 
     egui::Panel::top("haut").show(&mut racine, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.strong("MCF Editor · Conception de carte");
             ui.separator();
             let sale = if projet.carte.sale.propre() { "" } else { " *" };
@@ -159,7 +159,7 @@ pub fn interface(
     });
 
     egui::Panel::bottom("etat").show(&mut racine, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let texte = egui::RichText::new(&projet.message);
             ui.label(if projet.erreur {
                 texte.color(egui::Color32::from_rgb(230, 80, 70))
@@ -180,90 +180,98 @@ pub fn interface(
     });
 
     egui::Panel::left("etapes")
-        .resizable(false)
-        .exact_size(340.0)
+        .resizable(true)
+        .default_size(380.0)
+        .size_range(300.0..=640.0)
         .show(&mut racine, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                // Étapes en cascade : l'étape courante se déplie sous son titre.
-                for e in Etape::TOUTES {
-                    let actif = edition.etape == e;
-                    let c = e.couleur();
-                    let couleur = egui::Color32::from_rgb(c[0], c[1], c[2]);
-                    let fond = if actif {
-                        couleur
-                    } else {
-                        couleur.gamma_multiply(0.25)
-                    };
-                    let rep = egui::Frame::new()
-                        .fill(fond)
-                        .corner_radius(6)
-                        .inner_margin(egui::Margin::symmetric(10, 6))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.label(
-                                egui::RichText::new(e.nom())
-                                    .strong()
-                                    .size(17.0)
-                                    .color(egui::Color32::WHITE),
-                            );
-                            ui.label(
-                                egui::RichText::new(e.resume())
-                                    .size(12.5)
-                                    .color(egui::Color32::from_white_alpha(if actif { 230 } else { 150 })),
-                            );
-                        })
-                        .response
-                        .interact(egui::Sense::click())
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if rep.clicked() && !actif {
-                        edition.aller_a(e);
-                    }
-                    if actif {
-                        egui::Frame::new()
-                            .stroke(egui::Stroke::new(2.0, couleur))
-                            .corner_radius(6)
-                            .inner_margin(egui::Margin::same(10))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                match e {
-                                    Etape::Cadre => {
-                                        cadre(ui, projet, edition, &mut plan, &mut orbite, &dialogue)
+            // Curseurs à la largeur du panneau (libellé et valeur à côté) : rien ne dépasse à droite.
+            ui.spacing_mut().slider_width = (ui.available_width() - 200.0).clamp(60.0, 260.0);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    // Étapes en cascade : l'étape courante se déplie sous son titre.
+                    for e in Etape::TOUTES {
+                        let actif = edition.etape == e;
+                        let c = e.couleur();
+                        let couleur = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                        let fond = if actif {
+                            couleur
+                        } else {
+                            couleur.gamma_multiply(0.25)
+                        };
+                        let rep =
+                            egui::Frame::new()
+                                .fill(fond)
+                                .corner_radius(6)
+                                .inner_margin(egui::Margin::symmetric(10, 6))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.label(
+                                        egui::RichText::new(e.nom())
+                                            .strong()
+                                            .size(17.0)
+                                            .color(egui::Color32::WHITE),
+                                    );
+                                    ui.label(egui::RichText::new(e.resume()).size(12.5).color(
+                                        egui::Color32::from_white_alpha(if actif { 230 } else { 150 }),
+                                    ));
+                                })
+                                .response
+                                .interact(egui::Sense::click())
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if rep.clicked() && !actif {
+                            edition.aller_a(e);
+                        }
+                        if actif {
+                            egui::Frame::new()
+                                .stroke(egui::Stroke::new(2.0, couleur))
+                                .corner_radius(6)
+                                .inner_margin(egui::Margin::same(10))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    match e {
+                                        Etape::Cadre => {
+                                            cadre(ui, projet, edition, &mut plan, &mut orbite, &dialogue)
+                                        }
+                                        Etape::Relief => etape_relief(ui, edition),
+                                        Etape::Reseau => etape_reseau(ui, projet, edition),
+                                        Etape::Quartiers => etape_quartiers(ui, edition),
+                                        Etape::Bati => etape_bati(ui, projet, edition),
+                                        Etape::Export => etape_export(ui, projet, edition),
                                     }
-                                    Etape::Relief => etape_relief(ui, edition),
-                                    Etape::Reseau => etape_reseau(ui, projet, edition),
-                                    Etape::Quartiers => etape_quartiers(ui, edition),
-                                    Etape::Bati => etape_bati(ui, projet, edition),
-                                    Etape::Export => etape_export(ui, projet, edition),
-                                }
-                            });
+                                });
+                        }
+                        ui.add_space(4.0);
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                });
         });
 
     egui::Panel::right("inspecteur")
-        .resizable(false)
-        .exact_size(290.0)
+        .resizable(true)
+        .default_size(300.0)
+        .size_range(240.0..=520.0)
         .show(&mut racine, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("Inspecteur");
-                inspecteur(ui, projet, edition);
-                ui.separator();
-                statistiques(ui, projet);
-                ui.separator();
-                egui::CollapsingHeader::new("Historique")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        let (passe, futur) = projet.carte.historique();
-                        for l in futur.iter().rev().take(5) {
-                            ui.label(egui::RichText::new(*l).weak().italics());
-                        }
-                        for l in passe.iter().rev().take(15) {
-                            ui.label(*l);
-                        }
-                    });
-            });
+            ui.spacing_mut().slider_width = (ui.available_width() - 160.0).clamp(60.0, 220.0);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.heading("Inspecteur");
+                    inspecteur(ui, projet, edition);
+                    ui.separator();
+                    statistiques(ui, projet);
+                    ui.separator();
+                    egui::CollapsingHeader::new("Historique")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            let (passe, futur) = projet.carte.historique();
+                            for l in futur.iter().rev().take(5) {
+                                ui.label(egui::RichText::new(*l).weak().italics());
+                            }
+                            for l in passe.iter().rev().take(15) {
+                                ui.label(*l);
+                            }
+                        });
+                });
         });
 
     let reste = racine.available_rect_before_wrap();
@@ -282,11 +290,11 @@ fn cadre(
     dialogue: &Dialogue,
 ) {
     ui.strong("Nouvelle carte");
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Nom");
         ui.text_edit_singleline(&mut edition.nouveau_nom);
     });
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Côté");
         // Saisie libre en km (taper « 32 » pour 32 km), arrondie au multiple de tuile en sortant du champ.
         let mut km = edition.nouvelle_taille / 1000.0;
@@ -325,7 +333,7 @@ fn cadre(
     };
     ui.label(egui::RichText::new(texte).small().color(couleur));
     // Plage d'altitude fixée à la création (codage 16 bits du relief : 4 096 m d'écart au plus).
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Altitudes");
         let (bas, haut) = &mut edition.nouvelle_plage_m;
         ui.add(
@@ -380,7 +388,7 @@ fn cadre(
     ui.separator();
     ui.strong("Fichier");
     ui.label("Dossier du projet de carte");
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.text_edit_singleline(&mut edition.chemin);
         if ui
             .add_enabled(!dialogue.ouvert(), egui::Button::new("Parcourir…"))
@@ -389,7 +397,7 @@ fn cadre(
             dialogue.ouvrir(Cible::DossierProjet);
         }
     });
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.button("Ouvrir").clicked() {
             let chemin = PathBuf::from(edition.chemin.trim());
             if !projet.carte.sale.propre() && !projet.erreur {
@@ -502,7 +510,7 @@ fn etape_relief(ui: &mut egui::Ui, edition: &mut Edition) {
 }
 
 fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui
             .selectable_label(edition.outil == Outil::Tracer, "✏ Tracer")
             .clicked()
@@ -520,7 +528,7 @@ fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
     ui.strong("Classe de route");
     let profils = projet.carte.manifeste.profils;
     for c in ClasseRoute::TOUTES {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             pastille(ui, profils.get(c).couleur_plan);
             if ui
                 .selectable_label(
@@ -551,7 +559,7 @@ fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
 }
 
 fn etape_quartiers(ui: &mut egui::Ui, edition: &mut Edition) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (o, nom) in [
             (Outil::Affecter, "Affecter un îlot"),
             (Outil::ZoneLibre, "Zone libre"),
@@ -579,7 +587,7 @@ fn etape_quartiers(ui: &mut egui::Ui, edition: &mut Edition) {
 fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
     ui.strong("Famille");
     for f in Famille::TOUTES {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             pastille(ui, f.couleur_plan());
             if ui.selectable_label(edition.famille == f, f.nom()).clicked() {
                 edition.famille = f;
@@ -587,7 +595,7 @@ fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
         });
     }
     ui.strong("Densité");
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for d in Densite::TOUTES {
             if ui.selectable_label(edition.densite == d, d.nom()).clicked() {
                 edition.densite = d;
@@ -597,7 +605,7 @@ fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
 }
 
 fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui
             .selectable_label(edition.outil == Outil::Lotir, "Lotir un quartier")
             .clicked()
@@ -640,7 +648,7 @@ fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
 
 fn etape_export(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     ui.strong("Aperçu (PNG, ≤ 2048 px)");
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (s, nom) in [(StylePlan::Complet, "Plan stylisé"), (StylePlan::Jeu, "Minimap")] {
             if ui.button(nom).clicked() {
                 let r = export::exporter_apercu(&mut projet.carte, s);
@@ -736,7 +744,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
         }
         Selection::Batiments(ids) => {
             ui.strong(format!("{} bâtiments", ids.len()));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (v, nom) in [(true, "Verrouiller"), (false, "Déverrouiller")] {
                     if ui.button(nom).clicked() {
                         let r = projet.carte.modifier("Verrou", |tx| {
@@ -799,7 +807,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
             }
             let mut valider = false;
             ui.label("Nom de la voie");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if let Some((_, texte)) = &mut edition.nom_saisi {
                     let rep = ui.add(egui::TextEdit::singleline(texte).desired_width(160.0));
                     valider |= rep.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -878,7 +886,7 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                 .filter(|b| b.affectation == Some(id))
                 .count();
             ui.label(format!("{n} bâtiment(s) rattaché(s)."));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Lotir").clicked() {
                     let r = projet.carte.lotir(id);
                     projet.resultat(r, |n| format!("{n} bâtiment(s) ont poussé."));
@@ -1046,7 +1054,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
         .small()
         .weak(),
     );
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let ouvert = dialogue.ouvert();
         if ui
             .add_enabled(!ouvert, egui::Button::new("Importer une image…"))
@@ -1103,7 +1111,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
         .map(|(id, r)| (*id, r.nom.clone(), r.visible))
         .collect();
     for (id, nom, visible) in liste {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut v = visible;
             if ui.checkbox(&mut v, "").on_hover_text("Afficher").changed() {
                 let r = projet.carte.modifier_reference(id, "Afficher un calque", |r| {
@@ -1164,7 +1172,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
         );
         ui.end_row();
         ui.label("Coin haut gauche");
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add(egui::DragValue::new(&mut saisie.coin[0]).speed(1.0).prefix("x "));
             ui.add(egui::DragValue::new(&mut saisie.coin[1]).speed(1.0).prefix("z "));
         });
@@ -1181,7 +1189,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
     );
     let modifie = *saisie != enregistre;
     let nouveau = saisie.clone();
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.add_enabled(modifie, egui::Button::new("Appliquer")).clicked() {
             let r = projet
                 .carte
@@ -1196,7 +1204,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
             edition.reference_saisie = None;
         }
     });
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for (outil, texte, aide) in [
             (
                 Outil::DeplacerReference,
@@ -1222,7 +1230,7 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
     });
     if edition.outil == Outil::CalerReference {
         ui.label(egui::RichText::new(format!("Repères posés : {} / 2", edition.points.len().min(2))).small());
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Distance réelle");
             ui.add(
                 egui::DragValue::new(&mut edition.distance_calage)
@@ -1368,7 +1376,7 @@ fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Ed
     let conseille = projet.carte.references.references.get(&id).map_or(0.0, |r| {
         mcf_carte::relief_image::lissage_conseille(edition.relief_noir_m, edition.relief_blanc_m, r.m_par_px)
     });
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(
             egui::RichText::new(format!(
                 "Plage de la carte : {min} à {max} m. Lissage conseillé : {conseille} m (efface les marches des \

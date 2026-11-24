@@ -248,7 +248,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
         .weak(),
     );
     let etat = &mut edition.releve;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for s in Sorte::TOUTES {
             if ui.selectable_label(etat.sorte == s, s.nom()).clicked() && etat.sorte != s {
                 etat.sorte = s;
@@ -369,7 +369,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
             );
         }
         Sorte::Zone => {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Usage");
                 egui::ComboBox::from_id_salt("releve_famille")
                     .selected_text(edition.famille.nom())
@@ -388,7 +388,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
             });
         }
         Sorte::Routes => {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Classe");
                 egui::ComboBox::from_id_salt("releve_classe")
                     .selected_text(edition.classe.nom())
@@ -404,7 +404,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
     let n = etat.propositions.len();
     etat.courante = etat.courante.min(n - 1);
     let k = etat.courante;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui.small_button("◀").clicked() {
             etat.courante = (k + n - 1) % n;
         }
@@ -415,7 +415,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
     });
     let centre = etat.propositions[k].centre();
     let mut action = None;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         if ui
             .button("✔ Valider")
             .on_hover_text("Applique cette proposition (une étape, Ctrl+Z pour l'annuler).")
@@ -448,7 +448,7 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
     }
     let n = edition.releve.propositions.len();
     if n > 1 {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .small_button(format!("Valider les {n}"))
                 .on_hover_text("Une étape d'historique par proposition ; s'arrête à la première refusée.")
