@@ -251,7 +251,7 @@ La bibliothèque est choisie par le test B.
   (jupe, robe, cape, manteau long) le sont, **un seul par personnage**, via un **maillage de simulation allégé
   ≤ 350 particules** qui pilote le maillage de rendu (lien calculé dans `mcf-tissu`, identique Studio / moteur).
   6 × 350 × 30 × 1,85 µs ≈ 1,95 ms par image. Attendu : `mcf-tissu` v0.3.0 (`GAME_PROFILE_V2`).
-  **Disponible** (2026-11-24) : `mcf-tissu` v0.4.0, à prendre au minimum (collisions après la flexion : la robe ne
+  **Disponible** (2026-11-24) : `mcf-tissu` v0.4.0 (minimum relevé ensuite à v0.6.0) (collisions après la flexion : la robe ne
   rentre plus dans le corps, résultats différents des 0.3.x ; ~1,3 µs par particule et par pas). Le proxy s'applique
   au rendu skinné par `render_offsets` (v0.3.1) : skinning au GPU, seuls les décalages sont transmis.
   **Capsules de repoussement** (feu vert d'Aroun, 2026-11-24) : contre les traversées restantes du rendu (ourlet /
@@ -269,10 +269,10 @@ La bibliothèque est choisie par le test B.
   maillages du skin 0 (vêtements simulés ou skinnés), **sauf** les nœuds marqués `extras.mcfTissuRole == "body"`
   (le corps, que le Studio marque à l'export). Le Studio en écrit 11 (membres, mains, une capsule de torse
   horizontale) : nombre et ordre lus dans le bloc, jamais supposés. Robe sur la marche : pire traversée 25,6 → 5,2 mm.
-  **Main qui traverse le flanc d'une robe** (bras qui balance) : hors de portée des capsules. Décision d'Aroun
-  (2026-11-24) : **bras légèrement écartés dans les animations** (règle de contenu « tenue ample → abduction ≥ N° »,
-  vérifiée par un test sur tous les clips du jeu, y compris achetés ou retargetés ; N mesuré par le Studio). Pas de
-  liberté du tissu aux hanches ni de repoussement orienté pour l'instant.
+  **Tache claire sur le flanc des robes** : coutures de côté qui s'ouvraient (jusqu'à 2 cm), pas la main. Corrigé
+  dans `mcf-tissu` **v0.6.0, minimum à prendre** (coutures refermées après les collisions : 0 ouverte). La décision
+  d'Aroun « bras écartés » (2026-11-24) reste en réserve : sans besoin mesuré (abduction des clips du Studio 6–7°,
+  aucun contact main/tissu), aucune règle de contenu n'est figée ; mesure prête (`min_arm_abduction_deg`).
   À trancher en phase 7 : les décalages du proxy déplacent les positions, pas les normales (normales du skinning →
   éclairage faux là où le tissu s'écarte) ; décalage de normale par sommet ou normales recalculées.
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
