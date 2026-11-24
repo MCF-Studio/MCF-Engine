@@ -54,8 +54,9 @@
     - [x] Bouton « 📋 Copier la convention » (Cadre → Calques de référence) : copie `docs/PROMPT_CARTE_IA.md` à
       donner à une IA. **Pas encore vu à l'écran.**
     - [ ] **À FAIRE** :
-      3. Vérifier à l'écran : pinceau de calque (rafraîchissement ≤ 10 Hz pendant le geste), niveaux, absence de
-         scintillement.    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
+      1. Vérifier à l'écran : pinceau de calque (rafraîchissement ≤ 10 Hz pendant le geste), niveaux, absence de
+         scintillement.
+    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
       ou ombres ? non élucidé) ; terre-plein de l'autoroute pas encore regardé de près.
     - `map_1.png` et `map_sat.png` n'ont **pas** le relief en chiffres : demander une carte de relief au même cadrage
       (prompts dans la convention).
