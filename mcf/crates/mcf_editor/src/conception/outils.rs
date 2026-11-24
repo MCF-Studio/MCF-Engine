@@ -365,6 +365,11 @@ fn souris(
                 }
             }
         }
+        Outil::Releve => {
+            if appui {
+                super::releve::analyser(&mut projet, &mut edition, p);
+            }
+        }
         Outil::Lotir => {
             if appui {
                 match quartier_en(&mut projet.carte, p) {
@@ -937,6 +942,7 @@ fn dessiner(
         }
         _ => {}
     }
+    super::releve::dessiner(&mut plan, &mut dessus, &edition, terrain, alt_dessus);
     for q in &edition.points {
         let c = Vec3::new(q[0] as f32, (terrain.hauteur(*q) + 0.5) as f32, q[1] as f32);
         dessus.circle(horizontal(c), 1.2, jaune);

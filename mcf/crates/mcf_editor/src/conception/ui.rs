@@ -58,6 +58,7 @@ fn remplacer(
     edition.glisse = None;
     edition.reference_active = None;
     edition.reference_saisie = None;
+    edition.releve.vider();
 }
 
 /// Thème de l'éditeur : police plus grande, accents de couleur.
@@ -352,6 +353,7 @@ fn cadre(
     }
     ui.separator();
     calques_reference(ui, projet, edition);
+    super::releve::panneau(ui, projet, edition, plan);
     ui.separator();
     ui.strong("Carte");
     let m = projet.carte.manifeste.clone();

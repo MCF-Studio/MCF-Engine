@@ -8,6 +8,7 @@
 mod camera;
 mod outils;
 mod references;
+mod releve;
 mod scene;
 mod textures;
 mod ui;
@@ -161,6 +162,8 @@ pub enum Outil {
     DeplacerReference,
     /// Cliquer deux repères du calque actif (distance connue), puis caler son échelle.
     CalerReference,
+    /// Relevé assisté : cliquer une couleur du calque actif (eau, tache, route) pour obtenir des propositions.
+    Releve,
 }
 
 /// Ce qui est sélectionné.
@@ -274,6 +277,8 @@ pub struct Edition {
     pub chemin_image: String,
     /// Distance réelle entre les deux repères du calage (m).
     pub distance_calage: f64,
+    /// Relevé assisté sur le calque actif (propositions en attente).
+    pub releve: releve::EtatReleve,
 }
 
 impl Default for Edition {
@@ -305,6 +310,7 @@ impl Default for Edition {
             reference_saisie: None,
             chemin_image: String::new(),
             distance_calage: 1000.0,
+            releve: releve::EtatReleve::default(),
         }
     }
 }

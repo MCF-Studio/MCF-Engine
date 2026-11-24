@@ -14,9 +14,20 @@
     « Appliquer » ; « 📏 Caler » : cliquer deux repères de l'image (ex. les graduations 0 et 4 km de l'échelle), taper
     leur distance réelle, « Caler l'échelle » ; « ✋ Déplacer » : glisser le calque. Tout est annulable et enregistré
     avec le projet (`references.json` + `references/`). On décalque ensuite avec les outils habituels.
-  - [ ] Étape 2 : relevé assisté sur un calque calé — trait de côte / eau par la couleur (→ niveau d'eau, zones),
-    taches urbaines (→ quartiers à affecter), proposition de tracés routiers à valider un par un. Rien d'automatique
-    sans validation.
+  - [x] **Étape 2 : relevé assisté** (codée, testée ; **pas encore vue à l'écran**). Étape 1 « Cadre », sous les
+    calques : choisir « Eau / côte », « Taches (quartiers) » ou « Routes », puis « 🎯 Cliquer une couleur du calque » et
+    cliquer dans le Plan. L'éditeur propose ; « ✔ Valider » / « ✖ Rejeter » une par une (◀ ▶ pour parcourir,
+    « ◎ Voir » pour centrer). Rien n'est écrit avant validation, chaque validation s'annule (Ctrl+Z).
+    - Eau : le relief est **abaissé** sous le niveau choisi (profondeur, rive en pente douce), jamais relevé ; le
+      niveau d'eau de la carte est réglé. Les îles restent, les petits trous (textes) sont comblés.
+    - Taches : zone libre au contour simplifié, avec l'usage et la densité choisis.
+    - Routes : tracés de la classe choisie, accrochés au réseau existant.
+    - Réglages : tolérance de couleur, « Combler » (textes et traits fins), aire ou longueur minimale, « Toutes les
+      taches de cette couleur » ; « ↻ Relancer » refait l'analyse au même endroit.
+    - Essai sur `map_1.png` (calée à ~34 m/pixel) : mer (313 km²) et Grand Lac (14,6 km²) propres en ~50 ms. Villes
+      **morcelées** par les rues (Tolosa : plus grande tache 6,2 km² sur ~60) : monter « Combler ». A1 relevée **par
+      tronçons** (4,4 km d'un clic) : le dessin est coupé aux panneaux et aux échangeurs. Les routes très fines ou
+      en pointillés demandent un clic précis sur le trait.
   - À trancher (Aroun) : `map_1.png` couvre **32 × 32 km**, la carte est plafonnée à **16 km** de côté (relief en
     mémoire). Soit on vise une portion, soit on relève le plafond (à mesurer). À 1 254 pixels pour 32 km, l'image vaut
     ~25 m par pixel : bonne pour les grands axes, villes et côtes, trop grossière pour les rues (les plans de ville

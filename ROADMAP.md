@@ -170,6 +170,10 @@ du §12 pas encore mesurés en `bench-release`.
 2026-11-24 : vue 3D avec ciel physique (`Atmosphere`), soleil en lux réels et textures Poly Haven ; calques de référence
 (J7, partie « calques image » : import PNG validé, calage par distance, déplacement, enregistrés). Compilés et testés,
 **pas encore vus à l'écran**.
+2026-11-24 : relevé assisté sur un calque calé (eau → relief creusé et niveau d'eau, taches → zones libres, routes →
+tracés), chaque proposition validée ou rejetée à la main ; noyau `mcf_carte::releve` testé, essayé sur `map_1.png`
+(détail dans `todo.md`). Corrigé : l'éditeur paniquait au démarrage (sonde du ciel de Bevy 0.20.1 sans vue 3D
+active) ; il tourne maintenant, **interface toujours pas vue à l'écran**.
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la
