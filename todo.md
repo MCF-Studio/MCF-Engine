@@ -49,15 +49,11 @@
       plus de scintillement (calques étagés), pinceaux de relief jusqu'à 2 km. **Pinceau sur le calque de relief**
       (Éclaircir, Assombrir, Niveau, Adoucir, Effacer ; Ctrl+clic = prendre le gris ; annulable ; image réécrite à
       l'enregistrement) : codé et testé dans mcf_carte, boutons dans l'éditeur, **pas encore vu à l'écran**.
-    - [ ] **À FAIRE (repris ici si coupure)** :
-      1. **Bug relevé assisté** : il travaille sur le calque *actif* ; après une conversion c'est le relief gris →
-         un clic sur la mer sélectionne les taches claires du massif. Corriger dans
-         `mcf/crates/mcf_editor/src/conception/releve.rs` (`analyser` et `panneau`) : utiliser le calque actif s'il est
-         en couleurs (`relief_image::part_coloree` ≤ 0,05 = gris), sinon le calque visible en couleurs le plus haut ;
-         afficher « Relevé sur « … » » dans le panneau.
-      2. **Bouton « Copier la convention »** (pour donner à une IA) : écrire `docs/PROMPT_CARTE_IA.md` (palette, règles
-         de la carte couleurs et de la carte de relief noir/blanc, prompts de `CONVENTION_CARTES_SOURCE.md`), l'inclure
-         par `include_str!` et `ui.ctx().copy_text(...)` dans le panneau des calques.
+    - [x] Relevé assisté : il lit désormais le calque actif s'il est en couleurs, sinon le calque visible en
+      couleurs le plus haut (« Relevé sur « … » » dans le panneau) ; plus de relevé sur le relief gris. Testé.
+    - [x] Bouton « 📋 Copier la convention » (Cadre → Calques de référence) : copie `docs/PROMPT_CARTE_IA.md` à
+      donner à une IA. **Pas encore vu à l'écran.**
+    - [ ] **À FAIRE** :
       3. Vérifier à l'écran : pinceau de calque (rafraîchissement ≤ 10 Hz pendant le geste), niveaux, absence de
          scintillement.    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
       ou ombres ? non élucidé) ; terre-plein de l'autoroute pas encore regardé de près.

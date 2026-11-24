@@ -8,8 +8,9 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use mcf_carte::{
-    Famille, Id, Reference,
+    Carte, Famille, Id, Reference,
     releve::{self, Grille, Proposition, Reglages, Sorte},
+    relief_image::part_coloree,
 };
 use mcf_geo::{ClasseRoute, P2};
 
@@ -39,6 +40,8 @@ pub struct EtatReleve {
     pub rive: f64,
     /// Grille d'analyse du calque (recalculée si le calque change).
     grille: Option<(Id, Reference, Arc<Grille>)>,
+    /// Calque en couleurs ou en gris, par calque, avec la version des pixels mesurée (`Carte::versions_images`).
+    couleurs: std::collections::BTreeMap<Id, (u64, bool)>,
 }
 
 impl Default for EtatReleve {
@@ -53,6 +56,7 @@ impl Default for EtatReleve {
             profondeur: 6.0,
             rive: 40.0,
             grille: None,
+            couleurs: Default::default(),
         }
     }
 }
@@ -64,13 +68,49 @@ impl EtatReleve {
         self.courante = 0;
         self.graine = None;
         self.grille = None;
+        self.couleurs.clear();
+    }
+
+    /// Le calque `id` est-il en couleurs (> 5 % de pixels colorés) ? Mesure gardée tant que les pixels ne changent pas.
+    fn en_couleurs(&mut self, carte: &Carte, id: Id) -> bool {
+        let version = carte.versions_images.get(&id).copied().unwrap_or(0);
+        if let Some(&(v, c)) = self.couleurs.get(&id)
+            && v == version
+        {
+            return c;
+        }
+        let c = carte.images_references.get(&id).is_some_and(|i| part_coloree(i) > SEUIL_COULEUR);
+        self.couleurs.insert(id, (version, c));
+        c
+    }
+
+    /// Calque sur lequel on relève : le calque actif s'il est en couleurs, sinon le calque visible en couleurs le plus
+    /// haut. Un relevé sur une carte de relief grise confondrait la mer avec les gris du massif.
+    pub fn calque(&mut self, carte: &Carte, actif: Option<Id>) -> Option<Id> {
+        if let Some(a) = actif
+            && self.en_couleurs(carte, a)
+        {
+            return Some(a);
+        }
+        let visibles: Vec<Id> = carte
+            .references
+            .references
+            .iter()
+            .rev()
+            .filter(|(_, r)| r.visible)
+            .map(|(id, _)| *id)
+            .collect();
+        visibles.into_iter().find(|&id| self.en_couleurs(carte, id))
     }
 }
 
-/// Clic de l'outil « Relevé » : analyse la couleur sous `p` sur le calque actif.
+/// Au-delà de cette part de pixels colorés, un calque est « en couleurs » (même seuil que le garde-fou du relief).
+const SEUIL_COULEUR: f64 = 0.05;
+
+/// Clic de l'outil « Relevé » : analyse la couleur sous `p` sur le calque du relevé (voir `EtatReleve::calque`).
 pub fn analyser(projet: &mut Projet, edition: &mut Edition, p: P2) {
-    let Some(id) = edition.reference_active else {
-        projet.echec("Choisissez d'abord un calque de référence.");
+    let Some(id) = edition.releve.calque(&projet.carte, edition.reference_active) else {
+        projet.echec("Aucun calque en couleurs visible : importez ou affichez la carte couleurs.");
         return;
     };
     let carte = &projet.carte;
@@ -174,11 +214,21 @@ fn valider(projet: &mut Projet, edition: &mut Edition, k: usize) -> bool {
 
 /// Panneau du relevé (sous les calques de référence).
 pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, plan: &mut VuePlan) {
-    let Some(id) = edition.reference_active else {
+    if edition.reference_active.is_none() {
         return;
-    };
+    }
     ui.add_space(6.0);
     ui.strong("Relevé assisté");
+    let Some(id) = edition.releve.calque(&projet.carte, edition.reference_active) else {
+        ui.label(
+            egui::RichText::new("Aucun calque en couleurs visible : le relevé lit la carte couleurs, pas le relief gris.")
+                .small()
+                .color(egui::Color32::from_rgb(230, 160, 60)),
+        );
+        return;
+    };
+    let nom = projet.carte.references.references.get(&id).map_or("", |r| r.nom.as_str());
+    ui.label(egui::RichText::new(format!("Relevé sur « {nom} »")).small());
     ui.label(
         egui::RichText::new(
             "Calez d'abord le calque. Choisissez quoi relever, puis cliquez la couleur dans le Plan : l'éditeur \
@@ -522,5 +572,47 @@ mod tests {
         analyser(&mut projet, &mut edition, [10_000.0, 0.0]);
         assert!(projet.erreur);
         assert!(edition.releve.propositions.is_empty());
+    }
+
+    /// Après une conversion, le calque actif est le relief gris : le relevé doit lire la carte couleurs.
+    #[test]
+    fn calque_gris_actif_releve_sur_la_carte_couleurs() {
+        let (mut projet, mut edition) = projet();
+        let couleurs = edition.reference_active.expect("id");
+        let gris: Vec<u8> = (0..256u32 * 256)
+            .flat_map(|k| {
+                let g = (k % 256) as u8;
+                [g, g, g, 255]
+            })
+            .collect();
+        let png = mcf_carte::references::encoder_png(&mcf_carte::ImageRgba {
+            largeur: 256,
+            hauteur: 256,
+            rgba: Arc::new(gris),
+        })
+        .expect("png");
+        let relief = projet.carte.importer_reference("relief", &png).expect("import");
+        edition.reference_active = Some(relief);
+        let carte = &projet.carte;
+        assert_eq!(edition.releve.calque(carte, Some(relief)), Some(couleurs));
+        assert_eq!(edition.releve.calque(carte, Some(couleurs)), Some(couleurs));
+
+        let r = projet.carte.references.references[&couleurs].clone();
+        analyser(&mut projet, &mut edition, r.vers_carte(10.0, 10.0));
+        assert!(!projet.erreur, "{}", projet.message);
+        assert!(matches!(edition.releve.propositions[..], [Proposition::Eau(_)]));
+        assert_eq!(edition.releve.graine.map(|g| g.0), Some(couleurs));
+
+        // Carte couleurs masquée : plus rien à relever, message clair.
+        projet
+            .carte
+            .modifier_reference(couleurs, "Masquer", |r| {
+                r.visible = false;
+                Ok(())
+            })
+            .expect("masquer");
+        assert_eq!(edition.releve.calque(&projet.carte, Some(relief)), None);
+        analyser(&mut projet, &mut edition, [10.0, 10.0]);
+        assert!(projet.erreur);
     }
 }

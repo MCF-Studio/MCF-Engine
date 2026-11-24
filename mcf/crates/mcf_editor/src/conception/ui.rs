@@ -1023,6 +1023,9 @@ fn recevoir_fichiers(
     }
 }
 
+/// Consignes à donner à une IA pour produire une carte source (`docs/PROMPT_CARTE_IA.md`).
+const PROMPT_CARTE_IA: &str = include_str!("../../../../../docs/PROMPT_CARTE_IA.md");
+
 /// Calques de référence : importer une image, la régler, la caler (spec §8). Les réglages s'affichent en direct et
 /// ne sont écrits (une étape d'historique) qu'avec « Appliquer ».
 fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, dialogue: &Dialogue) {
@@ -1058,6 +1061,17 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
             ui.spinner();
         }
     });
+    if ui
+        .button("📋 Copier la convention")
+        .on_hover_text(
+            "Copie les consignes (palette, carte couleurs, carte de relief en gris) à donner à une IA pour produire \
+             une carte que l'éditeur sait relever.",
+        )
+        .clicked()
+    {
+        ui.ctx().copy_text(PROMPT_CARTE_IA.to_owned());
+        projet.info("Convention copiée : collez-la dans la demande à l'IA (remplir les valeurs entre crochets).");
+    }
     ui.collapsing("Ou saisir le chemin", |ui| {
         ui.text_edit_singleline(&mut edition.chemin_image);
         if ui.button("Importer ce chemin").clicked() {
