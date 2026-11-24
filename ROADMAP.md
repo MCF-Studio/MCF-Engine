@@ -239,6 +239,13 @@ La bibliothèque est choisie par le test B.
   caméra, skinning seul au loin, repli en morph targets), plafond de tissus simulés à l'écran, rien côté serveur.
   À trancher à l'intégration : une dépendance `file://` ne passe pas dans la CI GitHub du moteur (vendoring ou
   dépôt distant le moment venu).
+  **Profil jeu v1, fixé par le moteur** (Aroun, 2026-11-24 : « que ça suive les mouvements, bon rendu, pas de
+  réalisme ») et imposé au Studio, qui prévisualise et exporte dans ce profil pour un rendu identique : 30 pas/s
+  fixes (jamais plus, rendu interpolé), 4 sous-pas, auto-collision désactivée, ≤ 600 particules par vêtement et
+  ≤ 1 000 par personnage, rayons de liberté ≤ 0,10 m (≤ 0,20 m pour les pans libres), corps collisionneur
+  simplifié ≤ 1 500 triangles, sol activé. En jeu : 6 personnages simulés au plus, à moins de 12 m de la caméra,
+  skinning seul au-delà ; budget total 2 ms par image sur un thread de travail. Un vêtement hors profil est refusé
+  au chargement. Si le coût mesuré dépasse le budget, on baisse le plafond de particules, pas la fréquence.
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
