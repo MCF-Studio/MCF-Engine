@@ -282,7 +282,12 @@ La bibliothèque est choisie par le test B.
   minimal), ≤ 15 mm, **seulement pour les vêtements dont le proxy est traversé** (robe : 8,2 mm ; proxy traversé
   5 393 → 0, tache disparue à l'écran ; coût en jeu inchangé). Champ facultatif `proxy.collisionMarginM` du bloc
   tissu.v2, validé strictement (borne haute : rayon de membre minimal 4 cm). **Minimum à prendre : `mcf-tissu`
-  v0.7.0.** Reste à regarder : jupe traversée de 42 mm par la cuisse en course. La décision d'Aroun « bras écartés » (2026-11-24) reste en réserve, sans besoin
+  v0.8.0** (2026-11-25). **Jupe traversée en course** : le corps fait 8 à 11 cm par pas en course. La parade est
+  le « côté mémorisé » des particules libres, en profil v2, activé seulement au-dessus de 1,5 m/s (5 cm par pas)
+  et maintenu 0,5 s. Résultat sur la jupe : rendu 50 → 18 mm, idle et marche identiques au bit près, +34 % de coût
+  pendant la course seulement. Écartées après mesure : cibles projetées hors du corps (aucun effet) et corps
+  interpolé aux sous-pas (pire). Sous 5 mm seulement avec une règle de contenu, « genou à 80 % en course pour les
+  tenues amples » : **décision d'Aroun en attente**. La décision d'Aroun « bras écartés » (2026-11-24) reste en réserve, sans besoin
   mesuré ; mesure prête (`min_arm_abduction_deg`).
   À trancher en phase 7 : les décalages du proxy déplacent les positions, pas les normales (normales du skinning →
   éclairage faux là où le tissu s'écarte) ; décalage de normale par sommet ou normales recalculées.

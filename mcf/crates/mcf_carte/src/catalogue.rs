@@ -53,11 +53,20 @@ impl Fiche {
         if !nom_sur(&self.id) {
             return Err(format!("identifiant non sûr : {:?}", self.id));
         }
-        if self.nom.trim().is_empty() || self.nom.chars().count() > 80 || self.nom.chars().any(char::is_control) {
-            return Err(format!("{} : nom vide, trop long ou avec des caractères de contrôle", self.id));
+        if self.nom.trim().is_empty()
+            || self.nom.chars().count() > 80
+            || self.nom.chars().any(char::is_control)
+        {
+            return Err(format!(
+                "{} : nom vide, trop long ou avec des caractères de contrôle",
+                self.id
+            ));
         }
         if !fichier_sur(&self.fichier) {
-            return Err(format!("{} : fichier refusé (relatif, `.glb`, sans `..`)", self.id));
+            return Err(format!(
+                "{} : fichier refusé (relatif, `.glb`, sans `..`)",
+                self.id
+            ));
         }
         let (min, max) = DIMENSION_M;
         for (nom, v) in [
@@ -212,7 +221,10 @@ mod tests {
         ] {
             let mut m = maison();
             m.fichier = f.into();
-            assert!(CatalogueBatiments::lire(&catalogue(vec![m])).is_err(), "{f} accepté");
+            assert!(
+                CatalogueBatiments::lire(&catalogue(vec![m])).is_err(),
+                "{f} accepté"
+            );
         }
     }
 
@@ -239,7 +251,10 @@ mod tests {
     fn batiment_de_fiche_est_un_rectangle_oriente() {
         let b = maison().batiment([10.0, 20.0], 90.0);
         assert_eq!(b.empreinte.len(), 4);
-        assert!(mcf_geo::polygone::aire_signee(&b.empreinte) > 0.0, "sens trigonométrique");
+        assert!(
+            mcf_geo::polygone::aire_signee(&b.empreinte) > 0.0,
+            "sens trigonométrique"
+        );
         assert!((mcf_geo::polygone::aire(&b.empreinte) - 15.1 * 9.5).abs() < 1e-6);
         let c = b.centre();
         assert!((c[0] - 10.0).abs() < 1e-9 && (c[1] - 20.0).abs() < 1e-9);
@@ -262,7 +277,11 @@ mod tests {
         let mut b = maison().batiment([0.0, 0.0], 350.0);
         b.transformer([5.0, 0.0], 20.0, [0.0, 0.0]);
         let m = b.modele.as_ref().expect("modèle");
-        assert!((m.cap_deg - 10.0).abs() < 1e-9, "cap ramené dans [0 ; 360[ : {}", m.cap_deg);
+        assert!(
+            (m.cap_deg - 10.0).abs() < 1e-9,
+            "cap ramené dans [0 ; 360[ : {}",
+            m.cap_deg
+        );
         let attendu = maison().batiment([5.0, 0.0], 10.0);
         for (a, e) in b.empreinte.iter().zip(&attendu.empreinte) {
             assert!((a[0] - e[0]).abs() < 1e-9 && (a[1] - e[1]).abs() < 1e-9);

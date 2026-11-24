@@ -48,3 +48,6 @@ assets/textures/GroundSand005/**
 
 # Modèles du jeu copiés pour la promenade de l'éditeur (assets du jeu, non versionnés)
 mcf/crates/mcf_editor/assets/personnages/*.glb
+# Bâtiments du jeu copiés pour l'éditeur (assets du jeu, non versionnés ; le catalogue, lui, est versionné)
+mcf/crates/mcf_editor/assets/batiments/**/*.glb
+mcf/crates/mcf_editor/assets/batiments/_textures/

@@ -16,6 +16,7 @@ use super::{
     Disposition, Edition, Etape, Outil, Projet, Selection, ZoneVues,
     camera::{Orbite, VuePlan},
     fichiers::{Cible, Dialogue},
+    modeles::Catalogue,
     outils,
 };
 
@@ -96,6 +97,7 @@ pub fn interface(
     mut orbite: ResMut<Orbite>,
     mut style_pose: Local<bool>,
     dialogue: Res<Dialogue>,
+    catalogue: Res<Catalogue>,
     mut deposes: MessageReader<FileDragAndDrop>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -246,7 +248,7 @@ pub fn interface(
                                         Etape::Relief => etape_relief(ui, edition),
                                         Etape::Reseau => etape_reseau(ui, projet, edition),
                                         Etape::Quartiers => etape_quartiers(ui, edition),
-                                        Etape::Bati => etape_bati(ui, projet, edition),
+                                        Etape::Bati => etape_bati(ui, projet, edition, &catalogue),
                                         Etape::Export => etape_export(ui, projet, edition),
                                     }
                                 });
@@ -266,7 +268,7 @@ pub fn interface(
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.heading("Inspecteur");
-                    inspecteur(ui, projet, edition);
+                    inspecteur(ui, projet, edition, &catalogue);
                     ui.separator();
                     statistiques(ui, projet);
                     ui.separator();
@@ -614,7 +616,7 @@ fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
     });
 }
 
-fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
+fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, catalogue: &Catalogue) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .selectable_label(edition.outil == Outil::Lotir, "Lotir un quartier")
@@ -651,9 +653,69 @@ fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
              touche que les blocs « générés ».",
             "Ajuster : cliquez un bâtiment (Plan ou 3D, même avec « Lotir »), glissez-le (il devient « manuel »). \
              Ctrl+clic : sélection multiple.",
-            "Suppr : supprimer. Verrou et niveaux dans l'inspecteur.",
+            "Gizmo : flèche rouge = axe X, bleue = axe Z, carré = libre, anneau vert = tourner (crans de 5°, Alt : \
+             libre). R / Maj+R : tourner de 90°.",
+            "Suppr : supprimer. Verrou, position, cap et niveaux dans l'inspecteur.",
         ],
     );
+    ui.separator();
+    liste_batiments(ui, edition, catalogue);
+}
+
+/// Liste des bâtiments modélisés du catalogue : un clic arme la pose.
+fn liste_batiments(ui: &mut egui::Ui, edition: &mut Edition, catalogue: &Catalogue) {
+    ui.strong("Bâtiments modélisés");
+    if let Some(e) = &catalogue.erreur {
+        ui.label(
+            egui::RichText::new(format!("⚠ Catalogue refusé : {e}"))
+                .color(egui::Color32::from_rgb(230, 80, 70)),
+        );
+        return;
+    }
+    if catalogue.fiches.is_empty() {
+        ui.label(egui::RichText::new("Catalogue vide.").weak());
+        return;
+    }
+    for (i, f) in catalogue.fiches.iter().enumerate() {
+        let dispo = catalogue.disponibles.contains(&f.id);
+        let texte = format!(
+            "{}{} · {:.1} × {:.1} m, {:.1} m de haut",
+            if dispo { "" } else { "⚠ " },
+            f.nom,
+            f.largeur_m,
+            f.profondeur_m,
+            f.hauteur_m
+        );
+        let r = ui.selectable_label(edition.outil == Outil::Poser(i), texte);
+        let r = if dispo {
+            r.on_hover_text(format!("{} ({})", f.fichier, f.famille.nom()))
+        } else {
+            r.on_hover_text(format!(
+                "Modèle absent : {}. Copiez-le du jeu dans assets/batiments (le bâtiment s'affiche en bloc).",
+                f.fichier
+            ))
+        };
+        if r.clicked() {
+            edition.selection = Selection::Rien;
+            edition.outil = if edition.outil == Outil::Poser(i) {
+                Outil::Selection
+            } else {
+                Outil::Poser(i)
+            };
+        }
+    }
+    if let Outil::Poser(_) = edition.outil {
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::DragValue::new(&mut edition.cap_pose)
+                    .range(0.0..=359.9)
+                    .speed(1.0)
+                    .suffix("°")
+                    .prefix("cap : "),
+            );
+            ui.label(egui::RichText::new("clic : poser · R : +90° · Échap : fini").weak());
+        });
+    }
 }
 
 fn etape_export(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
@@ -693,7 +755,7 @@ fn etape_export(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     );
 }
 
-fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
+fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, catalogue: &Catalogue) {
     match edition.selection.clone() {
         Selection::Rien => {
             ui.label(egui::RichText::new("Rien de sélectionné.").weak());
@@ -703,7 +765,16 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
             let Some(b) = projet.carte.batiments.get(&id).cloned() else {
                 return;
             };
-            ui.strong(format!("Bâtiment · {}", b.famille.nom()));
+            let fiche = b.modele.as_ref().map(|m| {
+                catalogue
+                    .fiche(&m.fiche)
+                    .map_or_else(|| format!("{} (fiche absente)", m.fiche), |f| f.nom.clone())
+            });
+            match &fiche {
+                Some(nom) => ui.strong(format!("{nom} · {}", b.famille.nom())),
+                None => ui.strong(format!("Bâtiment · {}", b.famille.nom())),
+            };
+            position_et_cap(ui, projet, id, &b);
             egui::Grid::new("bat").num_columns(2).show(ui, |ui| {
                 ui.label("Origine");
                 ui.label(match b.origine {
@@ -719,13 +790,14 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                 ui.end_row();
             });
             let mut niveaux = b.niveaux;
-            if ui
-                .add(
-                    egui::DragValue::new(&mut niveaux)
-                        .range(1..=80)
-                        .prefix("niveaux : "),
-                )
-                .changed()
+            if b.modele.is_none()
+                && ui
+                    .add(
+                        egui::DragValue::new(&mut niveaux)
+                            .range(1..=80)
+                            .prefix("niveaux : "),
+                    )
+                    .changed()
             {
                 let r = projet.carte.modifier("Niveaux", |tx| {
                     if let Some(x) = tx.batiment(id) {
@@ -906,6 +978,73 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
                 }
             });
         }
+    }
+}
+
+/// Position du centre et orientation, au clavier : une étape d'historique par valeur saisie.
+fn position_et_cap(ui: &mut egui::Ui, projet: &mut Projet, id: mcf_carte::Id, b: &mcf_carte::Batiment) {
+    let c = b.centre();
+    let (mut x, mut z) = (c[0], c[1]);
+    // Bloc : pas de cap stocké, on applique une rotation relative.
+    let cap = b.modele.as_ref().map(|m| m.cap_deg);
+    let mut cap_saisi = cap.unwrap_or(0.0);
+    let mut deg = 0.0;
+    ui.add_enabled_ui(!b.verrou, |ui| {
+        ui.horizontal(|ui| {
+            let rx = ui.add(
+                egui::DragValue::new(&mut x)
+                    .speed(0.1)
+                    .fixed_decimals(2)
+                    .prefix("X : ")
+                    .suffix(" m"),
+            );
+            let rz = ui.add(
+                egui::DragValue::new(&mut z)
+                    .speed(0.1)
+                    .fixed_decimals(2)
+                    .prefix("Z : ")
+                    .suffix(" m"),
+            );
+            if rx.changed() || rz.changed() {
+                let r = projet
+                    .carte
+                    .transformer_batiments(&[id], [x - c[0], z - c[1]], 0.0, c);
+                projet.resultat(r, |_| format!("Centre en ({x:.2} ; {z:.2})."));
+            }
+        });
+        ui.horizontal(|ui| {
+            if let Some(avant) = cap {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut cap_saisi)
+                            .range(0.0..=359.9)
+                            .speed(0.5)
+                            .fixed_decimals(1)
+                            .prefix("cap : ")
+                            .suffix("°"),
+                    )
+                    .changed()
+                {
+                    deg = cap_saisi - avant;
+                }
+            } else {
+                ui.label("tourner :");
+            }
+            for (texte, d) in [
+                ("⟲ 90°", 90.0),
+                ("⟳ 90°", -90.0),
+                ("⟲ 15°", 15.0),
+                ("⟳ 15°", -15.0),
+            ] {
+                if ui.small_button(texte).clicked() {
+                    deg = d;
+                }
+            }
+        });
+    });
+    if deg != 0.0 {
+        let r = projet.carte.transformer_batiments(&[id], [0.0, 0.0], deg, c);
+        projet.resultat(r, |_| format!("Tourné de {deg:.1}°."));
     }
 }
 

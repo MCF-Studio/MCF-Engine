@@ -7,6 +7,8 @@
 
 mod camera;
 mod fichiers;
+mod gizmo;
+mod modeles;
 mod outils;
 mod promenade;
 mod references;
@@ -168,6 +170,8 @@ pub enum Outil {
     Releve,
     /// Peindre sur le calque de relief actif (niveaux de gris) avant de l'appliquer.
     PeindreCalque(mcf_carte::relief_image::PinceauCalque),
+    /// Poser le bâtiment modélisé d'indice donné du catalogue (clic : poser, R : tourner de 90°).
+    Poser(usize),
 }
 
 /// Ce qui est sélectionné.
@@ -197,6 +201,13 @@ pub enum CibleGlisse {
         zone: Id,
         /// Indice du sommet.
         index: usize,
+    },
+    /// Une poignée du gizmo des bâtiments sélectionnés, autour de `pivot` (centre de la sélection au début).
+    Gizmo {
+        /// Poignée saisie.
+        poignee: gizmo::Poignee,
+        /// Centre de rotation (m).
+        pivot: P2,
     },
     /// Un point de contrôle d'un tronçon (`index` dans la polyligne de contrôle, extrémités comprises).
     Poignee {
@@ -308,6 +319,8 @@ pub struct Edition {
     pub calque_gris: f64,
     /// Plage d'altitude d'une nouvelle carte (m) : minimum et maximum.
     pub nouvelle_plage_m: (f64, f64),
+    /// Cap du prochain bâtiment modélisé posé (degrés).
+    pub cap_pose: f64,
 }
 
 impl Default for Edition {
@@ -349,6 +362,7 @@ impl Default for Edition {
             calque_force: 0.6,
             calque_gris: 0.5,
             nouvelle_plage_m: (-64.0, 448.0),
+            cap_pose: 0.0,
         }
     }
 }
@@ -422,6 +436,8 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
             textures::TexturesPlugin,
             references::ReferencesPlugin,
             promenade::PromenadePlugin,
+            gizmo::GizmoPlugin,
+            modeles::ModelesPlugin,
         ))
         .add_systems(Startup, preparer)
         .add_systems(EguiPrimaryContextPass, ui::interface)

@@ -1,0 +1,26 @@
+{
+  "format": "mcfcatalogue_batiments",
+  "version": 1,
+  "fiches": [
+    {
+      "id": "maison_a",
+      "nom": "Maison A",
+      "famille": "residentiel",
+      "fichier": "11_Batiments/Houses/House_A.glb",
+      "largeur_m": 15.1,
+      "profondeur_m": 9.5,
+      "hauteur_m": 6.22,
+      "centre_m": [1.65, 0.25]
+    },
+    {
+      "id": "superette",
+      "nom": "Supérette",
+      "famille": "commerce",
+      "fichier": "11_Batiments/Superette/Superette.glb",
+      "largeur_m": 17.0,
+      "profondeur_m": 12.7,
+      "hauteur_m": 5.22,
+      "centre_m": [0.0, 0.35]
+    }
+  ]
+}

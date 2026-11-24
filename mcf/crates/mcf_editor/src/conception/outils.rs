@@ -30,13 +30,17 @@ pub struct GizmosDessus;
 
 pub struct OutilsPlugin;
 
+/// Systèmes d'interaction (souris, clavier, repères) : les autres modules s'exécutent après.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SystemesOutils;
+
 impl Plugin for OutilsPlugin {
     fn build(&self, app: &mut App) {
         app.init_gizmo_group::<GizmosPlan>()
             .init_gizmo_group::<Gizmos3d>()
             .init_gizmo_group::<GizmosDessus>()
             .add_systems(Startup, regler_gizmos)
-            .add_systems(Update, (souris, clavier, dessiner).chain());
+            .add_systems(Update, (souris, clavier, dessiner).chain().in_set(SystemesOutils));
     }
 }
 
@@ -321,6 +325,7 @@ fn souris(
     mut projet: ResMut<Projet>,
     mut edition: ResMut<Edition>,
     mut orbite: ResMut<super::camera::Orbite>,
+    catalogue: Res<super::modeles::Catalogue>,
     // Vue où le glisser en cours a commencé (`Some(None)` : hors des vues).
     mut vue_glisse: Local<Option<Option<Vue>>>,
 ) {
@@ -368,7 +373,7 @@ fn souris(
         if !boutons.pressed(MouseButton::Left) {
             edition.glisse = None;
             *vue_glisse = None;
-            appliquer_glisse(&mut projet, &edition, g);
+            appliquer_glisse(&mut projet, &edition, g, alt);
             return;
         }
         // Le point ne suit le curseur que dans la vue où le glisser a commencé : passé dans l'autre vue, la même
@@ -410,6 +415,21 @@ fn souris(
     // Clic sur la mini-carte : elle s'agrandit (vue partagée).
     if appui && vue == Some(Vue::Plan) && edition.disposition == Disposition::Perspective {
         edition.disposition = Disposition::Partagee;
+        return;
+    }
+    // Gizmo des bâtiments sélectionnés : il passe avant tout autre clic.
+    if appui
+        && matches!(edition.outil, Outil::Selection | Outil::Lotir)
+        && let Selection::Batiments(ids) = &edition.selection
+        && let (Some((v, cam, gt)), Some(c)) = (camera, curseur)
+        && let Some(pivot) = super::gizmo::pivot(&projet, ids)
+        && let Some(poignee) = super::gizmo::poignee_sous(*v, cam, gt, c, &mut projet, pivot)
+    {
+        edition.glisse = Some(Glisse {
+            depart: p,
+            actuel: p,
+            cible: CibleGlisse::Gizmo { poignee, pivot },
+        });
         return;
     }
     // Maj+clic : sélectionner depuis n'importe quel outil.
@@ -529,6 +549,22 @@ fn souris(
                 {
                     // Une seule fois par geste (pas un message par image).
                     projet.echec(e);
+                }
+            }
+        }
+        Outil::Poser(i) => {
+            if appui {
+                match catalogue.fiches.get(i) {
+                    Some(f) => {
+                        let r = projet.carte.poser_modele(f, p, edition.cap_pose);
+                        let nom = f.nom.clone();
+                        projet.resultat(r, |_| {
+                            format!(
+                                "« {nom} » posé. Cliquez pour en poser un autre, R : tourner, Échap : fini."
+                            )
+                        });
+                    }
+                    None => edition.outil = Outil::Selection,
                 }
             }
         }
@@ -792,12 +828,30 @@ fn supprimer_point(projet: &mut Projet, id: Id, index: usize, nombre: usize) {
     projet.resultat(r, |()| "Point retiré.".into());
 }
 
-fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse) {
+fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse, alt: bool) {
     let delta = [g.actuel[0] - g.depart[0], g.actuel[1] - g.depart[1]];
     if delta[0].hypot(delta[1]) < 0.05 {
         return;
     }
     match g.cible {
+        CibleGlisse::Batiments | CibleGlisse::Gizmo { .. } => {
+            let (Selection::Batiments(ids), Some((d, deg, pivot))) =
+                (&edition.selection, super::gizmo::transformation(&g, alt))
+            else {
+                return;
+            };
+            if d[0].hypot(d[1]) < 0.05 && deg.abs() < 1e-6 {
+                return;
+            }
+            let r = projet.carte.transformer_batiments(ids, d, deg, pivot);
+            projet.resultat(r, |n| {
+                if deg == 0.0 {
+                    format!("{n} bâtiment(s) déplacé(s) (désormais « manuels »).")
+                } else {
+                    format!("{n} bâtiment(s) tourné(s) de {deg:.1}° (désormais « manuels »).")
+                }
+            });
+        }
         CibleGlisse::Reference(id) => {
             let r = projet
                 .carte
@@ -823,15 +877,6 @@ fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse) {
             let r = projet.carte.remodeler_zone(zone, poly);
             projet.resultat(r, |()| {
                 "Zone modifiée (relotir la zone pour refaire le bâti).".into()
-            });
-        }
-        CibleGlisse::Batiments => {
-            let Selection::Batiments(ids) = &edition.selection else {
-                return;
-            };
-            let r = projet.carte.deplacer_batiments(ids, delta);
-            projet.resultat(r, |n| {
-                format!("{n} bâtiment(s) déplacé(s) (désormais « manuels »).")
             });
         }
         CibleGlisse::Poignee {
@@ -889,6 +934,14 @@ fn clavier(
         }
         return;
     }
+    if touches.just_pressed(KeyCode::KeyR) {
+        let sens = if maj { -90.0 } else { 90.0 };
+        tourner_90(&mut projet, &mut edition, sens);
+    }
+    if touches.just_pressed(KeyCode::Escape) && matches!(edition.outil, Outil::Poser(_)) {
+        edition.outil = Outil::Selection;
+        return;
+    }
     if touches.just_pressed(KeyCode::Escape) {
         if edition.points.is_empty() {
             edition.selection = Selection::Rien;
@@ -920,6 +973,23 @@ fn clavier(
             edition.aller_a(e);
         }
     }
+}
+
+/// R : tourne de `deg` le bâtiment en cours de pose, sinon les bâtiments sélectionnés (autour de leur centre).
+pub fn tourner_90(projet: &mut Projet, edition: &mut Edition, deg: f64) {
+    if matches!(edition.outil, Outil::Poser(_)) {
+        edition.cap_pose = mcf_carte::batiments::normaliser_cap(edition.cap_pose + deg);
+        projet.info(format!("Cap de pose : {:.0}°.", edition.cap_pose));
+        return;
+    }
+    let Selection::Batiments(ids) = &edition.selection else {
+        return;
+    };
+    let Some(pivot) = super::gizmo::pivot(projet, ids) else {
+        return;
+    };
+    let r = projet.carte.transformer_batiments(ids, [0.0, 0.0], deg, pivot);
+    projet.resultat(r, |n| format!("{n} bâtiment(s) tourné(s) de {deg:.0}°."));
 }
 
 /// Annule (et oublie une sélection qui ne correspondrait plus à rien).
@@ -992,6 +1062,38 @@ fn drape(terrain: &mcf_carte::relief::Relief, pts: &[P2], ferme: bool, dessus: f
     v
 }
 
+/// Contour d'un bâtiment (au sol et au toit) ; pour un bâtiment modélisé, flèche de sa façade avant (−Z du modèle).
+fn contour_batiment(
+    g: &mut Gizmos<GizmosDessus>,
+    terrain: &mcf_carte::relief::Relief,
+    b: &mcf_carte::Batiment,
+    couleur: Color,
+) {
+    let base = terrain.hauteur(b.centre());
+    let pts: Vec<Vec3> = b
+        .empreinte
+        .iter()
+        .chain(b.empreinte.first())
+        .map(|p| Vec3::new(p[0] as f32, 0.0, p[1] as f32))
+        .collect();
+    g.linestrip(pts.iter().map(|p| p.with_y(base as f32 + 0.3)), couleur);
+    g.linestrip(
+        pts.iter().map(|p| p.with_y((base + b.hauteur()) as f32 + 0.3)),
+        couleur,
+    );
+    if let Some(m) = &b.modele {
+        let c = b.centre();
+        // Demi-profondeur : distance du centre au milieu du côté avant.
+        let (a, bb) = (b.empreinte[0], b.empreinte[1]);
+        let avant = mcf_carte::batiments::tourner([0.0, -1.0], [0.0, 0.0], m.cap_deg);
+        let demi = mcf_geo::distance(c, [(a[0] + bb[0]) * 0.5, (a[1] + bb[1]) * 0.5]).max(1.0);
+        let y = base as f32 + 0.4;
+        let de = Vec3::new(c[0] as f32, y, c[1] as f32);
+        let vers = de + Vec3::new(avant[0] as f32, 0.0, avant[1] as f32) * (demi as f32 + 3.0);
+        g.arrow(de, vers, couleur);
+    }
+}
+
 fn horizontal(c: Vec3) -> Isometry3d {
     Isometry3d::new(c, Quat::from_rotation_arc(Vec3::Z, Vec3::Y))
 }
@@ -1004,8 +1106,11 @@ fn dessiner(
     affiche: Res<Affiche>,
     edition: Res<Edition>,
     orbite: Res<super::camera::Orbite>,
+    touches: Res<ButtonInput<KeyCode>>,
+    catalogue: Res<super::modeles::Catalogue>,
     mut projet: ResMut<Projet>,
 ) {
+    let alt = touches.pressed(KeyCode::AltLeft) || touches.pressed(KeyCode::AltRight);
     // Où regarde la caméra 3D (repère dans le Plan et la mini-carte).
     if edition.disposition != Disposition::Plan {
         let y = projet.carte.manifeste.altitude_max_m as f32 + 30.0;
@@ -1101,28 +1206,16 @@ fn dessiner(
     // Sélection.
     match &edition.selection {
         Selection::Batiments(ids) => {
-            let decal = match edition.glisse {
-                Some(Glisse {
-                    cible: CibleGlisse::Batiments,
-                    depart,
-                    actuel,
-                }) => [actuel[0] - depart[0], actuel[1] - depart[1]],
-                _ => [0.0, 0.0],
-            };
+            let apercu = super::gizmo::apercu(&edition, alt);
             for id in ids {
                 if let Some(b) = batiments.get(id) {
-                    let base = terrain.hauteur(b.centre());
-                    let pts: Vec<Vec3> = b
-                        .empreinte
-                        .iter()
-                        .chain(b.empreinte.first())
-                        .map(|p| Vec3::new((p[0] + decal[0]) as f32, 0.0, (p[1] + decal[1]) as f32))
-                        .collect();
-                    dessus.linestrip(pts.iter().map(|p| p.with_y(base as f32 + 0.3)), jaune);
-                    dessus.linestrip(
-                        pts.iter().map(|p| p.with_y((base + b.hauteur()) as f32 + 0.3)),
-                        jaune,
-                    );
+                    let mut b = b.clone();
+                    if let Some((d, deg, pivot)) = apercu
+                        && !b.verrou
+                    {
+                        b.transformer(d, deg, pivot);
+                    }
+                    contour_batiment(&mut dessus, terrain, &b, jaune);
                 }
             }
         }
@@ -1215,6 +1308,16 @@ fn dessiner(
                 Vec3::new(b[0] as f32, y, b[1] as f32),
                 rouge,
             );
+        }
+        Outil::Poser(i) => {
+            if let (Some((p, _)), Some(f)) = (edition.curseur, catalogue.fiches.get(i)) {
+                contour_batiment(
+                    &mut dessus,
+                    terrain,
+                    &f.batiment(p, edition.cap_pose),
+                    Color::WHITE,
+                );
+            }
         }
         Outil::Pinceau(_) => {
             if let Some((p, h)) = edition.curseur {

@@ -202,6 +202,7 @@ fn reconstruire(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     surfaces: Res<Surfaces>,
+    catalogue: Res<super::modeles::Catalogue>,
     parties: Query<(Entity, &Partie)>,
 ) {
     let r = projet.carte.revisions;
@@ -447,7 +448,9 @@ fn reconstruire(
     if terrain || change(|x| x.batiments) {
         let (mut plan, mut toits, mut murs) = (Tampon::default(), Tampon::default(), Tampon::default());
         for b in &batiments {
-            bloc(&mut plan, &mut toits, &mut murs, b, &d.terrain);
+            // Bâtiment modélisé : le modèle remplace le bloc en 3D (`modeles`), le Plan garde l'aplat.
+            let en_3d = !catalogue.modele_affiche(b);
+            bloc(&mut plan, &mut toits, &mut murs, b, &d.terrain, en_3d);
         }
         if !plan.vide() {
             ajouter(
@@ -613,7 +616,14 @@ fn plan_au_dessus(y: f32) -> Transform {
     Transform::from_translation(Vec3::Y * y).with_scale(Vec3::new(1.0, 0.001, 1.0))
 }
 
-fn bloc(plan: &mut Tampon, toits: &mut Tampon, murs: &mut Tampon, b: &mcf_carte::Batiment, terrain: &Relief) {
+fn bloc(
+    plan: &mut Tampon,
+    toits: &mut Tampon,
+    murs: &mut Tampon,
+    b: &mcf_carte::Batiment,
+    terrain: &Relief,
+    en_3d: bool,
+) {
     if b.empreinte.len() < 3 {
         return;
     }
@@ -623,6 +633,9 @@ fn bloc(plan: &mut Tampon, toits: &mut Tampon, murs: &mut Tampon, b: &mcf_carte:
     let haut = sol + b.hauteur();
     let toit = mcf_geo::maillage_polygone(&b.empreinte, |_| haut);
     plan.ajouter(&toit, lin([150, 140, 132], 1.0));
+    if !en_3d {
+        return;
+    }
     toits.ajouter(&toit, lin([200, 198, 194], 1.0));
     let c = polygone::centroide(&b.empreinte);
     let mur = teinte_3d(b.famille);

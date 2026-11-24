@@ -4,8 +4,8 @@
 
 pub mod batiments;
 pub mod carte;
-pub mod catalogue;
 pub mod carte_de_test;
+pub mod catalogue;
 pub mod contours;
 pub mod conversion;
 pub mod export;
@@ -25,8 +25,8 @@ pub mod relief_image;
 pub mod reseau;
 
 pub use batiments::{Batiment, ModelePose, Origine};
-pub use catalogue::{CatalogueBatiments, Fiche};
 pub use carte::{Carte, Derive, Revisions, Sale, Transaction};
+pub use catalogue::{CatalogueBatiments, Fiche};
 pub use contours::{Contour, Contours, UsageContour};
 pub use gabarits::{Densite, Famille, Gabarit, TableGabarits};
 pub use geometrie::GeoReseau;

@@ -1183,7 +1183,13 @@ impl Carte {
     /// Tourne des bâtiments de `deg` autour de `pivot` puis les décale de `delta`, en une étape d'historique
     /// (gizmo). Ils deviennent manuels ; les verrouillés ne bougent pas. Refusé en entier si un bâtiment sortirait
     /// de la carte.
-    pub fn transformer_batiments(&mut self, ids: &[Id], delta: P2, deg: f64, pivot: P2) -> Result<usize, String> {
+    pub fn transformer_batiments(
+        &mut self,
+        ids: &[Id],
+        delta: P2,
+        deg: f64,
+        pivot: P2,
+    ) -> Result<usize, String> {
         let libelle = if deg == 0.0 {
             "Déplacer des bâtiments"
         } else {
