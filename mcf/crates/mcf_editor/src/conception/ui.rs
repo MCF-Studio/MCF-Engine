@@ -1,9 +1,9 @@
 //! Panneaux egui : barre du haut (fichier, annuler, vues), étapes et outils à gauche, inspecteur à droite, barre
 //! d'état en bas. L'espace restant est donné aux vues (`ZoneVues`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, window::FileDragAndDrop};
 use bevy_egui::{EguiContexts, egui};
 use mcf_carte::{
     Carte, Densite, Famille, GrapheRoutier, Manifeste, Origine,
@@ -15,6 +15,7 @@ use mcf_geo::{ClasseRoute, polygone};
 use super::{
     Disposition, Edition, Etape, Outil, Projet, Selection, ZoneVues,
     camera::{Orbite, VuePlan},
+    fichiers::{Cible, Dialogue},
     outils,
 };
 
@@ -96,6 +97,8 @@ pub fn interface(
     mut plan: ResMut<VuePlan>,
     mut orbite: ResMut<Orbite>,
     mut style_pose: Local<bool>,
+    dialogue: Res<Dialogue>,
+    mut deposes: MessageReader<FileDragAndDrop>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if !*style_pose {
@@ -110,6 +113,7 @@ pub fn interface(
             .max_rect(ctx.viewport_rect()),
     );
     let (projet, edition) = (&mut *projet, &mut *edition);
+    recevoir_fichiers(projet, edition, &dialogue, &mut deposes);
 
     egui::Panel::top("haut").show(&mut racine, |ui| {
         ui.horizontal(|ui| {
@@ -220,7 +224,9 @@ pub fn interface(
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 match e {
-                                    Etape::Cadre => cadre(ui, projet, edition, &mut plan, &mut orbite),
+                                    Etape::Cadre => {
+                                        cadre(ui, projet, edition, &mut plan, &mut orbite, &dialogue)
+                                    }
                                     Etape::Relief => etape_relief(ui, edition),
                                     Etape::Reseau => etape_reseau(ui, projet, edition),
                                     Etape::Quartiers => etape_quartiers(ui, edition),
@@ -271,6 +277,7 @@ fn cadre(
     edition: &mut Edition,
     plan: &mut VuePlan,
     orbite: &mut Orbite,
+    dialogue: &Dialogue,
 ) {
     ui.strong("Nouvelle carte");
     ui.horizontal(|ui| {
@@ -312,7 +319,15 @@ fn cadre(
     ui.separator();
     ui.strong("Fichier");
     ui.label("Dossier du projet de carte");
-    ui.text_edit_singleline(&mut edition.chemin);
+    ui.horizontal(|ui| {
+        ui.text_edit_singleline(&mut edition.chemin);
+        if ui
+            .add_enabled(!dialogue.ouvert(), egui::Button::new("Parcourir…"))
+            .clicked()
+        {
+            dialogue.ouvrir(Cible::DossierProjet);
+        }
+    });
     ui.horizontal(|ui| {
         if ui.button("Ouvrir").clicked() {
             let chemin = PathBuf::from(edition.chemin.trim());
@@ -352,7 +367,7 @@ fn cadre(
         }
     }
     ui.separator();
-    calques_reference(ui, projet, edition);
+    calques_reference(ui, projet, edition, dialogue);
     super::releve::panneau(ui, projet, edition, plan);
     ui.separator();
     ui.strong("Carte");
@@ -836,9 +851,69 @@ fn statistiques(ui: &mut egui::Ui, projet: &mut Projet) {
     });
 }
 
+/// Importe un PNG comme calque de référence (validation stricte dans `mcf_carte`) et ouvre l'étape où on le règle.
+fn importer_image(projet: &mut Projet, edition: &mut Edition, chemin: &Path) {
+    edition.chemin_image = chemin.display().to_string();
+    match projet.carte.importer_reference_fichier(chemin) {
+        Ok(id) => {
+            if edition.etape != Etape::Cadre {
+                edition.aller_a(Etape::Cadre);
+            }
+            edition.reference_active = Some(id);
+            edition.reference_saisie = None;
+            edition.disposition = Disposition::Partagee;
+            projet.info(
+                "Calque importé sur toute la largeur de la carte. Calez-le : « Caler » (deux repères \
+                 de distance connue), puis « Déplacer ».",
+            );
+        }
+        Err(e) => projet.echec(format!("Import refusé : {e}")),
+    }
+}
+
+/// Chemins choisis dans une fenêtre native ou déposés sur la fenêtre de l'éditeur.
+fn recevoir_fichiers(
+    projet: &mut Projet,
+    edition: &mut Edition,
+    dialogue: &Dialogue,
+    deposes: &mut MessageReader<FileDragAndDrop>,
+) {
+    let mut chemins: Vec<(Option<Cible>, PathBuf)> = dialogue
+        .recevoir()
+        .map(|(cible, chemin)| (Some(cible), chemin))
+        .into_iter()
+        .collect();
+    chemins.extend(deposes.read().filter_map(|m| match m {
+        FileDragAndDrop::DroppedFile { path_buf, .. } => Some((None, path_buf.clone())),
+        _ => None,
+    }));
+    for (cible, chemin) in chemins {
+        // Un dossier déposé est un projet de carte ; un fichier déposé, une image de référence.
+        let cible = cible.unwrap_or(if chemin.is_dir() {
+            Cible::DossierProjet
+        } else {
+            Cible::ImageReference
+        });
+        match cible {
+            Cible::ImageReference => importer_image(projet, edition, &chemin),
+            Cible::DossierProjet => {
+                edition.chemin = chemin.display().to_string();
+                if edition.etape != Etape::Cadre {
+                    edition.aller_a(Etape::Cadre);
+                }
+                projet.info(format!(
+                    "Dossier choisi : {}. « Ouvrir » pour charger la carte qu'il contient, « Enregistrer ici » \
+                     s'il est neuf ou vide.",
+                    chemin.display()
+                ));
+            }
+        }
+    }
+}
+
 /// Calques de référence : importer une image, la régler, la caler (spec §8). Les réglages s'affichent en direct et
 /// ne sont écrits (une étape d'historique) qu'avec « Appliquer ».
-fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
+fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, dialogue: &Dialogue) {
     ui.strong("Calques de référence");
     ui.label(
         egui::RichText::new(
@@ -849,24 +924,25 @@ fn calques_reference(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Editi
         .weak(),
     );
     ui.horizontal(|ui| {
-        ui.label("Image PNG");
-        ui.text_edit_singleline(&mut edition.chemin_image);
-    });
-    if ui.button("Importer l'image").clicked() {
-        let chemin = PathBuf::from(edition.chemin_image.trim().trim_matches('"'));
-        match projet.carte.importer_reference_fichier(&chemin) {
-            Ok(id) => {
-                edition.reference_active = Some(id);
-                edition.reference_saisie = None;
-                edition.disposition = Disposition::Partagee;
-                projet.info(
-                    "Calque importé sur toute la largeur de la carte. Calez-le : « Caler » (deux repères \
-                     de distance connue), puis « Déplacer ».",
-                );
-            }
-            Err(e) => projet.echec(format!("Import refusé : {e}")),
+        let ouvert = dialogue.ouvert();
+        if ui
+            .add_enabled(!ouvert, egui::Button::new("Importer une image…"))
+            .on_hover_text("Choisir un PNG (ou le glisser-déposer sur la fenêtre)")
+            .clicked()
+        {
+            dialogue.ouvrir(Cible::ImageReference);
         }
-    }
+        if ouvert {
+            ui.spinner();
+        }
+    });
+    ui.collapsing("Ou saisir le chemin", |ui| {
+        ui.text_edit_singleline(&mut edition.chemin_image);
+        if ui.button("Importer ce chemin").clicked() {
+            let chemin = PathBuf::from(edition.chemin_image.trim().trim_matches('"'));
+            importer_image(projet, edition, &chemin);
+        }
+    });
     // Calque retiré (annuler, autre carte) : on oublie la saisie.
     if edition
         .reference_active

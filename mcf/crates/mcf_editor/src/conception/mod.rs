@@ -6,6 +6,7 @@
 //! aucune géométrie de carte : seulement les panneaux.
 
 mod camera;
+mod fichiers;
 mod outils;
 mod references;
 mod releve;
@@ -376,6 +377,7 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
         })
         .insert_resource(edition)
         .init_resource::<ZoneVues>()
+        .init_resource::<fichiers::Dialogue>()
         .add_plugins((
             camera::CamerasPlugin,
             scene::ScenePlugin,

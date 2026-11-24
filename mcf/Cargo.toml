@@ -24,6 +24,8 @@ thiserror = "2"
 # Interface de l'éditeur : versions vérifiées pour Bevy 0.20 / egui 0.36.
 bevy_egui = "0.43.1"
 egui_dock = "0.21.0"
+# Fenêtres natives « ouvrir un fichier / un dossier » de l'éditeur (MIT).
+rfd = "0.18"
 
 mcf_bench = { path = "crates/mcf_bench" }
 mcf_carte = { path = "crates/mcf_carte" }

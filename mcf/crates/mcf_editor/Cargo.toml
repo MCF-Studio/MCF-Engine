@@ -18,6 +18,7 @@ egui_dock.workspace = true
 mcf_carte.workspace = true
 mcf_core.workspace = true
 mcf_geo.workspace = true
+rfd.workspace = true
 
 [lints]
 workspace = true
