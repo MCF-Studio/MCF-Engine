@@ -1242,11 +1242,22 @@ fn relief_depuis_calque(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Ed
         .on_hover_text("Adoucit les marches des 256 niveaux de gris (0 = aucun).");
         ui.end_row();
     });
-    ui.label(
-        egui::RichText::new(format!("Plage d'altitude de la carte : {min} à {max} m."))
+    let conseille = projet.carte.references.references.get(&id).map_or(0.0, |r| {
+        mcf_carte::relief_image::lissage_conseille(edition.relief_noir_m, edition.relief_blanc_m, r.m_par_px)
+    });
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "Plage de la carte : {min} à {max} m. Lissage conseillé : {conseille} m (efface les marches des \
+                 256 niveaux de gris)."
+            ))
             .small()
             .weak(),
-    );
+        );
+        if ui.small_button("Prendre").clicked() {
+            edition.relief_lissage_m = conseille;
+        }
+    });
     if ui.button("⛰ Appliquer comme relief").clicked() {
         let r = projet.carte.relief_depuis_reference(
             id,

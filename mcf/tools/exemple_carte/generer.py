@@ -54,9 +54,13 @@ def main():
     terre = 0.72 - np.hypot(x * 1.05, y) + 0.18 * bruit(rng, COTE_PX)
     # Massif au nord, collines douces ailleurs, plaine côtière au sud.
     massif = np.clip(1 - np.hypot(x + 0.1, y + 0.45) / 0.45, 0, 1) ** 1.6
+    # Plaine côtière douce (montée progressive vers l'intérieur), collines modérées, massif plus raide.
+    interieur = np.clip(terre / 0.5, 0, 1)
+    interieur = interieur * interieur * (3 - 2 * interieur)
+    collines = 12 * bruit(rng, COTE_PX, 4) * interieur
     altitude = np.where(
         terre > 0,
-        2 + 900 * np.clip(terre, 0, 0.4) + 520 * massif + 25 * bruit(rng, COTE_PX, 6),
+        2 + 140 * interieur + 430 * massif + collines,
         -40 * np.clip(-terre * 6, 0, 1),
     )
     # Lac à 140 m dans une cuvette à l'ouest du massif.

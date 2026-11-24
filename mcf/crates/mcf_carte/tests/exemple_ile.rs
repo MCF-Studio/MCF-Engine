@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use mcf_carte::{Carte, Manifeste, releve};
+use mcf_carte::{Carte, Manifeste, releve, relief_image};
 
 fn exemple(nom: &str) -> Vec<u8> {
     let chemin = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -46,7 +46,12 @@ fn ile_exemple_de_bout_en_bout() {
     // 3. Relief depuis la carte en niveaux de gris.
     let t = Instant::now();
     let n = c
-        .relief_depuis_reference(relief, -40.0, 600.0, 8.0)
+        .relief_depuis_reference(
+            relief,
+            -40.0,
+            600.0,
+            relief_image::lissage_conseille(-40.0, 600.0, 4.0),
+        )
         .expect("relief");
     println!("MESURE relief : {n} points en {:?}", t.elapsed());
     let r = c.references.references[&relief].clone();

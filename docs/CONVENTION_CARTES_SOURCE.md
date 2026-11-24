@@ -25,9 +25,12 @@ endroit. Les tailles en pixels peuvent différer (l'éditeur recopie le calage e
 | ![couleurs](exemples/ile_exemple_couleurs.png) | ![relief](exemples/ile_exemple_relief.png) |
 
 Vérifié de bout en bout par `cargo test -p mcf_carte --test exemple_ile` (mesures brutes, `--release`, PC de dev) :
-relief appliqué sur 9,1 millions de points en 0,87 s (sommet 600 m, lac à 140,7 m pour 140 attendus) ; mer relevée
-et creusée en 0,89 s ; ville relevée d'un clic (0,61 km² pour ~0,62 attendus) ; autoroute relevée d'un clic sur
-1 842 m.
+relief appliqué sur 9,1 millions de points en 1,0 s (lissage conseillé 63 m ; sommet 469,5 m, lac à 140,7 m pour
+140 attendus) ; mer relevée et creusée en 0,95 s ; ville relevée d'un clic (0,61 km² pour ~0,62 attendus) ;
+autoroute relevée d'un clic sur 1 842 m.
+
+Projet complet (relief, mer, deux quartiers lotis, autoroute, route) prêt à ouvrir dans l'éditeur :
+`cargo run -p mcf_carte --example ile_exemple --release -- <dossier>`, puis `cargo editor -- <dossier>`.
 
 ## Carte couleurs
 
@@ -68,9 +71,13 @@ rue 14 m) à l'échelle de l'image.
    création, 4 096 m d'écart au plus).
 2. **Transparent = pas de donnée** : le relief existant n'y est pas touché (utile pour ne fournir que le massif, ou
    laisser la mer au relevé de l'eau).
-3. **8 bits** : 256 niveaux. Sur 640 m (exemple) un niveau vaut 2,5 m ; sur 2 500 m, ~10 m. Le **lissage** de
-   l'éditeur adoucit ces marches (8 à 30 m conseillés) ; il ne recrée pas le détail absent de l'image. Le 16 bits
-   n'est pas encore lu (les calques sont convertis en 8 bits) : à prévoir si le besoin se confirme.
+3. **8 bits** : 256 niveaux. Sur 640 m (exemple) un niveau vaut 2,5 m ; sur 2 600 m, ~10 m. Sans lissage, le
+   terrain fait des paliers et de petites marches, visibles à l'éclairage comme des arcs le long des courbes de
+   niveau. **Lissage conseillé ≈ 25 × la hauteur d'une marche** (`25 × (blanc − noir) / 255`, au moins 2 pixels) :
+   l'éditeur le calcule et le propose (« Prendre »). Constaté à l'écran sur l'exemple (marche de 2,5 m) : 8 m laisse
+   les arcs, 48 m les efface ; un critère de pente seule (> 28°) les sous-estimait. Le prix : le relief plus petit
+   que la fenêtre de lissage est gommé (pour `map_1`, ~255 m). Le 16 bits n'est pas encore lu (calques convertis en
+   8 bits) ; une image générée par IA est de toute façon en 8 bits.
 4. Les **plans d'eau** gagnent à être **plats** dans la carte de relief (même gris sur tout le lac).
 
 ## Dans l'éditeur, pas à pas
@@ -79,7 +86,8 @@ rue 14 m) à l'échelle de l'image.
 2. **Importer une image…** : la carte couleurs. Elle couvre la largeur de la carte ; si l'emprise n'est pas la même,
    « 📏 Caler » (deux repères, distance réelle) puis « ✋ Déplacer ».
 3. **Importer une image…** : la carte de relief, puis **« Même calage que… » → la carte couleurs**.
-4. Sur le calque de relief : altitudes du **noir** et du **blanc**, **lissage**, « ⛰ Appliquer comme relief ».
+4. Sur le calque de relief : altitudes du **noir** et du **blanc**, **lissage** (« Prendre » le conseillé),
+   « ⛰ Appliquer comme relief ».
 5. Sur le calque couleurs, **relevé assisté** : « Eau / côte » (clic dans la mer), « Taches » (clic dans une ville),
    « Routes » (clic sur un trait, classe choisie avant). Valider / rejeter chaque proposition.
 6. Tout s'annule (Ctrl+Z), étape par étape.

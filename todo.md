@@ -35,8 +35,14 @@
     l'écran**). Convention et exemple : `docs/CONVENTION_CARTES_SOURCE.md` (deux images au même cadrage : carte
     couleurs + carte de relief). Sur le calque de relief : « Même calage que… » la carte couleurs, altitudes du noir
     et du blanc, lissage, « ⛰ Appliquer comme relief ». Plage d'altitude réglable à la création de la carte.
-    - Exemple `docs/exemples/ile_exemple_*.png` (4 km) : relief 0,87 s, mer 0,89 s, ville et autoroute relevées d'un
-      clic (mesures brutes, `--release`).
+    - Exemple `docs/exemples/ile_exemple_*.png` (4 km) : relief 1,0 s, mer 0,95 s, ville et autoroute relevées d'un
+      clic (mesures brutes, `--release`). Projet complet : `cargo run -p mcf_carte --example ile_exemple --release
+      -- <dossier>`. **Vu à l'écran** (2026-11-24) : île, massif, lac, mer, quartiers lotis, autoroute ; liste des
+      classes avec « Voie express » et « Autoroute ».
+    - Marches des 256 niveaux : arcs bruns le long des courbes de niveau avec un lissage faible. Lissage conseillé =
+      25 × la marche (63 m pour l'exemple), proposé par l'éditeur ; 48 m les efface à l'écran.
+    - Reste à voir : léger motif en pointillés sur les pentes fortes du massif (ombrage du maillage sous-échantillonné
+      ou ombres ? non élucidé) ; terre-plein de l'autoroute pas encore regardé de près.
     - `map_1.png` et `map_sat.png` n'ont **pas** le relief en chiffres : demander une carte de relief au même cadrage
       (prompts dans la convention).
 - [x] Rendu : luminosité, ciel, textures plus qualitatives → première passe codée. **Pas encore vue à l'écran**

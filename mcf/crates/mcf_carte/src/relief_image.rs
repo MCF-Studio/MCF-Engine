@@ -13,6 +13,18 @@ pub const LISSAGE_MAX_M: f64 = 500.0;
 /// Seuil d'opacité sous lequel un pixel ne porte pas de donnée (0 à 255).
 pub const ALPHA_DONNEE: u8 = 128;
 
+/// Lissage conseillé (m) pour effacer les marches des 256 niveaux : ~25 fois la hauteur d'une marche
+/// (`(blanc − noir) / 255`), et au moins 2 pixels de l'image. Constaté à l'écran sur l'exemple de la convention
+/// (2,5 m par niveau, 4 m par pixel) : 8 m laisse des arcs le long des courbes de niveau, 48 m les efface ; un critère
+/// de pente seule (> 28°) ne les voyait pas, l'éclairage les révèle bien avant.
+pub fn lissage_conseille(noir_m: f64, blanc_m: f64, m_par_px: f64) -> f64 {
+    let marche = (blanc_m - noir_m).abs() / 255.0;
+    (25.0 * marche)
+        .max(2.0 * m_par_px)
+        .clamp(0.0, LISSAGE_MAX_M)
+        .round()
+}
+
 /// Gris (0 = noir, 1 = blanc) d'un pixel, ou `None` s'il est transparent. Luminance Rec. 709 des valeurs codées :
 /// une image en niveaux de gris redonne exactement son niveau.
 fn gris_pixel(image: &ImageRgba, x: usize, y: usize) -> Option<f64> {
@@ -143,6 +155,16 @@ mod tests {
         assert_eq!(gris(&trou, 0.5, 0.5), None);
         // À côté du trou : le pixel le plus proche, sans mélange avec le trou.
         assert_eq!(gris(&trou, 1.2, 0.5), Some(1.0));
+    }
+
+    #[test]
+    fn lissage_conseille_selon_la_marche() {
+        // Exemple de la convention : 640 m sur 255 niveaux = 2,5 m par marche → 63 m.
+        assert_eq!(lissage_conseille(-40.0, 600.0, 4.0), 63.0);
+        // map_1 : 2 600 m de dénivelé, 25 m par pixel → ~255 m.
+        assert_eq!(lissage_conseille(-100.0, 2500.0, 25.0), 255.0);
+        // Faible dénivelé, gros pixels : 2 pixels au moins.
+        assert_eq!(lissage_conseille(0.0, 10.0, 30.0), 60.0);
     }
 
     #[test]
