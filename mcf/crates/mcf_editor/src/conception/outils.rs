@@ -132,6 +132,102 @@ fn batiment_en(carte: &Carte, p: P2) -> Option<Id> {
         .map(|(id, _)| *id)
 }
 
+/// Bâtiment sous le curseur : dans le Plan, celui dont l'empreinte contient `p` ; en 3D, le premier mur ou toit
+/// touché par le rayon de la caméra avant le sol (`p`, `h` : point du sol visé).
+fn batiment_sous_curseur(
+    carte: &mut Carte,
+    p: P2,
+    h: f64,
+    vue: Option<Vue>,
+    camera: Option<(&Vue, &Camera, &GlobalTransform)>,
+    curseur: Option<Vec2>,
+) -> Option<Id> {
+    let rayon = match (vue, camera, curseur) {
+        (Some(Vue::Perspective), Some((_, cam, gt)), Some(c)) => cam.viewport_to_world(gt, c).ok(),
+        _ => None,
+    };
+    let Some(rayon) = rayon else {
+        return batiment_en(carte, p);
+    };
+    let o = rayon.origin.as_dvec3();
+    let d = rayon.direction.as_dvec3();
+    let t_sol = (bevy::math::DVec3::new(p[0], h, p[1]) - o).length();
+    batiment_vise(carte, o, d, t_sol + 0.5).or_else(|| batiment_en(carte, p))
+}
+
+/// Premier bâtiment (prisme de son empreinte, du point le plus bas du sol sous lui jusqu'au toit, comme le maillage
+/// de la scène) touché par le rayon `o + t·d` avec `t ≤ t_max`.
+fn batiment_vise(carte: &mut Carte, o: bevy::math::DVec3, d: bevy::math::DVec3, t_max: f64) -> Option<Id> {
+    let (o2, d2) = ([o.x, o.z], [d.x, d.z]);
+    let croix = |a: P2, b: P2| a[0] * b[1] - a[1] * b[0];
+    // 1. Candidats en 2D : l'empreinte croise la trace horizontale du rayon (sans le relief).
+    let fin = [o2[0] + d2[0] * t_max, o2[1] + d2[1] * t_max];
+    let (bmin, bmax) = (
+        [o2[0].min(fin[0]), o2[1].min(fin[1])],
+        [o2[0].max(fin[0]), o2[1].max(fin[1])],
+    );
+    let candidats: Vec<(Id, Vec<P2>, f64)> = carte
+        .batiments
+        .iter()
+        .filter(|(_, b)| {
+            let (a, c) = polygone::englobant(&b.empreinte);
+            !(c[0] < bmin[0] || bmax[0] < a[0] || c[1] < bmin[1] || bmax[1] < a[1])
+        })
+        .map(|(id, b)| (*id, b.empreinte.clone(), b.hauteur()))
+        .collect();
+    let terrain = &carte.derive().terrain;
+    let mut meilleur: Option<(f64, Id)> = None;
+    for (id, e, hauteur) in candidats {
+        if e.len() < 3 {
+            continue;
+        }
+        let bas = e
+            .iter()
+            .map(|q| terrain.hauteur(*q))
+            .fold(f64::INFINITY, f64::min)
+            - 0.3;
+        let centre = polygone::centroide(&e);
+        let haut = terrain.hauteur(centre).max(bas + 0.3) + hauteur;
+        // Tranche verticale [bas, haut].
+        let (mut ta, mut tb) = if d.y.abs() < 1e-9 {
+            if (bas..=haut).contains(&o.y) {
+                (0.0, t_max)
+            } else {
+                continue;
+            }
+        } else {
+            let (t1, t2) = ((bas - o.y) / d.y, (haut - o.y) / d.y);
+            (t1.min(t2), t1.max(t2))
+        };
+        ta = ta.max(0.0);
+        tb = tb.min(t_max);
+        if ta > tb {
+            continue;
+        }
+        let point = |t: f64| [o2[0] + d2[0] * t, o2[1] + d2[1] * t];
+        let mut t_entree = polygone::contient(&e, point(ta)).then_some(ta);
+        for k in 0..e.len() {
+            let (a, b) = (e[k], e[(k + 1) % e.len()]);
+            let ab = [b[0] - a[0], b[1] - a[1]];
+            let den = croix(d2, ab);
+            if den.abs() < 1e-12 {
+                continue;
+            }
+            let ao = [a[0] - o2[0], a[1] - o2[1]];
+            let (t, s) = (croix(ao, ab) / den, croix(ao, d2) / den);
+            if (0.0..=1.0).contains(&s) && (ta..=tb).contains(&t) && t_entree.is_none_or(|x| t < x) {
+                t_entree = Some(t);
+            }
+        }
+        if let Some(t) = t_entree
+            && meilleur.is_none_or(|(m, _)| t < m)
+        {
+            meilleur = Some((t, id));
+        }
+    }
+    meilleur.map(|(_, id)| id)
+}
+
 /// Enregistre le projet (dossier courant, sinon le chemin saisi, qui doit être neuf ou vide).
 pub fn enregistrer(projet: &mut Projet, edition: &Edition) {
     let chemin = edition.chemin.trim();
@@ -224,6 +320,7 @@ fn souris(
     cameras: Query<(&Vue, &Camera, &GlobalTransform)>,
     mut projet: ResMut<Projet>,
     mut edition: ResMut<Edition>,
+    mut orbite: ResMut<super::camera::Orbite>,
     // Vue où le glisser en cours a commencé (`Some(None)` : hors des vues).
     mut vue_glisse: Local<Option<Option<Vue>>>,
 ) {
@@ -291,23 +388,40 @@ fn souris(
     let Some((p, h)) = edition.curseur else {
         return;
     };
+    // F : la caméra 3D va regarder le point sous le curseur (depuis le Plan ou la 3D) ; le Plan seul s'ouvre en
+    // Plan + 3D pour qu'on y soit.
+    if touches.just_pressed(KeyCode::KeyF) && !zone.clavier_ui {
+        orbite.cible = Vec3::new(p[0] as f32, h as f32, p[1] as f32);
+        orbite.elevation = 0.0;
+        orbite.distance = orbite.distance.min(250.0);
+        if edition.disposition == Disposition::Plan {
+            edition.disposition = Disposition::Partagee;
+        }
+        projet.info(format!("Caméra 3D sur ({:.0} ; {:.0}).", p[0], p[1]));
+    }
     let appui = boutons.just_pressed(MouseButton::Left);
     let maj = touches.pressed(KeyCode::ShiftLeft) || touches.pressed(KeyCode::ShiftRight);
+    // Bâtiment visé au clic : en 3D, le rayon touche d'abord les murs et les toits, pas le sol derrière.
+    let bat = if appui {
+        batiment_sous_curseur(&mut projet.carte, p, h, vue, camera, curseur)
+    } else {
+        None
+    };
     // Clic sur la mini-carte : elle s'agrandit (vue partagée).
     if appui && vue == Some(Vue::Plan) && edition.disposition == Disposition::Perspective {
         edition.disposition = Disposition::Partagee;
         return;
     }
     // Maj+clic : sélectionner depuis n'importe quel outil.
+    let viseur = camera.zip(curseur).map(|((_, cam, gt), c)| (cam, gt, c));
     if appui && maj && edition.outil != Outil::Selection {
-        selectionner(&mut projet, &mut edition, p, None, false);
+        selectionner(&mut projet, &mut edition, p, bat, viseur, false);
         return;
     }
     match edition.outil {
         Outil::Selection => {
             if appui {
-                let viseur = camera.zip(curseur).map(|((_, cam, gt), c)| (cam, gt, c));
-                selectionner(&mut projet, &mut edition, p, viseur, ctrl);
+                selectionner(&mut projet, &mut edition, p, bat, viseur, ctrl);
             }
         }
         Outil::Tracer | Outil::ZoneLibre => {
@@ -420,10 +534,19 @@ fn souris(
         }
         Outil::Lotir => {
             if appui {
+                // Un clic sur un bâtiment le sélectionne (pour le déplacer) au lieu de tout relotir.
+                if bat.is_some() {
+                    selectionner(&mut projet, &mut edition, p, bat, viseur, ctrl);
+                    return;
+                }
                 match quartier_en(&mut projet.carte, p) {
                     Some(id) => {
                         let r = projet.carte.lotir(id);
-                        projet.resultat(r, |n| format!("{n} bâtiment(s) ont poussé."));
+                        projet.resultat(r, |n| {
+                            format!(
+                                "{n} bâtiment(s) ont poussé. Cliquez un bâtiment pour le sélectionner et le glisser."
+                            )
+                        });
                     }
                     None => projet.echec("Aucun quartier ici : affectez d'abord l'îlot (étape 4)."),
                 }
@@ -438,9 +561,66 @@ fn selectionner(
     projet: &mut Projet,
     edition: &mut Edition,
     p: P2,
+    bat: Option<Id>,
     viseur: Option<(&Camera, &GlobalTransform, Vec2)>,
     ctrl: bool,
 ) {
+    // 0. Sommets et bords de la zone libre sélectionnée.
+    if let Selection::Quartier(id) = edition.selection
+        && let Some(z) = projet.carte.quartiers.zones.get(&id)
+        && let Some((cam, gt, c)) = viseur
+    {
+        let poly = z.polygone.clone();
+        let terrain = &projet.carte.derive().terrain;
+        let ecran = |q: P2| {
+            let w = Vec3::new(q[0] as f32, terrain.hauteur(q) as f32, q[1] as f32);
+            cam.world_to_viewport(gt, w).ok()
+        };
+        let sommet = poly
+            .iter()
+            .position(|q| ecran(*q).is_some_and(|s| s.distance(c) <= 10.0));
+        let n = poly.len();
+        match (sommet, ctrl) {
+            (Some(index), false) => {
+                edition.glisse = Some(Glisse {
+                    depart: poly[index],
+                    actuel: poly[index],
+                    cible: CibleGlisse::SommetZone { zone: id, index },
+                });
+                return;
+            }
+            (Some(index), true) => {
+                let mut nouveau = poly;
+                nouveau.remove(index);
+                let r = projet.carte.remodeler_zone(id, nouveau);
+                projet.resultat(r, |()| {
+                    "Sommet retiré (relotir la zone pour refaire le bâti).".into()
+                });
+                return;
+            }
+            (None, true) => {
+                // Ctrl+clic près d'un bord : ajoute un sommet.
+                let bord = (0..n).find(|&k| {
+                    let (a, b) = (ecran(poly[k]), ecran(poly[(k + 1) % n]));
+                    a.zip(b).is_some_and(|(a, b)| {
+                        let ab = b - a;
+                        let t = ((c - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                        (a + ab * t).distance(c) <= 8.0
+                    })
+                });
+                if let Some(k) = bord {
+                    let mut nouveau = poly;
+                    nouveau.insert(k + 1, p);
+                    let r = projet.carte.remodeler_zone(id, nouveau);
+                    projet.resultat(r, |()| {
+                        "Sommet ajouté (glissez-le ; Ctrl+clic dessus pour le retirer).".into()
+                    });
+                    return;
+                }
+            }
+            (None, false) => {}
+        }
+    }
     // 1. Poignées et tracé du tronçon sélectionné.
     if let Selection::Troncon(id) = edition.selection {
         let controle = projet
@@ -486,7 +666,7 @@ fn selectionner(
         }
     }
     // 2. Bâtiment (Ctrl : ajoute / retire de la sélection).
-    if let Some(id) = batiment_en(&projet.carte, p) {
+    if let Some(id) = bat.or_else(|| batiment_en(&projet.carte, p)) {
         let mut ids = match &edition.selection {
             Selection::Batiments(v) => v.clone(),
             _ => Vec::new(),
@@ -606,6 +786,24 @@ fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse) {
                     Ok(())
                 });
             projet.resultat(r, |()| "Calque déplacé.".into());
+        }
+        CibleGlisse::SommetZone { zone, index } => {
+            let Some(mut poly) = projet
+                .carte
+                .quartiers
+                .zones
+                .get(&zone)
+                .map(|z| z.polygone.clone())
+            else {
+                return;
+            };
+            if let Some(q) = poly.get_mut(index) {
+                *q = g.actuel;
+            }
+            let r = projet.carte.remodeler_zone(zone, poly);
+            projet.resultat(r, |()| {
+                "Zone modifiée (relotir la zone pour refaire le bâti).".into()
+            });
         }
         CibleGlisse::Batiments => {
             let Selection::Batiments(ids) = &edition.selection else {
@@ -936,7 +1134,24 @@ fn dessiner(
                 .and_then(|a| mcf_carte::ilots::ilot_en(&d.ilots, a.repere))
                 .map(|i| i.contour.clone())
                 .or_else(|| zones.get(id).map(|z| z.polygone.clone()));
-            if let Some(poly) = poly {
+            if let Some(mut poly) = poly {
+                // Zone libre : sommets en poignées, aperçu pendant le glisser.
+                if zones.contains_key(id) {
+                    if let Some(Glisse {
+                        cible: CibleGlisse::SommetZone { zone, index },
+                        actuel,
+                        ..
+                    }) = edition.glisse
+                        && zone == *id
+                        && let Some(q) = poly.get_mut(index)
+                    {
+                        *q = actuel;
+                    }
+                    for q in &poly {
+                        let c = Vec3::new(q[0] as f32, (terrain.hauteur(*q) + 0.6) as f32, q[1] as f32);
+                        dessus.circle(horizontal(c), 2.0, Color::WHITE);
+                    }
+                }
                 dessus.linestrip(drape(terrain, &poly, true, 0.6), jaune);
             }
         }

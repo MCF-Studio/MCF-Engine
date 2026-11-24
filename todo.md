@@ -6,6 +6,14 @@
 - [x] Mini-carte : la 3D occupe l'écran avec le Plan en incrustation (repère rouge = où regarde la caméra) ; clic dessus → Plan + 3D ; « 3D + mini-carte » ou Tab pour la rapetisser. Vérifié.
 - [x] Sélection → bonne étape : sélectionner une route ouvre Réseau, un bâtiment Bâti, un quartier Quartiers ; Maj+clic sélectionne depuis n'importe quel outil (ex. en sculptant le relief). Vérifié pour un quartier.
 - [x] A / E pour monter / descendre la caméra 3D (touches physiques : Q / E en QWERTY). *Pas encore vérifié à l'écran.*
+- [x] Lotir une zone remplissait seulement le pourtour → façades sur les bords **et** rangées desservies par des allées
+  (8 m, fonds de parcelle de 4 m) à l'intérieur ; index spatial (zone de 2 km : 8 046 blocs en 8 ms, release).
+  *Pas encore vu à l'écran.*
+- [x] Bâtiments impossibles à sélectionner → en 3D le clic vise les murs et toits (plus le sol derrière) ; avec « Lotir »
+  actif, un clic sur un bâtiment le sélectionne au lieu de tout relotir. *Pas encore vu à l'écran.*
+- [x] Zone libre non modifiable → sélectionnée, ses sommets sont des poignées (glisser) ; Ctrl+clic sur un bord : ajouter
+  un sommet ; Ctrl+clic sur un sommet : le retirer ; annulable. Un îlot affecté suit ses routes. *Pas encore vu.*
+- [x] Touche **F** : la caméra 3D va regarder le point sous la souris (depuis le Plan, ouvre Plan + 3D). *Pas encore vu.*
 - [ ] Réseau électrique : gaines (lignes, pas forcément aériennes), compteurs de bâtiment, compteur général qui coupe tout un quartier.
 - [ ] Import de cartes 2D (satmap ou plan stylisé, réf. `G:\MCF-Remember-this-life\docs\map`) comme modèle : relever routes, relief, emplacements de bâtiments, aux conventions de l'éditeur.
   - [x] **Étape 1 : calques de référence** (codée, testée ; **pas encore vue à l'écran**). Étape 1 « Cadre » →

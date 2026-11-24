@@ -699,6 +699,29 @@ impl Carte {
         })
     }
 
+    /// Redessine le contour d'une zone libre (sommets déplacés, ajoutés ou retirés). Les bâtiments déjà posés ne
+    /// bougent pas : relotir la zone pour les refaire.
+    pub fn remodeler_zone(&mut self, id: Id, polygone_: Vec<P2>) -> Result<(), String> {
+        if polygone_.len() < 3 {
+            return Err("une zone a au moins 3 sommets".into());
+        }
+        if !polygone::est_simple(&polygone_) {
+            return Err("ses bords se croiseraient".into());
+        }
+        if !polygone_.iter().all(|p| self.manifeste.contient(*p)) {
+            return Err("un sommet sortirait de la carte".into());
+        }
+        self.modifier("Modifier une zone libre", |tx| {
+            let z = tx
+                .quartiers()
+                .zones
+                .get_mut(&id)
+                .ok_or_else(|| "zone introuvable".to_string())?;
+            z.polygone = polygone::oriente_positif(&polygone_);
+            Ok(())
+        })
+    }
+
     /// Surface constructible et réglages d'une affectation ou d'une zone libre.
     fn cible_lotissement(&mut self, id: Id) -> Option<(Vec<P2>, Famille, Densite, u64)> {
         let graine = self.manifeste.graine;
@@ -1406,6 +1429,30 @@ mod tests {
         });
         assert!(r.is_err());
         assert_eq!(c.reseau, avant);
+    }
+
+    #[test]
+    fn zone_libre_remodelee_annulable_et_bords_croises_refuses() {
+        let mut c = quartier();
+        let carre = vec![[10.0, 10.0], [60.0, 10.0], [60.0, 60.0], [10.0, 60.0]];
+        let id = c
+            .ajouter_zone(carre.clone(), Famille::Residentiel, Densite::Moyenne)
+            .expect("zone");
+        let mut plus_grand = carre.clone();
+        plus_grand[2] = [80.0, 80.0];
+        plus_grand.insert(1, [35.0, 0.0]);
+        c.remodeler_zone(id, plus_grand).expect("remodeler");
+        assert_eq!(c.quartiers.zones[&id].polygone.len(), 5);
+        // Bords croisés, trop peu de sommets, hors carte : refusés, la zone ne change pas.
+        let croise = vec![[10.0, 10.0], [60.0, 60.0], [60.0, 10.0], [10.0, 60.0]];
+        assert!(c.remodeler_zone(id, croise).is_err());
+        assert!(c.remodeler_zone(id, carre[..2].to_vec()).is_err());
+        let mut dehors = carre.clone();
+        dehors[0] = [-1e6, 0.0];
+        assert!(c.remodeler_zone(id, dehors).is_err());
+        assert_eq!(c.quartiers.zones[&id].polygone.len(), 5);
+        c.annuler();
+        assert_eq!(c.quartiers.zones[&id].polygone.len(), 4);
     }
 
     #[test]

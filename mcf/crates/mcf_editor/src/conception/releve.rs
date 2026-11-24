@@ -79,7 +79,10 @@ impl EtatReleve {
         {
             return c;
         }
-        let c = carte.images_references.get(&id).is_some_and(|i| part_coloree(i) > SEUIL_COULEUR);
+        let c = carte
+            .images_references
+            .get(&id)
+            .is_some_and(|i| part_coloree(i) > SEUIL_COULEUR);
         self.couleurs.insert(id, (version, c));
         c
     }
@@ -221,13 +224,20 @@ pub fn panneau(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, pl
     ui.strong("Relevé assisté");
     let Some(id) = edition.releve.calque(&projet.carte, edition.reference_active) else {
         ui.label(
-            egui::RichText::new("Aucun calque en couleurs visible : le relevé lit la carte couleurs, pas le relief gris.")
-                .small()
-                .color(egui::Color32::from_rgb(230, 160, 60)),
+            egui::RichText::new(
+                "Aucun calque en couleurs visible : le relevé lit la carte couleurs, pas le relief gris.",
+            )
+            .small()
+            .color(egui::Color32::from_rgb(230, 160, 60)),
         );
         return;
     };
-    let nom = projet.carte.references.references.get(&id).map_or("", |r| r.nom.as_str());
+    let nom = projet
+        .carte
+        .references
+        .references
+        .get(&id)
+        .map_or("", |r| r.nom.as_str());
     ui.label(egui::RichText::new(format!("Relevé sur « {nom} »")).small());
     ui.label(
         egui::RichText::new(

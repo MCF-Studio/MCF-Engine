@@ -190,6 +190,13 @@ pub enum CibleGlisse {
     Batiments,
     /// Un calque de référence.
     Reference(Id),
+    /// Un sommet d'une zone libre.
+    SommetZone {
+        /// Zone.
+        zone: Id,
+        /// Indice du sommet.
+        index: usize,
+    },
     /// Un point de contrôle d'un tronçon (`index` dans la polyligne de contrôle, extrémités comprises).
     Poignee {
         /// Tronçon.

@@ -135,9 +135,13 @@ pub fn interface(
                 (
                     Disposition::Perspective,
                     "3D + mini-carte",
-                    "Tab. Clic sur la mini-carte : l'agrandir.",
+                    "Tab. Clic sur la mini-carte : l'agrandir. F : la 3D regarde le point sous la souris.",
                 ),
-                (Disposition::Partagee, "Plan + 3D", "Maj+Tab"),
+                (
+                    Disposition::Partagee,
+                    "Plan + 3D",
+                    "Maj+Tab. F dans le Plan : la 3D va au point sous la souris.",
+                ),
                 (Disposition::Plan, "Plan", "Tab"),
             ] {
                 if ui
@@ -565,6 +569,8 @@ fn etape_quartiers(ui: &mut egui::Ui, edition: &mut Edition) {
         &[
             "Affecter : cliquez dans un îlot fermé par des routes.",
             "Zone libre : clics, puis Entrée (port, industrie, champs…).",
+            "Modifier une zone libre : sélectionnez-la, glissez ses sommets ; Ctrl+clic sur un bord : ajouter un \
+             sommet ; Ctrl+clic sur un sommet : le retirer. Un îlot affecté suit ses routes : modifiez les routes.",
             "Étape 5 pour faire pousser le bâti.",
         ],
     );
@@ -623,8 +629,10 @@ fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     aide(
         ui,
         &[
-            "Lotir : cliquez un quartier ; relancer ne touche que les blocs « générés ».",
-            "Ajuster : glissez un bâtiment (il devient « manuel »). Ctrl+clic : sélection multiple.",
+            "Lotir : cliquez un quartier (façades sur les bords, rangées et allées à l'intérieur) ; relancer ne \
+             touche que les blocs « générés ».",
+            "Ajuster : cliquez un bâtiment (Plan ou 3D, même avec « Lotir »), glissez-le (il devient « manuel »). \
+             Ctrl+clic : sélection multiple.",
             "Suppr : supprimer. Verrou et niveaux dans l'inspecteur.",
         ],
     );
