@@ -265,7 +265,9 @@ La bibliothèque est choisie par le test B.
   **Livré** : `mcf-tissu` v0.5.0 (contrat `tissu.capsules.v1`, bloc `skins[0].extras.mcfTissuCapsules` du `.glb`,
   0 à 16 capsules, spécification à porter en WGSL dans `docs/CAPSULES.md` du dépôt, jeu de référence à 1e-5 m ;
   2 × vec4 par capsule, 256 octets par personnage pour 8). Mesuré par le Studio sur la robe : traversées tibia
-  31 → 5,3 mm, avant-bras 35 → 5,6 mm. Côté moteur : à porter en phase 7.
+  31 → 5,3 mm, avant-bras 35 → 5,6 mm. Côté moteur : à porter en phase 7. Les capsules s'appliquent à tous les
+  maillages du skin 0 (vêtements simulés ou skinnés), **sauf** les nœuds marqués `extras.mcfTissuRole == "body"`
+  (le corps, que le Studio marque à l'export).
 - Véhicules : physique (`avian3d` ou `rapier`, tous deux compatibles 0.20), véhicule à raycast, réplication.
 - **Intérieurs visitables** : portes animées, portails d'occlusion, lumières intérieures sans ombres par défaut.
 - Cycle jour / nuit : atmosphère de Bevy, budget de lampes à ombre la nuit.
