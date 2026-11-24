@@ -271,8 +271,11 @@ La bibliothèque est choisie par le test B.
   horizontale) : nombre et ordre lus dans le bloc, jamais supposés. Robe sur la marche : pire traversée 25,6 → 5,2 mm.
   **Coutures** qui s'ouvraient (jusqu'à 2 cm) : corrigé dans `mcf-tissu` **v0.6.0, minimum à prendre** (refermées
   après les collisions : 0 ouverte). **Tache claire sur le devant des robes** : la cuisse avant traverse la robe
-  (vérifié à l'écran par le Studio, poids d'os), pas la main ni les coutures ; correction chiffrée attendue (rayon de
-  la capsule de cuisse et/ou proxy). La décision d'Aroun « bras écartés » (2026-11-24) reste en réserve, sans besoin
+  (vérifié à l'écran par le Studio, poids d'os), pas la main ni les coutures ; le proxy (espacement 6,3 cm) laisse passer la
+  cuisse entre ses particules. Corrigé par une **marge de collision du proxy** = espacement² / (8 × rayon de cuisse
+  minimal), ≤ 15 mm, **seulement pour les vêtements dont le proxy est traversé** (robe : 8,2 mm ; proxy traversé
+  5 393 → 0, tache disparue à l'écran ; coût en jeu inchangé). Champ facultatif `proxy.collisionMarginM` du bloc
+  tissu.v2, validé strictement. La décision d'Aroun « bras écartés » (2026-11-24) reste en réserve, sans besoin
   mesuré ; mesure prête (`min_arm_abduction_deg`).
   À trancher en phase 7 : les décalages du proxy déplacent les positions, pas les normales (normales du skinning →
   éclairage faux là où le tissu s'écarte) ; décalage de normale par sommet ou normales recalculées.
