@@ -6,6 +6,8 @@
 //! aucune géométrie de carte : seulement les panneaux.
 
 mod camera;
+#[cfg(feature = "remote")]
+mod distant;
 mod fichiers;
 mod gizmo;
 mod modeles;
@@ -387,8 +389,17 @@ pub struct ZoneVues {
     pub clavier_ui: bool,
 }
 
-/// Lance l'éditeur en mode Conception. `dossier` : projet de carte à ouvrir (sinon la carte de test).
-pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
+/// Options du pilotage par l'IA (`--remote`, `--remote-lecture-seule`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OptionsDistant {
+    /// `--remote-lecture-seule` : refuser les méthodes qui écrivent dans la carte (lots suivants ; ce lot n'en a
+    /// aucune).
+    pub lecture_seule: bool,
+}
+
+/// Lance l'éditeur en mode Conception. `dossier` : projet de carte à ouvrir (sinon la carte de test). `distant` :
+/// pilotage par l'IA demandé (n'a d'effet qu'avec la feature `remote`).
+pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppExit {
     let (carte, message, erreur) = match dossier.as_deref().map(Carte::ouvrir) {
         Some(Ok(c)) => {
             let m = format!("Carte « {} » ouverte.", c.manifeste.nom);
@@ -409,37 +420,51 @@ pub fn lancer(dossier: Option<PathBuf>) -> AppExit {
     if let Some(d) = &dossier {
         edition.chemin = d.display().to_string();
     }
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "MCF Editor — Conception de carte 2D ↔ 3D".into(),
-                resolution: (1600, 900).into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "MCF Editor — Conception de carte 2D ↔ 3D".into(),
+            resolution: (1600, 900).into(),
             ..default()
-        }))
-        .add_plugins((EguiPlugin::default(), crate::icone::IconePlugin))
-        .insert_resource(Projet {
-            carte,
-            message,
-            erreur,
-        })
-        .insert_resource(edition)
-        .init_resource::<ZoneVues>()
-        .init_resource::<fichiers::Dialogue>()
-        .add_plugins((
-            camera::CamerasPlugin,
-            scene::ScenePlugin,
-            outils::OutilsPlugin,
-            textures::TexturesPlugin,
-            references::ReferencesPlugin,
-            promenade::PromenadePlugin,
-            gizmo::GizmoPlugin,
-            modeles::ModelesPlugin,
-        ))
-        .add_systems(Startup, preparer)
-        .add_systems(EguiPrimaryContextPass, ui::interface)
-        .run()
+        }),
+        ..default()
+    }))
+    .add_plugins((EguiPlugin::default(), crate::icone::IconePlugin))
+    .insert_resource(Projet {
+        carte,
+        message,
+        erreur,
+    })
+    .insert_resource(edition)
+    .init_resource::<ZoneVues>()
+    .init_resource::<fichiers::Dialogue>()
+    .add_plugins((
+        camera::CamerasPlugin,
+        scene::ScenePlugin,
+        outils::OutilsPlugin,
+        textures::TexturesPlugin,
+        references::ReferencesPlugin,
+        promenade::PromenadePlugin,
+        gizmo::GizmoPlugin,
+        modeles::ModelesPlugin,
+    ))
+    .add_systems(Startup, preparer)
+    .add_systems(EguiPrimaryContextPass, ui::interface);
+    match distant {
+        #[cfg(feature = "remote")]
+        Some(o) => distant::installer(&mut app, o),
+        #[cfg(not(feature = "remote"))]
+        Some(o) => eprintln!(
+            "{} ignoré : éditeur compilé sans la feature « remote ».",
+            if o.lecture_seule {
+                "--remote-lecture-seule"
+            } else {
+                "--remote"
+            }
+        ),
+        None => {}
+    }
+    app.run()
 }
 
 /// Carte de test de référence (`mcf_carte::carte_de_test`). Elle est construite par du code testé : un échec ici

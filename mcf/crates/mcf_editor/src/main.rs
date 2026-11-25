@@ -175,9 +175,20 @@ mod conception;
 mod icone;
 
 fn main() -> AppExit {
-    match std::env::args_os().nth(1).map(PathBuf::from) {
+    // Options `--…` (pilotage par l'IA) n'importe où ; le premier autre argument est le chemin à ouvrir.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let option = |o: &str| args.iter().any(|a| a == o);
+    let chemin = args
+        .iter()
+        .find(|a| !a.to_string_lossy().starts_with("--"))
+        .map(PathBuf::from);
+    let distant =
+        (option("--remote") || option("--remote-lecture-seule")).then_some(conception::OptionsDistant {
+            lecture_seule: option("--remote-lecture-seule"),
+        });
+    match chemin {
         Some(p) if is_mcfmap_path(&p) => editeur_calque(),
-        dossier => conception::lancer(dossier),
+        dossier => conception::lancer(dossier, distant),
     }
 }
 

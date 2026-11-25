@@ -1,7 +1,8 @@
 # Spec — MCP et LSP pour travailler avec MCF Engine
 
 > Demande d'Aroun (2026-11-24) : « un MCP qui donne vraiment accès à tout ce qu'il faut, et un LSP, pour économiser,
-> que ce soit plus direct ». Statut : **prévu, rien de codé**.
+> que ce soit plus direct ». Statut (2026-11-25) : **étape 2 faite**, étape 1 configurée (à vérifier), étapes 3 et 4
+> à faire. Voir « État » en fin de document.
 
 ## But
 
@@ -23,12 +24,15 @@ C'est lent, coûteux en jetons et imprécis. Le but est double :
 
 ```
 Claude Code ──stdio──► mcf_mcp (binaire, crate mcf/crates/mcf_mcp)
-                          │  JSON-RPC sur 127.0.0.1 (BRP de Bevy + méthodes MCF), jeton par session
+                          │  JSON-RPC ligne à ligne sur 127.0.0.1 (méthodes mcf.*), jeton par session
                           ▼
-              éditeur / client / serveur MCF en cours (plugin McfRemotePlugin, feature `remote`)
+              éditeur / client / serveur MCF en cours (module `distant`, feature `remote`, option `--remote`)
 ```
 
-- **Transport** : le **Bevy Remote Protocol** (`bevy_remote`, présent dans Bevy 0.20.1). On ajoute des méthodes `mcf.*`.
+- **Transport** : JSON-RPC à nous (une ligne de requête, une ligne de réponse, une connexion par appel), méthodes
+  `mcf.*` en liste fermée. **Pas** le transport HTTP de `bevy_remote` : ses méthodes ne voient pas les en-têtes (ni
+  jeton ni contrôle de `Host` possibles) et il expose l'écriture brute des composants (`world.insert_components`…),
+  contraire à « une seule voie d'écriture ». Sans HTTP, une page web qui vise le port envoie `POST / HTTP/1.1`, refusé.
   - Le plugin est derrière une feature `remote`, **désactivée dans les builds distribués**.
   - Il écoute uniquement sur `127.0.0.1`, sur un port choisi au lancement.
   - Un jeton aléatoire est écrit dans un fichier de session.
@@ -109,3 +113,24 @@ client ne passe par ce canal (outil de développement seulement).
 4. Ajouter `mesurer` et `journal`, puis étendre aux bancs réseau (phase 2).
 
 Toute nouvelle crate (serveur MCP, transport) passe par `cargo deny` et la revue de licence.
+
+## État (2026-11-25)
+
+- **Étape 1** : rust-analyzer installé (`rustup component add rust-analyzer`). Le fichier `rust-analyzer.toml` ne
+  suffit pas : `linkedProjects` n'y est pas lu, rust-analyzer chargeait le workspace Bevy de la racine (2,7 Go, aucune
+  référence trouvée dans `mcf/`). Remplacé par le plugin `mcf-rust-lsp` (`mcf/tools/claude/`), activé dans
+  `.claude/settings.json` à la place du plugin officiel : `workspaceFolder` = `mcf/`, 2 fils, pas de `cargo check` à
+  l'enregistrement. **À vérifier** après redémarrage de Claude Code (critère de fin non encore prouvé).
+- **Étape 2** : fait.
+  - Éditeur : `mcf/crates/mcf_editor/src/conception/distant.rs`, lancement `cargo run -p mcf_editor --features
+    dev,remote -- --remote`. Fichier de session `%LOCALAPPDATA%\MCF-Engine\remote\editeur.json` (port et jeton de
+    256 bits), effacé à la fermeture.
+  - Pont : crate `mcf_mcp` (serde_json seulement), déclarée dans `.mcp.json` (binaire `mcf/target/debug/mcf_mcp.exe`,
+    à construire avec `cargo build -p mcf_mcp`).
+  - Essai réel : `etat` décrit la carte de test (5 tronçons, 11 bâtiments, 4 zones libres, image 6,8 ms, scène
+    158 ms). `capture` 3D renvoie 417 × 768 px (≈ 430 jetons d'image contre ≈ 4 900 pour 2560 × 1440, soit 9 %),
+    Plan 278 × 512 px. Critère de l'étape 2 atteint, de justesse : rester à 768 px ou moins par défaut.
+  - Tests : refus d'une requête HTTP, d'un mauvais jeton, d'une méthode hors liste ; relais d'une requête valide ;
+    base64 ; réduction d'image ; protocole MCP du pont.
+- **Reste** : étape 3 (`commande`, `annuler`, `enregistrer`, mode lecture seule effectif), étape 4, test de CI qui
+  refuse un binaire de release contenant la feature `remote`, outils `lister` / `profil_route` / `relief_stats`.

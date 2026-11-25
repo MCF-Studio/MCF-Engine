@@ -1,0 +1,11 @@
+{
+  "name": "mcf-studio",
+  "owner": { "name": "MCF Studio" },
+  "plugins": [
+    {
+      "name": "mcf-rust-lsp",
+      "source": "./mcf-rust-lsp",
+      "description": "rust-analyzer limité à l'espace de travail mcf/ (spec docs/SPEC_MCP_LSP_MOTEUR.md §2)"
+    }
+  ]
+}

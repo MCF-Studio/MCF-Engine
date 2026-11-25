@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcf-engine": {
+      "command": "mcf/target/debug/mcf_mcp.exe",
+      "args": []
+    }
+  }
+}

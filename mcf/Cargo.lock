@@ -3901,10 +3901,13 @@ dependencies = [
  "bevy",
  "bevy_egui",
  "egui_dock",
+ "getrandom 0.3.4",
  "mcf_carte",
  "mcf_core",
  "mcf_geo",
+ "png",
  "rfd",
+ "serde_json",
  "winit",
 ]
 
@@ -3933,6 +3936,13 @@ name = "mcf_map"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mcf_mcp"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 

@@ -1,0 +1,19 @@
+{
+  "name": "mcf-rust-lsp",
+  "version": "0.1.0",
+  "description": "rust-analyzer pour Claude Code, limité à l'espace de travail mcf/ : le fork Bevy de la racine est trop lourd pour 16 Go",
+  "lspServers": {
+    "rust-analyzer": {
+      "command": "rust-analyzer",
+      "extensionToLanguage": { ".rs": "rust" },
+      "workspaceFolder": "${CLAUDE_PROJECT_DIR}/mcf",
+      "initializationOptions": {
+        "numThreads": 2,
+        "cachePriming": { "numThreads": 2 },
+        "checkOnSave": false,
+        "cargo": { "buildScripts": { "enable": true }, "extraArgs": ["-j", "6"] },
+        "procMacro": { "enable": true }
+      }
+    }
+  }
+}

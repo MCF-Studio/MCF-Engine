@@ -1,0 +1,11 @@
+{
+  "extraKnownMarketplaces": {
+    "mcf-studio": {
+      "source": { "source": "directory", "path": "./mcf/tools/claude" }
+    }
+  },
+  "enabledPlugins": {
+    "mcf-rust-lsp@mcf-studio": true,
+    "rust-analyzer-lsp@claude-plugins-official": false
+  }
+}
