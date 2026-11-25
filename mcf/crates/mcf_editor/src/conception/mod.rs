@@ -156,6 +156,8 @@ pub enum Outil {
     Selection,
     /// Tracer une route (clics, Entrée pour finir).
     Tracer,
+    /// Tracer une ligne électrique (clics, Entrée pour finir) : un trait sur la carte, rien de généré.
+    LigneElectrique,
     /// Sculpter le relief.
     Pinceau(Pinceau),
     /// Affecter l'îlot cliqué à une famille et une densité.
@@ -188,6 +190,8 @@ pub enum Selection {
     Troncon(Id),
     /// Une affectation d'îlot ou une zone libre.
     Quartier(Id),
+    /// Une ligne électrique.
+    LigneElectrique(Id),
 }
 
 /// Ce qu'on fait glisser.
@@ -368,6 +372,17 @@ impl Default for Edition {
 }
 
 impl Edition {
+    /// ² (touche au-dessus de Tab) : passe à l'outil de sélection de l'étape, si elle en a un (le Relief n'a que
+    /// des pinceaux). Abandonne le tracé en cours.
+    pub fn outil_selection(&mut self) -> bool {
+        if self.etape == Etape::Relief {
+            return false;
+        }
+        self.outil = Outil::Selection;
+        self.points.clear();
+        true
+    }
+
     /// Change d'étape (abandonne le tracé en cours).
     pub fn aller_a(&mut self, etape: Etape) {
         self.etape = etape;

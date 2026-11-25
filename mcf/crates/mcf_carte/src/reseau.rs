@@ -25,6 +25,10 @@ pub const RAYON_MAX_M: f64 = 2000.0;
 pub const ROND_POINT_M: (f64, f64) = (4.0, 60.0);
 /// Distance minimale entre deux points successifs d'un tracé (m).
 pub const ECART_MIN_M: f64 = 0.05;
+/// Lignes électriques maximum.
+pub const MAX_LIGNES_ELECTRIQUES: usize = 10_000;
+/// Couleur des lignes électriques (sRGB) : orange, distinct des routes et de la sélection (jaune).
+pub const COULEUR_ELECTRIQUE: [u8; 3] = [235, 95, 20];
 
 /// Rayon de courbure posé par défaut aux points cliqués d'une classe (m).
 pub const fn rayon_defaut(classe: ClasseRoute) -> f64 {
@@ -73,6 +77,15 @@ pub struct Troncon {
     pub nom: Option<String>,
 }
 
+/// Ligne électrique : un tracé dessiné sur le plan et en 3D, rien d'autre. Aucun pylône, aucun terrassement, aucun
+/// effet sur les rubans, les îlots ou le graphe routier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LigneElectrique {
+    /// Points du tracé `(x, z)`, au moins deux.
+    pub points: Vec<P2>,
+}
+
 /// Le réseau complet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -85,6 +98,9 @@ pub struct Reseau {
     pub noeuds: BTreeMap<Id, Noeud>,
     /// Tronçons.
     pub troncons: BTreeMap<Id, Troncon>,
+    /// Réseau électrique (tracé seulement). Absent des fichiers écrits avant son ajout : vide par défaut.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub lignes_electriques: BTreeMap<Id, LigneElectrique>,
 }
 
 impl Default for Reseau {
@@ -94,6 +110,7 @@ impl Default for Reseau {
             version: VERSION,
             noeuds: BTreeMap::new(),
             troncons: BTreeMap::new(),
+            lignes_electriques: BTreeMap::new(),
         }
     }
 }
@@ -190,6 +207,11 @@ impl Reseau {
             return Some(n);
         }
         let (tid, q) = self.troncon_proche(p, tolerance)?;
+        self.scinder_troncon(tid, q)
+    }
+
+    /// Coupe le tronçon `tid` au point `q` (sur sa polyligne de contrôle) et renvoie le nœud créé.
+    fn scinder_troncon(&mut self, tid: Id, q: P2) -> Option<Id> {
         let t = self.troncons.get(&tid)?.clone();
         let (pts, _) = self.controle(&t)?;
         // Segment porteur, ou point de forme existant.
@@ -385,6 +407,182 @@ impl Reseau {
         true
     }
 
+    /// Trace une ligne électrique le long de `chemin` (points cliqués). Les points confondus sont ignorés.
+    pub fn tracer_ligne_electrique(&mut self, chemin: &[P2], manifeste: &Manifeste) -> Result<Id, String> {
+        if chemin.iter().any(|p| !manifeste.contient(*p)) {
+            return Err("point hors de la carte".into());
+        }
+        if self.lignes_electriques.len() >= MAX_LIGNES_ELECTRIQUES {
+            return Err("réseau électrique plein".into());
+        }
+        let mut points: Vec<P2> = Vec::with_capacity(chemin.len());
+        for &p in chemin {
+            if points.last().is_none_or(|q| distance(*q, p) > ECART_MIN_M) {
+                points.push(p);
+            }
+        }
+        if points.len() < 2 {
+            return Err("une ligne électrique demande au moins deux points distincts".into());
+        }
+        if points.len() > MAX_POINTS + 2 {
+            return Err("ligne électrique trop longue (trop de points)".into());
+        }
+        let id = Id::nouveau();
+        self.lignes_electriques.insert(id, LigneElectrique { points });
+        Ok(id)
+    }
+
+    /// Ligne électrique qui passe à moins de `marge` mètres de `p` (la plus proche).
+    pub fn ligne_electrique_proche(&self, p: P2, marge: f64) -> Option<Id> {
+        self.lignes_electriques
+            .iter()
+            .filter_map(|(id, l)| {
+                l.points
+                    .windows(2)
+                    .map(|s| mcf_geo::distance_segment(p, s[0], s[1]))
+                    .min_by(f64::total_cmp)
+                    .map(|d| (*id, d))
+            })
+            .filter(|(_, d)| *d <= marge)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
+    }
+
+    /// Fusionne le nœud `n` dans `cible` : ses tronçons repartent de `cible`, `n` disparaît. Les tronçons devenus
+    /// vides (boucle sans point de forme, doublon direct d'un autre) sont retirés.
+    pub fn fusionner_noeuds(&mut self, n: Id, cible: Id) {
+        if n == cible || !self.noeuds.contains_key(&cible) {
+            return;
+        }
+        for t in self.troncons.values_mut() {
+            if t.de == n {
+                t.de = cible;
+            }
+            if t.vers == n {
+                t.vers = cible;
+            }
+        }
+        self.noeuds.remove(&n);
+        let mut vus: Vec<(Id, Id)> = Vec::new();
+        let mut retirer = Vec::new();
+        for (id, t) in &self.troncons {
+            if !t.points.is_empty() || (t.de != cible && t.vers != cible) {
+                continue;
+            }
+            let paire = if t.de < t.vers {
+                (t.de, t.vers)
+            } else {
+                (t.vers, t.de)
+            };
+            if t.de == t.vers || vus.contains(&paire) {
+                retirer.push(*id);
+            } else {
+                vus.push(paire);
+            }
+        }
+        for id in retirer {
+            self.supprimer_troncon(id);
+        }
+    }
+
+    /// Raccorde le nœud `n`, qui vient d'être déplacé, au réseau voisin (même règle que l'accroche du tracé) : fusion
+    /// avec un autre nœud à moins de `accroche` mètres, sinon coupe du tronçon le plus proche (hors des tronçons de
+    /// `n`) et fusion avec le point de coupe. Renvoie le nœud qui reste.
+    pub fn raccorder_noeud(&mut self, n: Id, accroche: f64) -> Id {
+        let Some(p) = self.noeuds.get(&n).map(|x| x.position) else {
+            return n;
+        };
+        if accroche <= 0.0 {
+            return n;
+        }
+        let voisin = self
+            .noeuds
+            .iter()
+            .filter(|(id, _)| **id != n)
+            .map(|(id, x)| (*id, distance(p, x.position)))
+            .filter(|(_, d)| *d <= accroche)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id);
+        let cible = match voisin {
+            Some(m) => m,
+            None => {
+                let mut best: Option<(Id, P2, f64)> = None;
+                for (id, t) in &self.troncons {
+                    if t.de == n || t.vers == n {
+                        continue;
+                    }
+                    let Some((pts, _)) = self.controle(t) else {
+                        continue;
+                    };
+                    for s in pts.windows(2) {
+                        let (q, _) = projeter(p, s[0], s[1]);
+                        let d = distance(p, q);
+                        if d <= accroche && best.is_none_or(|b| d < b.2) {
+                            best = Some((*id, q, d));
+                        }
+                    }
+                }
+                let Some((tid, q, _)) = best else {
+                    return n;
+                };
+                match self.scinder_troncon(tid, q) {
+                    Some(m) => m,
+                    None => return n,
+                }
+            }
+        };
+        self.fusionner_noeuds(n, cible);
+        cible
+    }
+
+    /// Crée les carrefours là où le tronçon `id` (qui vient d'être modifié) croise d'autres tronçons : il est retracé
+    /// à l'identique (mêmes points, rayons et nom) et les tronçons croisés sont coupés. Renvoie les tronçons qui le
+    /// remplacent (`[id]` s'il ne croise rien).
+    pub fn couper_croisements(&mut self, id: Id, manifeste: &Manifeste) -> Result<Vec<Id>, String> {
+        let Some(t) = self.troncons.get(&id).cloned() else {
+            return Ok(Vec::new());
+        };
+        let Some((pts, _)) = self.controle(&t) else {
+            return Ok(vec![id]);
+        };
+        let croise = self
+            .troncons
+            .iter()
+            .filter(|(k, _)| **k != id)
+            .filter_map(|(_, u)| self.controle(u))
+            .any(|(q, _)| {
+                pts.windows(2).any(|s| {
+                    q.windows(2).any(|r| {
+                        mcf_geo::polygone::intersection_segments(s[0], s[1], r[0], r[1]).is_some_and(
+                            |(x, _)| {
+                                [s[0], s[1], r[0], r[1]]
+                                    .iter()
+                                    .all(|e| distance(*e, x) > ECART_MIN_M)
+                            },
+                        )
+                    })
+                })
+            });
+        if !croise {
+            return Ok(vec![id]);
+        }
+        self.troncons.remove(&id);
+        // Accroche minimale : les extrémités retrouvent exactement leurs nœuds, les points de forme restent libres.
+        let crees = self.tracer(t.classe, &pts, 1e-3, manifeste)?;
+        for c in &crees {
+            let Some(u) = self.troncons.get_mut(c) else {
+                continue;
+            };
+            u.nom.clone_from(&t.nom);
+            for (i, p) in u.points.iter().enumerate() {
+                if let Some(k) = t.points.iter().position(|q| distance(*q, *p) < 1e-9) {
+                    u.rayons[i] = t.rayons.get(k).copied().unwrap_or(0.0);
+                }
+            }
+        }
+        Ok(crees)
+    }
+
     /// Déplace un nœud (refusé hors de la carte).
     pub fn deplacer_noeud(&mut self, id: Id, p: P2, manifeste: &Manifeste) -> bool {
         match self.noeuds.get_mut(&id) {
@@ -451,6 +649,20 @@ impl Reseau {
                 return Err(format!("tronçon {id} : nom invalide"));
             }
         }
+        if self.lignes_electriques.len() > MAX_LIGNES_ELECTRIQUES {
+            return Err("réseau électrique trop grand".into());
+        }
+        for (id, l) in &self.lignes_electriques {
+            if l.points.len() < 2 || l.points.len() > MAX_POINTS + 2 {
+                return Err(format!("ligne électrique {id} : nombre de points hors bornes"));
+            }
+            if l.points.iter().any(|p| !manifeste.contient(*p)) {
+                return Err(format!("ligne électrique {id} : point hors de la carte"));
+            }
+            if l.points.windows(2).any(|s| distance(s[0], s[1]) < ECART_MIN_M) {
+                return Err(format!("ligne électrique {id} : points confondus"));
+            }
+        }
         Ok(())
     }
 }
@@ -473,6 +685,109 @@ mod tests {
         assert_eq!(r.troncons.len(), 4);
         let centre = r.noeud_proche([0.0, 0.0], 0.01).expect("carrefour");
         assert_eq!(r.degre(centre), 4);
+        assert_eq!(r.valider(&m()), Ok(()));
+    }
+
+    #[test]
+    fn ligne_electrique_sans_effet_sur_les_routes() {
+        let mut r = Reseau::default();
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m())
+            .expect("route");
+        let avant = (r.noeuds.clone(), r.troncons.clone());
+        // Elle croise la route : aucun carrefour, aucun nœud.
+        let id = r
+            .tracer_ligne_electrique(&[[0.0, -50.0], [0.0, -50.0], [0.0, 50.0], [40.0, 80.0]], &m())
+            .expect("ligne");
+        assert_eq!((r.noeuds.clone(), r.troncons.clone()), avant);
+        assert_eq!(r.lignes_electriques[&id].points.len(), 3, "point confondu ignoré");
+        assert_eq!(r.ligne_electrique_proche([1.0, 10.0], 2.0), Some(id));
+        assert_eq!(r.ligne_electrique_proche([10.0, 10.0], 2.0), None);
+        assert!(r.tracer_ligne_electrique(&[[0.0, 0.0]], &m()).is_err());
+        assert!(
+            r.tracer_ligne_electrique(&[[0.0, 0.0], [9_000.0, 0.0]], &m())
+                .is_err()
+        );
+        assert_eq!(r.valider(&m()), Ok(()));
+        // Aller-retour JSON ; un ancien fichier sans lignes reste lisible.
+        let texte = serde_json::to_string(&r).expect("json");
+        assert_eq!(serde_json::from_str::<Reseau>(&texte).expect("relu"), r);
+        let ancien = r#"{"format":"mcfreseau","version":1,"noeuds":{},"troncons":{}}"#;
+        assert!(
+            serde_json::from_str::<Reseau>(ancien)
+                .expect("ancien")
+                .lignes_electriques
+                .is_empty()
+        );
+        // Ligne invalide refusée à la validation (fichier non fiable).
+        r.lignes_electriques
+            .get_mut(&id)
+            .expect("ligne")
+            .points
+            .truncate(1);
+        assert!(r.valider(&m()).is_err());
+    }
+
+    #[test]
+    fn point_de_forme_deplace_en_travers_cree_les_carrefours() {
+        let mut r = Reseau::default();
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m())
+            .expect("1");
+        // Route en V au-dessus de la première, sans la toucher.
+        let v = r
+            .tracer(
+                ClasseRoute::Route,
+                &[[-80.0, 60.0], [0.0, 20.0], [80.0, 60.0]],
+                2.0,
+                &m(),
+            )
+            .expect("2");
+        assert_eq!(v.len(), 1);
+        r.troncons.get_mut(&v[0]).expect("V").nom = Some("Chemin".into());
+        // On tire la pointe du V sous la première route : deux croisements.
+        assert!(r.deplacer_point(v[0], 0, [0.0, -40.0], &m()));
+        let crees = r.couper_croisements(v[0], &m()).expect("coupe");
+        assert_eq!(crees.len(), 3, "le V est coupé en trois");
+        for x in [-32.0, 32.0] {
+            let n = r.noeud_proche([x, 0.0], 0.01).expect("carrefour");
+            assert_eq!(r.degre(n), 4);
+        }
+        // Le nom et le rayon de la pointe sont conservés.
+        assert!(
+            crees
+                .iter()
+                .all(|c| r.troncons[c].nom.as_deref() == Some("Chemin"))
+        );
+        let milieu = crees
+            .iter()
+            .find(|c| !r.troncons[*c].points.is_empty())
+            .expect("pointe");
+        assert_eq!(r.troncons[milieu].rayons, vec![rayon_defaut(ClasseRoute::Route)]);
+        assert_eq!(r.valider(&m()), Ok(()));
+    }
+
+    #[test]
+    fn extremite_deplacee_sur_une_route_ou_un_noeud_fusionne() {
+        let mut r = Reseau::default();
+        r.tracer(ClasseRoute::Rue, &[[-100.0, 0.0], [100.0, 0.0]], 2.0, &m())
+            .expect("1");
+        let t = r
+            .tracer(ClasseRoute::Ruelle, &[[20.0, 80.0], [20.0, 30.0]], 2.0, &m())
+            .expect("2")[0];
+        // Extrémité lâchée à 1 m de la première route : elle coupe la route et forme un T.
+        let (haut, bout) = (r.troncons[&t].de, r.troncons[&t].vers);
+        assert!(r.deplacer_noeud(bout, [20.0, 1.0], &m()));
+        let n = r.raccorder_noeud(bout, 2.0);
+        assert_ne!(n, bout);
+        assert_eq!(r.noeuds[&n].position, [20.0, 0.0]);
+        assert_eq!(r.degre(n), 3);
+        // Autre extrémité lâchée près du bout d'une troisième route : fusion des deux nœuds.
+        r.tracer(ClasseRoute::Ruelle, &[[-100.0, 50.0], [-60.0, 50.0]], 2.0, &m())
+            .expect("3");
+        let gauche = r.noeud_proche([-100.0, 50.0], 0.01).expect("gauche");
+        assert!(r.deplacer_noeud(haut, [-99.0, 49.5], &m()));
+        assert_eq!(r.raccorder_noeud(haut, 2.0), gauche);
+        assert_eq!(r.degre(gauche), 2);
+        assert!(!r.noeuds.contains_key(&haut));
         assert_eq!(r.valider(&m()), Ok(()));
     }
 

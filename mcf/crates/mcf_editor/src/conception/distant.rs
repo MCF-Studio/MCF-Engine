@@ -284,6 +284,7 @@ fn selection_json(s: &Selection) -> Value {
         }),
         Selection::Troncon(id) => json!({ "type": "troncon", "id": id.to_string() }),
         Selection::Quartier(id) => json!({ "type": "quartier", "id": id.to_string() }),
+        Selection::LigneElectrique(id) => json!({ "type": "ligne_electrique", "id": id.to_string() }),
     }
 }
 
@@ -323,6 +324,7 @@ fn etat(
             "noeuds": c.reseau.noeuds.len(),
             "troncons": c.reseau.troncons.len(),
             "troncons_nommes": c.reseau.troncons.values().filter(|t| t.nom.is_some()).count(),
+            "lignes_electriques": c.reseau.lignes_electriques.len(),
             "ilots": ilots,
             "affectations": c.quartiers.affectations.len(),
             "zones_libres": c.quartiers.zones.len(),

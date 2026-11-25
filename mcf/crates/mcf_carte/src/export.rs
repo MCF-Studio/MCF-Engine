@@ -174,7 +174,18 @@ pub fn rendre(
             remplir(&mut pix, &n.ilot, [170, 214, 150], 1.0);
         }
     }
-    // 5. Bâti : ombre portée vers le sud-est, puis toit et contour.
+    // 5. Réseau électrique : un trait fin, par-dessus les routes.
+    for l in reseau.lignes_electriques.values() {
+        trait_(
+            &mut pix,
+            &l.points,
+            false,
+            crate::reseau::COULEUR_ELECTRIQUE,
+            0.9,
+            m_par_px * 1.6,
+        );
+    }
+    // 6. Bâti : ombre portée vers le sud-est, puis toit et contour.
     for b in &batiments {
         let decal = (b.hauteur() * 0.15).clamp(0.5, 12.0);
         let ombre: Vec<P2> = b.empreinte.iter().map(|p| [p[0] + decal, p[1] + decal]).collect();

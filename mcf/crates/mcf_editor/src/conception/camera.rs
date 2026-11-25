@@ -352,7 +352,21 @@ fn naviguer_3d(
 }
 
 fn raccourcis_vues(touches: Res<ButtonInput<KeyCode>>, zone: Res<ZoneVues>, mut edition: ResMut<Edition>) {
-    if zone.clavier_ui || !touches.just_pressed(KeyCode::Tab) {
+    if zone.clavier_ui {
+        return;
+    }
+    // F1 : Plan seul, F2 : 3D (avec mini-carte), F3 : Plan et 3D côte à côte.
+    for (k, d) in [
+        (KeyCode::F1, Disposition::Plan),
+        (KeyCode::F2, Disposition::Perspective),
+        (KeyCode::F3, Disposition::Partagee),
+    ] {
+        if touches.just_pressed(k) {
+            edition.disposition = d;
+            return;
+        }
+    }
+    if !touches.just_pressed(KeyCode::Tab) {
         return;
     }
     let maj = touches.pressed(KeyCode::ShiftLeft) || touches.pressed(KeyCode::ShiftRight);

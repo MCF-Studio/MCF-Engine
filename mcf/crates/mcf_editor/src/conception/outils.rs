@@ -321,6 +321,13 @@ pub fn supprimer(projet: &mut Projet, edition: &mut Edition) {
                 Err("tronçon introuvable".into())
             }
         }),
+        Selection::LigneElectrique(id) => projet.carte.modifier("Supprimer une ligne électrique", |tx| {
+            if tx.reseau().lignes_electriques.remove(id).is_some() {
+                Ok("Ligne électrique supprimée.".to_string())
+            } else {
+                Err("ligne électrique introuvable".into())
+            }
+        }),
         Selection::Quartier(id) => projet.carte.modifier("Retirer un quartier", |tx| {
             let q = tx.quartiers();
             if q.affectations.remove(id).is_some() || q.zones.remove(id).is_some() {
@@ -347,6 +354,13 @@ pub fn terminer(projet: &mut Projet, edition: &mut Edition, sans_accroche: bool)
             let classe = edition.classe.nom();
             projet.resultat(r, |ids| format!("{classe} tracée ({} tronçon(s)).", ids.len()));
         }
+        Outil::LigneElectrique if points.len() >= 2 => {
+            let r = projet.carte.modifier("Ligne électrique", |tx| {
+                let (reseau, manifeste) = tx.reseau_et_manifeste();
+                reseau.tracer_ligne_electrique(&points, manifeste)
+            });
+            projet.resultat(r, |_| "Ligne électrique tracée.".into());
+        }
         Outil::ZoneLibre if points.len() >= 3 => {
             if !polygone::est_simple(&points) {
                 projet.echec("Zone refusée : ses bords se croisent.");
@@ -357,9 +371,9 @@ pub fn terminer(projet: &mut Projet, edition: &mut Edition, sans_accroche: bool)
                 .ajouter_zone(points, edition.famille, edition.densite);
             projet.resultat(r, |_| "Zone libre ajoutée. Outil « Lotir » pour la bâtir.".into());
         }
-        Outil::Tracer | Outil::ZoneLibre if !points.is_empty() => {
+        Outil::Tracer | Outil::ZoneLibre | Outil::LigneElectrique if !points.is_empty() => {
             edition.points = points;
-            projet.echec("Il manque des points (route : 2, zone : 3).");
+            projet.echec("Il manque des points (route ou ligne : 2, zone : 3).");
         }
         _ => {}
     }
@@ -425,6 +439,8 @@ fn souris(
             edition.glisse = None;
             *vue_glisse = None;
             appliquer_glisse(&mut projet, &edition, g, alt);
+            // Un tronçon retracé (croisements) change d'identifiant : on ne garde pas une sélection vers le vide.
+            nettoyer_selection(&projet, &mut edition);
             return;
         }
         // Le point ne suit le curseur que dans la vue où le glisser a commencé : passé dans l'autre vue, la même
@@ -502,7 +518,7 @@ fn souris(
                 selectionner(&mut projet, &mut edition, p, bat, viseur, ctrl);
             }
         }
-        Outil::Tracer | Outil::ZoneLibre => {
+        Outil::Tracer | Outil::ZoneLibre | Outil::LigneElectrique => {
             if appui {
                 // Double-clic (même point) : termine.
                 if edition
@@ -795,11 +811,15 @@ fn selectionner(
         suivre_selection(edition);
         return;
     }
-    // 3. Tronçon, 4. quartier.
+    // 3. Ligne électrique (un trait fin, cliqué à quelques pixels près : avant la route qu'elle longe peut-être),
+    // 4. tronçon, 5. quartier.
     let profils = projet.carte.manifeste.profils;
     let marge = marge_ecran_m(projet, p, viseur);
+    let ligne = projet.carte.reseau.ligne_electrique_proche(p, marge);
     let troncon = projet.carte.derive().geo.troncon_proche(p, &profils, marge);
-    edition.selection = if let Some(id) = troncon {
+    edition.selection = if let Some(id) = ligne {
+        Selection::LigneElectrique(id)
+    } else if let Some(id) = troncon {
         Selection::Troncon(id)
     } else if let Some(id) = quartier_en(&mut projet.carte, p) {
         Selection::Quartier(id)
@@ -831,7 +851,7 @@ fn marge_ecran_m(projet: &mut Projet, p: P2, viseur: Option<(&Camera, &GlobalTra
 /// Quartiers (sauf depuis Bâti, qui lotit les quartiers). L'outil devient « sélection », le geste en cours est gardé.
 fn suivre_selection(edition: &mut Edition) {
     let cible = match (&edition.selection, edition.etape) {
-        (Selection::Troncon(_), _) => Etape::Reseau,
+        (Selection::Troncon(_) | Selection::LigneElectrique(_), _) => Etape::Reseau,
         (Selection::Batiments(_), _) => Etape::Bati,
         (Selection::Quartier(_), Etape::Bati) => Etape::Bati,
         (Selection::Quartier(_), _) => Etape::Quartiers,
@@ -953,27 +973,57 @@ fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse, alt: bool
             nombre,
         } => {
             let p = g.actuel;
+            // Même règle que le tracé : une extrémité lâchée près d'un nœud ou d'une route s'y raccorde (sauf Alt ou
+            // accroche coupée), et chaque croisement devient un carrefour.
+            let accroche = if edition.accroche && !alt {
+                mcf_carte::carte_de_test::ACCROCHE_M
+            } else {
+                0.0
+            };
             let r = projet.carte.modifier("Éditer le tracé", |tx| {
                 let (de, vers) = match tx.carte().reseau.troncons.get(&troncon) {
                     Some(t) => (t.de, t.vers),
                     None => return Err("tronçon introuvable".to_string()),
                 };
                 let (reseau, manifeste) = tx.reseau_et_manifeste();
-                let ok = if index == 0 {
-                    reseau.deplacer_noeud(de, p, manifeste)
+                let noeud = if index == 0 {
+                    Some(de)
                 } else if index + 1 == nombre {
-                    reseau.deplacer_noeud(vers, p, manifeste)
+                    Some(vers)
                 } else {
-                    reseau.deplacer_point(troncon, index - 1, p, manifeste)
+                    None
                 };
-                if ok {
-                    Ok(())
-                } else {
-                    Err("point refusé (hors de la carte ?)".into())
+                let ok = match noeud {
+                    Some(n) => reseau.deplacer_noeud(n, p, manifeste),
+                    None => reseau.deplacer_point(troncon, index - 1, p, manifeste),
+                };
+                if !ok {
+                    return Err("point refusé (hors de la carte ?)".into());
                 }
+                let (a_verifier, fusion) = match noeud {
+                    Some(n) => {
+                        let m = reseau.raccorder_noeud(n, accroche);
+                        (reseau.incidents(m), m != n)
+                    }
+                    None => (vec![troncon], false),
+                };
+                let mut carrefours = 0;
+                for t in a_verifier {
+                    if reseau.troncons.contains_key(&t) {
+                        carrefours += reseau.couper_croisements(t, manifeste)?.len().saturating_sub(1);
+                    }
+                }
+                Ok((fusion, carrefours))
             });
-            projet.resultat(r, |()| {
-                "Tracé modifié : rubans, carrefours et îlots recalculés.".into()
+            projet.resultat(r, |(fusion, carrefours)| {
+                let mut m = String::from("Tracé modifié");
+                if fusion {
+                    m.push_str(", raccordé au réseau");
+                }
+                if carrefours > 0 {
+                    m.push_str(&format!(", {carrefours} carrefour(s) créé(s)"));
+                }
+                m + "."
             });
         }
     }
@@ -1025,6 +1075,14 @@ fn clavier(
     }
     if touches.just_pressed(KeyCode::Delete) {
         supprimer(&mut projet, &mut edition);
+    }
+    // ² (AZERTY ; ` en QWERTY), la touche au-dessus de Tab : outil de sélection de l'étape.
+    if touches.just_pressed(KeyCode::Backquote) {
+        if edition.outil_selection() {
+            projet.info("Outil de sélection.");
+        } else {
+            projet.info("Pas d'outil de sélection dans cette étape.");
+        }
     }
     for (k, e) in [
         KeyCode::Digit1,
@@ -1093,6 +1151,9 @@ fn nettoyer_selection(projet: &Projet, edition: &mut Edition) {
             }
         }
         Selection::Troncon(i) if c.reseau.troncons.contains_key(&i) => Selection::Troncon(i),
+        Selection::LigneElectrique(i) if c.reseau.lignes_electriques.contains_key(&i) => {
+            Selection::LigneElectrique(i)
+        }
         Selection::Quartier(i)
             if c.quartiers.affectations.contains_key(&i) || c.quartiers.zones.contains_key(&i) =>
         {
@@ -1215,6 +1276,12 @@ fn dessiner(
     let contours: Vec<_> = carte.contours.contours.values().cloned().collect();
     let batiments = carte.batiments.clone();
     let profils = carte.manifeste.profils;
+    let lignes: Vec<(Id, Vec<P2>)> = carte
+        .reseau
+        .lignes_electriques
+        .iter()
+        .map(|(id, l)| (*id, l.points.clone()))
+        .collect();
     let controle_sel = match &edition.selection {
         Selection::Troncon(id) => carte
             .reseau
@@ -1269,6 +1336,15 @@ fn dessiner(
             Color::srgb_u8(c[0], c[1], c[2]),
         );
     }
+    // Réseau électrique : dans le Plan au-dessus des routes, en 3D posé sur le sol (un trait, rien de généré).
+    let [r, v, b] = mcf_carte::reseau::COULEUR_ELECTRIQUE;
+    let orange = Color::srgb_u8(r, v, b);
+    for (_, pts) in &lignes {
+        let sol = drape(terrain, pts, false, 1.0);
+        let y = dessus.y_plan - 2.0;
+        dessus.plan.linestrip(sol.iter().map(|p| p.with_y(y)), orange);
+        trois_d.linestrip(sol, orange);
+    }
     // Contours nommés (entrées de souterrain).
     for c in &contours {
         dessus.linestrip(drape(terrain, &c.polygone, true, 0.5), violet);
@@ -1314,6 +1390,15 @@ fn dessiner(
                     let c = Vec3::new(q[0] as f32, (terrain.hauteur(*q) + 0.6) as f32, q[1] as f32);
                     let extremite = i == 0 || i + 1 == pts.len();
                     dessus.circle(horizontal(c), 2.0, if extremite { Color::WHITE } else { jaune });
+                }
+            }
+        }
+        Selection::LigneElectrique(id) => {
+            if let Some((_, pts)) = lignes.iter().find(|(i, _)| i == id) {
+                dessus.linestrip(drape(terrain, pts, false, 1.2), jaune);
+                for q in pts {
+                    let c = Vec3::new(q[0] as f32, (terrain.hauteur(*q) + 1.2) as f32, q[1] as f32);
+                    dessus.circle(horizontal(c), 1.5, jaune);
                 }
             }
         }
@@ -1374,6 +1459,9 @@ fn dessiner(
         }
         Outil::ZoneLibre if pts.len() >= 2 => {
             dessus.linestrip(drape(terrain, &pts, true, 0.5), jaune);
+        }
+        Outil::LigneElectrique if pts.len() >= 2 => {
+            dessus.linestrip(drape(terrain, &pts, false, 1.0), orange);
         }
         Outil::CalerReference if pts.len() >= 2 => {
             // Segment entre les deux repères (le second suit le curseur tant qu'il n'est pas posé).

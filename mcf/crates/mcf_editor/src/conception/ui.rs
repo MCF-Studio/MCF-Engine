@@ -537,6 +537,20 @@ fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
             edition.points.clear();
         }
     });
+    if ui
+        .selectable_label(edition.outil == Outil::LigneElectrique, "⚡ Réseau électrique")
+        .on_hover_text("Une ligne sur la carte (Plan et 3D), rien n'est généré ni creusé.")
+        .clicked()
+    {
+        edition.outil = Outil::LigneElectrique;
+        edition.points.clear();
+    }
+    if edition.outil == Outil::LigneElectrique && !edition.points.is_empty() {
+        ui.label(format!(
+            "Ligne électrique : {} point(s) posé(s).",
+            edition.points.len()
+        ));
+    }
     ui.strong("Classe de route");
     let profils = projet.carte.manifeste.profils;
     for c in ClasseRoute::TOUTES {
@@ -565,7 +579,9 @@ fn etape_reseau(ui: &mut egui::Ui, projet: &Projet, edition: &mut Edition) {
             "Double-clic ou Entrée : terminer. Retour arrière : retirer le dernier point. Échap : abandonner.",
             "Croiser ou toucher une route crée le carrefour. Alt : sans accroche.",
             "Éditer : cliquez une route, glissez ses poignées. Ctrl+clic sur la route : ajouter un point ; Ctrl+clic sur un point : le retirer. Suppr : supprimer le tronçon.",
+            "Réseau électrique : clics, puis double-clic ou Entrée. Il ne crée ni carrefour ni terrassement.",
             "Maj+clic (depuis n'importe quel outil) : sélectionner ; l'éditeur ouvre la bonne étape.",
+            "² : outil de sélection. F1 Plan, F2 3D, F3 les deux.",
         ],
     );
 }
@@ -918,6 +934,21 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, cat
                     .weak(),
             );
             if ui.button("Supprimer le tronçon").clicked() {
+                outils::supprimer(projet, edition);
+            }
+        }
+        Selection::LigneElectrique(id) => {
+            let n = projet
+                .carte
+                .reseau
+                .lignes_electriques
+                .get(&id)
+                .map_or(0, |l| l.points.len());
+            ui.strong("Ligne électrique");
+            ui.label(format!(
+                "{n} point(s). Un trait sur la carte : rien n'est généré."
+            ));
+            if ui.button("Supprimer la ligne").clicked() {
                 outils::supprimer(projet, edition);
             }
         }

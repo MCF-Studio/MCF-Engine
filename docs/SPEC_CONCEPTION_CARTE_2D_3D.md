@@ -61,7 +61,8 @@ outils). On peut revenir à une étape à tout moment : ce qui en dépend est re
 
 Puis **Exporter** : plan stylisé, vue satellite, données de jeu (§8, §9).
 
-Raccourcis : `1`–`6` pour l'étape, `Tab` pour basculer entre Plan et 3D, `Maj+Tab` pour la vue partagée. Sélection,
+Raccourcis : `1`–`6` pour l'étape, `Tab` pour basculer entre Plan et 3D, `Maj+Tab` pour la vue partagée ; `F1` Plan,
+`F2` 3D, `F3` vue partagée ; `²` (touche au-dessus de Tab) : outil de sélection de l'étape, s'il y en a un. Sélection,
 déplacement, annulation et verrou fonctionnent à l'identique dans les deux vues (règle déjà en place).
 
 ## 4. Réseau routier
@@ -72,7 +73,11 @@ une polyligne d'axe dont chaque sommet peut avoir un **rayon de courbure**. Le n
 écart de corde ≤ 5 cm, et cette même discrétisation sert aux deux vues.
 
 - Tracer une route qui en croise ou en touche une autre crée le nœud automatiquement (accroche à 2 m, désactivable
-  avec `Alt`).
+  avec `Alt`). Même règle quand on **glisse une poignée** : une extrémité lâchée près d'un nœud ou d'une route s'y
+  raccorde, et chaque nouveau croisement devient un carrefour (le tronçon garde ses points, rayons et nom).
+- **Réseau électrique** (`lignes_electriques` dans `reseau.json`) : des lignes tracées par clics, dessinées dans le
+  Plan, en 3D posées sur le sol et sur le plan exporté. Rien n'est généré : pas de pylône, pas de terrassement, aucun
+  effet sur les routes, les îlots ou le graphe.
 - Un nœud de degré ≥ 3 devient un **carrefour explicite**, enregistré dans le fichier. Le runtime ne déduit rien,
   comme le veut la convention existante. Les types sont `carrefour` et `rond_point` (rayon d'îlot), avec des rayons
   de bordure par classe.
