@@ -146,9 +146,9 @@ personnes **sans connaissance technique** pour la carte, et assez complet pour l
 d'exécution (état exact, capture d'une vue, caméra, commandes annulables de l'éditeur, mesures), en local avec un
 jeton, feature `remote` absente des builds distribués ; et un **LSP** (rust-analyzer limité à `mcf/` tout de suite,
 puis un `mcf_lsp` pour les fichiers de carte). Spec, permissions et menaces :
-[`docs/SPEC_MCP_LSP_MOTEUR.md`](docs/SPEC_MCP_LSP_MOTEUR.md). **État (2026-11-25)** : étape 2 faite (`etat`,
-`capture`, `camera`, essayés sur l'éditeur réel) ; étape 1 configurée (plugin `mcf-rust-lsp`), à vérifier après
-redémarrage de Claude Code ; étapes 3 et 4 à faire.
+[`docs/SPEC_MCP_LSP_MOTEUR.md`](docs/SPEC_MCP_LSP_MOTEUR.md). **État (2026-11-25)** : étapes 2 et 3 faites
+(`etat`, `capture`, `camera`, `lister`, `commande` annulable, testé et démontré sur l'éditeur réel) ; étape 1
+configurée (plugin `mcf-rust-lsp`), à vérifier après redémarrage de Claude Code ; étape 4 à faire.
 
 ### Technique retenue
 

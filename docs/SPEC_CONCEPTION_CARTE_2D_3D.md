@@ -199,7 +199,9 @@ comme un bloc ; le modèle s'y pose (sol au centre de l'empreinte, comme un bloc
 - **Champ** `modele` facultatif du bâtiment : `{ fiche, cap_deg }`. Fichiers de bâti en **version 2** (la
   version 1, sans modèles, se lit toujours ; migration explicite).
 - **Cap** : rotation autour de +Y (main droite, vue de dessus : +X tourne vers −Z), en degrés, ramené à
-  [0 ; 360[. Cap 0 = le modèle tel qu'exporté (avant = −Z).
+  [0 ; 360[. Cap 0 = le modèle tel qu'exporté. **Avant = +Z** du modèle
+  (convention des modèles du jeu, `MODEL_FRONT` de Godot 4 ; vérifié sur la supérette le 2026-11-25) : cap 0 = façade
+  vers le sud, cap 180 = façade vers le nord.
 - **Catalogue** (`mcf_editor/assets/batiments/catalogue.json`, versionné ; les `.glb` sont des assets du jeu, non
   versionnés) : `id` sûr, nom, famille, fichier `.glb` (relatif, confiné au dossier), largeur, profondeur, hauteur,
   centre de l'emprise dans le repère du modèle. Validé strictement. Une fiche ou un `.glb` absent n'empêche pas

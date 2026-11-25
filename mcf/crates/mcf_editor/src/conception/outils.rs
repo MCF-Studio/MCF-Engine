@@ -1139,7 +1139,7 @@ pub fn refaire(projet: &mut Projet, edition: &mut Edition) {
     nettoyer_selection(projet, edition);
 }
 
-fn nettoyer_selection(projet: &Projet, edition: &mut Edition) {
+pub(super) fn nettoyer_selection(projet: &Projet, edition: &mut Edition) {
     let c = &projet.carte;
     edition.selection = match std::mem::take(&mut edition.selection) {
         Selection::Batiments(v) => {
@@ -1193,7 +1193,8 @@ fn drape(terrain: &mcf_carte::relief::Relief, pts: &[P2], ferme: bool, dessus: f
     v
 }
 
-/// Contour d'un bâtiment (au sol et au toit) ; pour un bâtiment modélisé, flèche de sa façade avant (−Z du modèle).
+/// Contour d'un bâtiment (au sol et au toit) ; pour un bâtiment modélisé, flèche de sa façade avant (+Z du modèle : convention des modèles
+/// du jeu, `MODEL_FRONT` de Godot 4).
 fn contour_batiment(
     g: &mut Reperes,
     terrain: &mcf_carte::relief::Relief,
@@ -1216,7 +1217,7 @@ fn contour_batiment(
         let c = b.centre();
         // Demi-profondeur : distance du centre au milieu du côté avant.
         let (a, bb) = (b.empreinte[0], b.empreinte[1]);
-        let avant = mcf_carte::batiments::tourner([0.0, -1.0], [0.0, 0.0], m.cap_deg);
+        let avant = mcf_carte::batiments::tourner([0.0, 1.0], [0.0, 0.0], m.cap_deg);
         let demi = mcf_geo::distance(c, [(a[0] + bb[0]) * 0.5, (a[1] + bb[1]) * 0.5]).max(1.0);
         let y = base as f32 + 0.4;
         let de = Vec3::new(c[0] as f32, y, c[1] as f32);

@@ -121,6 +121,34 @@ fn outils() -> Value {
                 "additionalProperties": false,
             },
         },
+        {
+            "name": "lister",
+            "description": "Liste les éléments de la carte en JSON compact (identifiants, classes, noms, centres ; 200 au \
+                plus par catégorie). `quoi` : troncons, quartiers, batiments ou lignes ; tout par défaut. Lecture seule.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "quoi": { "type": "string", "enum": ["troncons", "quartiers", "batiments", "lignes"] } },
+                "additionalProperties": false,
+            },
+        },
+        {
+            "name": "commande",
+            "description": "Modifie la carte comme l'interface, une étape d'historique annulable par appel (refusé si \
+                l'éditeur est en lecture seule). `action` : tracer_route {classe, points, accroche_m?} ; \
+                ligne_electrique {points} ; affecter {point, famille, densite} ; zone_libre {points, famille, densite} ; \
+                lotir {point} ou {tout: true} ; poser_modele {fiche, centre, cap_deg?} (façade du modèle vers +Z au cap 0, soit le sud) ; \n                transformer {batiments: [ids], cap_deg?, deplacement? [dx, dz], dy_m?} ; relief {pinceau: \
+                lever|abaisser|lisser|aplanir|naturel, centre, rayon_m, force (m, ou 0-1 pour lisser/aplanir), cible_m?} ; \
+                nommer {troncon, nom} ; annuler ; refaire ; enregistrer. Points : [x, z] en mètres (nord = -z). \
+                Classes : sentier, chemin_terre, route, ruelle, rue, avenue, voie_rapide, autoroute. Familles : \
+                residentiel, commerce, activite, services, nature, eau. Densités : faible, moyenne, forte, centre.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["tracer_route", "ligne_electrique", "affecter", "zone_libre", "lotir", "poser_modele", "transformer", "relief", "nommer", "annuler", "refaire", "enregistrer"] },
+                },
+                "required": ["action"],
+            },
+        },
     ])
 }
 
@@ -136,6 +164,8 @@ fn appeler(params: &Value) -> Value {
         "etat" => "mcf.etat",
         "capture" => "mcf.capture",
         "camera" => "mcf.camera",
+        "lister" => "mcf.lister",
+        "commande" => "mcf.commande",
         _ => return echec(format!("outil inconnu : {nom}")),
     };
     let r = match requete(methode, &arguments) {
@@ -236,7 +266,7 @@ mod tests {
             .iter()
             .filter_map(|t| t["name"].as_str())
             .collect();
-        assert_eq!(noms, ["etat", "capture", "camera"]);
+        assert_eq!(noms, ["etat", "capture", "camera", "lister", "commande"]);
     }
 
     #[test]

@@ -17,8 +17,10 @@
 //! - écoute sur `127.0.0.1` seulement, port choisi par le système ;
 //! - jeton aléatoire de 256 bits par session, comparé en temps constant, écrit dans un fichier de session du dossier
 //!   de l'utilisateur (`%LOCALAPPDATA%\MCF-Engine\remote\editeur.json`, droits 600 sous Unix), effacé à la fermeture ;
-//! - liste fermée de méthodes ; ce lot ne fait que **lire** l'état et **déplacer les caméras** (aucune écriture dans
-//!   la carte) ;
+//! - liste fermée de méthodes. `mcf.commande` est la seule qui écrit dans la carte : chaque action passe par les
+//!   mêmes fonctions que l'interface (mêmes validations), devient **une étape d'historique annulable**, et est refusée
+//!   avec `--remote-lecture-seule`. Aucune suppression de fichier ; `enregistrer` n'écrit que dans le dossier du
+//!   projet déjà ouvert ;
 //! - plafonds : requête de 64 Kio, captures de 1280 px de côté au plus, une connexion traitée à la fois.
 
 use std::{
@@ -44,7 +46,22 @@ use super::{
 };
 
 /// Méthodes acceptées (liste fermée).
-pub const METHODES: [&str; 3] = ["mcf.etat", "mcf.capture", "mcf.camera"];
+pub const METHODES: [&str; 5] = [
+    "mcf.etat",
+    "mcf.capture",
+    "mcf.camera",
+    "mcf.lister",
+    "mcf.commande",
+];
+
+/// Nombre maximal d'éléments renvoyés par `mcf.lister`, par catégorie.
+const LISTE_MAX: usize = 200;
+/// Nombre maximal de points d'un tracé reçu.
+const POINTS_MAX: usize = 500;
+
+/// `--remote-lecture-seule`.
+#[derive(Resource)]
+struct LectureSeule(bool);
 
 /// Taille maximale d'une requête (octets).
 const TAILLE_MAX_REQUETE: u64 = 64 * 1024;
@@ -103,6 +120,7 @@ pub fn installer(app: &mut App, options: OptionsDistant) {
             }
             app.insert_resource(boite)
                 .insert_resource(fichier)
+                .insert_resource(LectureSeule(options.lecture_seule))
                 .add_systems(Update, repondre);
         }
         Err(e) => error!("Pilotage par l'IA impossible : {e}"),
@@ -232,6 +250,8 @@ fn repondre(
     zone: Res<ZoneVues>,
     window: Single<&Window, With<PrimaryWindow>>,
     diagnostics: Res<DiagnosticsStore>,
+    lecture_seule: Res<LectureSeule>,
+    catalogue: Res<super::modeles::Catalogue>,
 ) {
     let Ok(rx) = boite.0.lock() else { return };
     for _ in 0..8 {
@@ -251,6 +271,20 @@ fn repondre(
                 }
                 Err(e) => Err(e),
             },
+            "mcf.lister" => lister(&r.params, &mut projet),
+            "mcf.commande" if lecture_seule.0 => {
+                Err("éditeur lancé en lecture seule (--remote-lecture-seule)".into())
+            }
+            "mcf.commande" => {
+                let r = commande(&r.params, &mut projet, &mut edition, &catalogue);
+                super::outils::nettoyer_selection(&projet, &mut edition);
+                if let Ok(v) = &r
+                    && let Some(m) = v.get("message").and_then(Value::as_str)
+                {
+                    projet.info(format!("IA : {m}"));
+                }
+                r
+            }
             m => Err(format!("méthode inconnue « {m} »")),
         };
         let _ = r.reponse.send(resultat);
@@ -481,6 +515,309 @@ fn camera(
     }))
 }
 
+/// Point `[x, z]` d'un paramètre.
+fn point(params: &Value, cle: &str) -> Result<[f64; 2], String> {
+    params
+        .get(cle)
+        .and_then(Value::as_array)
+        .filter(|a| a.len() == 2)
+        .and_then(|a| Some([a[0].as_f64()?, a[1].as_f64()?]))
+        .filter(|p| p.iter().all(|v| v.is_finite()))
+        .ok_or_else(|| format!("« {cle} » : [x, z] en mètres"))
+}
+
+/// Liste de points `[[x, z], …]` d'un paramètre.
+fn points(params: &Value, cle: &str) -> Result<Vec<[f64; 2]>, String> {
+    let a = params
+        .get(cle)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("« {cle} » : liste de points [[x, z], …]"))?;
+    if a.len() > POINTS_MAX {
+        return Err(format!("« {cle} » : {POINTS_MAX} points au plus"));
+    }
+    a.iter()
+        .map(|p| point(&json!({ "p": p }), "p").map_err(|_| format!("« {cle} » : point invalide {p}")))
+        .collect()
+}
+
+/// Valeur d'une énumération sérialisée (classe de route, famille, densité), avec la liste des valeurs admises.
+fn enumeration<T: serde::de::DeserializeOwned + serde::Serialize + Copy>(
+    params: &Value,
+    cle: &str,
+    toutes: &[T],
+) -> Result<T, String> {
+    let v = params.get(cle).cloned().unwrap_or(Value::Null);
+    serde_json::from_value(v).map_err(|_| {
+        let noms: Vec<String> = toutes
+            .iter()
+            .filter_map(|t| serde_json::to_value(t).ok())
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect();
+        format!("« {cle} » : une valeur parmi {}", noms.join(", "))
+    })
+}
+
+/// `mcf.lister` : éléments de la carte en JSON compact (au plus `LISTE_MAX` par catégorie). Paramètre facultatif
+/// `quoi` : `troncons`, `quartiers`, `batiments`, `lignes` ; tout par défaut.
+fn lister(params: &Value, projet: &mut Projet) -> Result<Value, String> {
+    let quoi = params.get("quoi").and_then(Value::as_str);
+    let veut = |q: &str| quoi.is_none_or(|x| x == q);
+    let c = &projet.carte;
+    let mut r = serde_json::Map::new();
+    if veut("troncons") {
+        let v: Vec<Value> = c
+            .reseau
+            .troncons
+            .iter()
+            .take(LISTE_MAX)
+            .map(|(id, t)| {
+                let pts = c.reseau.controle(t).map(|x| x.0).unwrap_or_default();
+                json!({
+                    "id": id.to_string(),
+                    "classe": t.classe,
+                    "nom": t.nom,
+                    "de": pts.first().map(|p| p2(*p)),
+                    "vers": pts.last().map(|p| p2(*p)),
+                    "points": t.points.len(),
+                })
+            })
+            .collect();
+        r.insert(
+            "troncons".into(),
+            json!({ "total": c.reseau.troncons.len(), "liste": v }),
+        );
+    }
+    if veut("quartiers") {
+        let mut v: Vec<Value> = c
+            .quartiers
+            .affectations
+            .iter()
+            .map(|(id, a)| json!({ "id": id.to_string(), "type": "ilot", "repere": p2(a.repere), "famille": a.famille, "densite": a.densite }))
+            .collect();
+        v.extend(c.quartiers.zones.iter().map(|(id, z)| {
+            json!({ "id": id.to_string(), "type": "zone_libre", "sommets": z.polygone.len(), "famille": z.famille, "densite": z.densite })
+        }));
+        v.truncate(LISTE_MAX);
+        r.insert("quartiers".into(), json!(v));
+    }
+    if veut("batiments") {
+        let v: Vec<Value> = c
+            .batiments
+            .iter()
+            .take(LISTE_MAX)
+            .map(|(id, b)| {
+                json!({
+                    "id": id.to_string(),
+                    "centre": p2(b.centre()),
+                    "niveaux": b.niveaux,
+                    "famille": b.famille,
+                    "modele": b.modele.as_ref().map(|m| m.fiche.clone()),
+                })
+            })
+            .collect();
+        r.insert(
+            "batiments".into(),
+            json!({ "total": c.batiments.len(), "liste": v }),
+        );
+    }
+    if veut("lignes") {
+        let v: Vec<Value> = c
+            .reseau
+            .lignes_electriques
+            .iter()
+            .take(LISTE_MAX)
+            .map(|(id, l)| json!({ "id": id.to_string(), "points": l.points.len() }))
+            .collect();
+        r.insert("lignes_electriques".into(), json!(v));
+    }
+    if r.is_empty() {
+        return Err("« quoi » : troncons, quartiers, batiments ou lignes".into());
+    }
+    Ok(Value::Object(r))
+}
+
+/// `mcf.commande` : une action de l'interface, une étape d'historique annulable. Paramètre `action` :
+/// - `tracer_route` {classe, points, accroche_m?} ; `ligne_electrique` {points} ;
+/// - `affecter` {point, famille, densite} ; `zone_libre` {points, famille, densite} ;
+/// - `lotir` {point} ou {tout: true} ; `poser_modele` {fiche, centre, cap_deg?} (fiches : maison_a, superette ; une fiche inconnue liste les autres) ;
+/// - `transformer` {batiments, cap_deg?, deplacement? [dx, dz], dy_m?} (autour du centre de la sélection) ;
+/// - `relief` {pinceau: lever|abaisser|lisser|aplanir|naturel, centre, rayon_m, force, cible_m?} ;
+/// - `nommer` {troncon, nom} ; `annuler` ; `refaire` ; `enregistrer` (dossier du projet déjà ouvert seulement).
+fn commande(
+    params: &Value,
+    projet: &mut Projet,
+    edition: &mut Edition,
+    catalogue: &super::modeles::Catalogue,
+) -> Result<Value, String> {
+    use mcf_carte::{Densite, Famille, relief::Pinceau};
+    use mcf_geo::ClasseRoute;
+    let action = params
+        .get("action")
+        .and_then(Value::as_str)
+        .ok_or("« action » manquante")?;
+    let ids = |v: &[Id]| v.iter().map(Id::to_string).collect::<Vec<_>>();
+    match action {
+        "tracer_route" => {
+            let classe: ClasseRoute = enumeration(params, "classe", &ClasseRoute::TOUTES)?;
+            let pts = points(params, "points")?;
+            let accroche = nombre(params, "accroche_m")?
+                .unwrap_or(mcf_carte::carte_de_test::ACCROCHE_M)
+                .clamp(0.0, 20.0);
+            let crees = projet.carte.tracer_route(classe, &pts, accroche)?;
+            Ok(
+                json!({ "message": format!("{} tracée ({} tronçon(s))", classe.nom(), crees.len()), "troncons": ids(&crees) }),
+            )
+        }
+        "ligne_electrique" => {
+            let pts = points(params, "points")?;
+            let id = projet.carte.modifier("Ligne électrique", |tx| {
+                let (r, m) = tx.reseau_et_manifeste();
+                r.tracer_ligne_electrique(&pts, m)
+            })?;
+            Ok(json!({ "message": "ligne électrique tracée", "id": id.to_string() }))
+        }
+        "affecter" => {
+            let p = point(params, "point")?;
+            let f: Famille = enumeration(params, "famille", &Famille::TOUTES)?;
+            let d: Densite = enumeration(params, "densite", &Densite::TOUTES)?;
+            let id = projet.carte.affecter(p, f, d)?;
+            Ok(json!({ "message": format!("îlot affecté : {} {}", f.nom(), d.nom()), "id": id.to_string() }))
+        }
+        "zone_libre" => {
+            let pts = points(params, "points")?;
+            if pts.len() < 3 || !mcf_geo::polygone::est_simple(&pts) {
+                return Err("zone : au moins 3 sommets, bords qui ne se croisent pas".into());
+            }
+            let f: Famille = enumeration(params, "famille", &Famille::TOUTES)?;
+            let d: Densite = enumeration(params, "densite", &Densite::TOUTES)?;
+            let id = projet.carte.ajouter_zone(pts, f, d)?;
+            Ok(json!({ "message": "zone libre ajoutée", "id": id.to_string() }))
+        }
+        "lotir" => {
+            let n = if params.get("tout").and_then(Value::as_bool) == Some(true) {
+                projet.carte.lotir_tout()?
+            } else {
+                let p = point(params, "point")?;
+                let id =
+                    super::outils::quartier_en(&mut projet.carte, p).ok_or("aucun quartier à ce point")?;
+                projet.carte.lotir(id)?
+            };
+            Ok(json!({ "message": format!("{n} bâtiment(s) ont poussé"), "batiments": n }))
+        }
+        "poser_modele" => {
+            let nom = params
+                .get("fiche")
+                .and_then(Value::as_str)
+                .ok_or("« fiche » manquante")?;
+            let fiche = catalogue.fiche(nom).ok_or_else(|| {
+                let noms: Vec<&str> = catalogue.fiches.iter().map(|f| f.id.as_str()).collect();
+                format!("fiche inconnue « {nom} » (connues : {})", noms.join(", "))
+            })?;
+            let centre = point(params, "centre")?;
+            let cap = nombre(params, "cap_deg")?.unwrap_or(0.0);
+            let id = projet.carte.poser_modele(fiche, centre, cap)?;
+            Ok(json!({ "message": format!("« {} » posé", fiche.nom), "id": id.to_string() }))
+        }
+        "transformer" => {
+            let ids: Vec<Id> = params
+                .get("batiments")
+                .and_then(Value::as_array)
+                .ok_or("« batiments » : liste d'identifiants")?
+                .iter()
+                .take(LISTE_MAX)
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_owned)
+                        .and_then(|s| Id::try_from(s).ok())
+                        .ok_or_else(|| format!("identifiant invalide {v}"))
+                })
+                .collect::<Result<_, String>>()?;
+            let pivot = super::gizmo::pivot(projet, &ids).ok_or("aucun de ces bâtiments n'existe")?;
+            let delta = match params.get("deplacement") {
+                Some(_) => point(params, "deplacement")?,
+                None => [0.0, 0.0],
+            };
+            let t = mcf_carte::Transformation {
+                delta,
+                dy_m: nombre(params, "dy_m")?.unwrap_or(0.0),
+                cap_deg: nombre(params, "cap_deg")?.unwrap_or(0.0),
+                pivot,
+                ..Default::default()
+            };
+            let n = projet.carte.transformer_batiments(&ids, &t)?;
+            Ok(json!({ "message": format!("{n} bâtiment(s) transformé(s)") }))
+        }
+        "relief" => {
+            let pinceau = match params.get("pinceau").and_then(Value::as_str) {
+                Some("lever") => Pinceau::Lever,
+                Some("abaisser") => Pinceau::Abaisser,
+                Some("lisser") => Pinceau::Lisser,
+                Some("aplanir") => Pinceau::Aplanir,
+                Some("naturel") => Pinceau::Naturel,
+                _ => return Err("« pinceau » : lever, abaisser, lisser, aplanir ou naturel".into()),
+            };
+            let centre = point(params, "centre")?;
+            if !projet.carte.manifeste.contient(centre) {
+                return Err("« centre » hors de la carte".into());
+            }
+            let rayon = nombre(params, "rayon_m")?
+                .ok_or("« rayon_m » manquant")?
+                .clamp(2.0, 2000.0);
+            // Lever / abaisser / naturel : mètres au centre ; lisser / aplanir : part du chemin (0 à 1).
+            let force = nombre(params, "force")?.ok_or("« force » manquante")?;
+            let force = match pinceau {
+                Pinceau::Lisser | Pinceau::Aplanir => force.clamp(0.0, 1.0),
+                _ => force.clamp(0.0, 100.0),
+            };
+            let cible = nombre(params, "cible_m")?.unwrap_or(edition.cible);
+            projet.carte.pinceau(pinceau, centre, rayon, force, cible);
+            // Un appel = un trait = une annulation.
+            projet.carte.fin_trait();
+            Ok(json!({ "message": "relief modifié" }))
+        }
+        "nommer" => {
+            let id: Id = params
+                .get("troncon")
+                .and_then(Value::as_str)
+                .ok_or("« troncon » manquant")?
+                .to_owned()
+                .try_into()
+                .map_err(|_| "identifiant de tronçon invalide".to_string())?;
+            let nom = params
+                .get("nom")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty());
+            projet.carte.modifier("Nommer la voie", |tx| {
+                let t = tx.reseau().troncons.get_mut(&id).ok_or("tronçon introuvable")?;
+                t.nom = nom.map(str::to_owned);
+                Ok::<_, String>(())
+            })?;
+            Ok(json!({ "message": "voie nommée" }))
+        }
+        "annuler" => {
+            let l = projet.carte.annuler().ok_or("rien à annuler")?;
+            edition.points.clear();
+            Ok(json!({ "message": format!("annulé : {l}") }))
+        }
+        "refaire" => {
+            let l = projet.carte.refaire().ok_or("rien à refaire")?;
+            Ok(json!({ "message": format!("refait : {l}") }))
+        }
+        "enregistrer" => {
+            if projet.carte.dossier.is_none() {
+                return Err("aucun dossier de projet ouvert : enregistrer d'abord depuis l'interface".into());
+            }
+            projet.carte.enregistrer(None)?;
+            Ok(json!({ "message": "projet enregistré" }))
+        }
+        a => Err(format!(
+            "action inconnue « {a} » (tracer_route, ligne_electrique, affecter, zone_libre, lotir, poser_modele, \
+             transformer, relief, nommer, annuler, refaire, enregistrer)"
+        )),
+    }
+}
+
 /// Vue capturée.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VueCapture {
@@ -697,6 +1034,112 @@ mod tests {
         );
         fil.join().expect("fil");
         assert_eq!(r, json!({"id": 7, "resultat": {"ok": true}}));
+    }
+
+    fn projet(carte: &mcf_carte::Carte) -> Projet {
+        Projet {
+            carte: carte.clone(),
+            message: String::new(),
+            erreur: false,
+        }
+    }
+
+    /// Positions des nœuds et nombre de tronçons : la forme du réseau, sans les identifiants (tirés au hasard).
+    fn forme(p: &Projet) -> (Vec<[i64; 2]>, usize, usize, usize) {
+        let mut n: Vec<[i64; 2]> = p
+            .carte
+            .reseau
+            .noeuds
+            .values()
+            .map(|x| {
+                [
+                    (x.position[0] * 100.0).round() as i64,
+                    (x.position[1] * 100.0).round() as i64,
+                ]
+            })
+            .collect();
+        n.sort_unstable();
+        (
+            n,
+            p.carte.reseau.troncons.len(),
+            p.carte.quartiers.affectations.len(),
+            p.carte.batiments.len(),
+        )
+    }
+
+    #[test]
+    fn commandes_comme_a_la_main_et_annulables() {
+        let catalogue = super::super::modeles::Catalogue::default();
+        // Même carte de départ (même graine de lotissement) pour les deux chemins.
+        let base = mcf_carte::Carte::nouvelle(mcf_carte::Manifeste::nouveau("t", 512.0)).expect("carte");
+        let mut ia = projet(&base);
+        let mut edition = Edition::default();
+        let mut main = projet(&base);
+        // Un îlot fermé par quatre rues, affecté puis loti : par le MCP…
+        let rues = [
+            [[-100.0, -100.0], [100.0, -100.0]],
+            [[100.0, -100.0], [100.0, 100.0]],
+            [[100.0, 100.0], [-100.0, 100.0]],
+            [[-100.0, 100.0], [-100.0, -100.0]],
+        ];
+        for r in rues {
+            let v = json!({ "action": "tracer_route", "classe": "rue", "points": r });
+            commande(&v, &mut ia, &mut edition, &catalogue).expect("tracer");
+        }
+        let v =
+            json!({ "action": "affecter", "point": [0, 0], "famille": "residentiel", "densite": "moyenne" });
+        commande(&v, &mut ia, &mut edition, &catalogue).expect("affecter");
+        // … et à la main (mêmes fonctions que l'interface).
+        for r in rues {
+            main.carte
+                .tracer_route(
+                    mcf_geo::ClasseRoute::Rue,
+                    &r,
+                    mcf_carte::carte_de_test::ACCROCHE_M,
+                )
+                .expect("tracer");
+        }
+        main.carte
+            .affecter(
+                [0.0, 0.0],
+                mcf_carte::Famille::Residentiel,
+                mcf_carte::Densite::Moyenne,
+            )
+            .expect("affecter");
+        assert_eq!(forme(&ia), forme(&main), "réseau et quartier identiques");
+        // Le lotissement dépend des identifiants (tirés au hasard à chaque tracé, même à la main) : on lotit donc le
+        // même état par les deux chemins.
+        let mut main = projet(&ia.carte);
+        let v = json!({ "action": "lotir", "point": [0, 0] });
+        let lotis = commande(&v, &mut ia, &mut edition, &catalogue).expect("lotir");
+        let id = super::super::outils::quartier_en(&mut main.carte, [0.0, 0.0]).expect("quartier");
+        main.carte.lotir(id).expect("lotir");
+        // Identifiants neufs de part et d'autre : on compare le contenu, trié.
+        let bati = |p: &Projet| {
+            let mut v: Vec<String> = p.carte.batiments.values().map(|b| format!("{b:?}")).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(bati(&ia), bati(&main), "même bâti qu'à la main");
+        assert!(lotis["batiments"].as_u64().is_some_and(|n| n > 0), "{lotis}");
+        // Annuler le lotissement par le MCP : plus aucun bâtiment, le reste intact ; refaire le rétablit.
+        let avant = forme(&ia);
+        commande(&json!({ "action": "annuler" }), &mut ia, &mut edition, &catalogue).expect("annuler");
+        assert_eq!(ia.carte.batiments.len(), 0);
+        assert_eq!(forme(&ia).1, avant.1);
+        commande(&json!({ "action": "refaire" }), &mut ia, &mut edition, &catalogue).expect("refaire");
+        assert_eq!(forme(&ia), avant);
+        // Entrées refusées sans rien modifier.
+        for v in [
+            json!({ "action": "tracer_route", "classe": "tgv", "points": [[0, 0], [10, 0]] }),
+            json!({ "action": "tracer_route", "classe": "rue", "points": [[0, 0], [9000, 0]] }),
+            json!({ "action": "relief", "pinceau": "lever", "centre": [9000, 0], "rayon_m": 10, "force": 1 }),
+            json!({ "action": "supprimer_fichier" }),
+            json!({ "action": "enregistrer" }),
+        ] {
+            assert!(commande(&v, &mut ia, &mut edition, &catalogue).is_err(), "{v}");
+        }
+        assert_eq!(forme(&ia), avant);
     }
 
     #[test]

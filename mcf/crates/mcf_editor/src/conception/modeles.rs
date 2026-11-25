@@ -257,7 +257,7 @@ mod tests {
         // Le centre de l'encombrement reste ancré au sol + décalage, même incliné.
         let w = t.transform_point(Vec3::new(f.centre_m[0] as f32, 0.0, f.centre_m[1] as f32));
         assert!((w - Vec3::new(0.0, 4.2, 0.0)).length() < 1e-4, "{w}");
-        // Tangage : l'axe X du modèle (après le cap) ne bouge pas, l'avant (−Z) monte.
+        // Tangage : l'axe X du modèle (après le cap) ne bouge pas, le côté −Z (l'arrière du modèle) monte.
         let x = t.rotation * Vec3::X;
         assert!((x - Quat::from_rotation_y(90f32.to_radians()) * Vec3::X).length() < 1e-5);
         assert!((t.rotation * Vec3::NEG_Z).y > 0.1);

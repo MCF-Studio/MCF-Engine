@@ -12,10 +12,11 @@ publish.workspace = true
 dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
 # Pilotage par l'IA (pont MCP `mcf_mcp`, spec docs/SPEC_MCP_LSP_MOTEUR.md) : outil de développement, jamais dans un
 # build distribué. Actif seulement avec l'option `--remote` au lancement.
-remote = ["dep:getrandom", "dep:png", "dep:serde_json"]
+remote = ["dep:getrandom", "dep:png", "dep:serde", "dep:serde_json"]
 
 [dependencies]
-bevy = { workspace = true, features = ["3d", "ui"] }
+# jpeg : textures Poly Haven des bâtiments modélisés (.jpg), refusées sans elle (murs et toits invisibles).
+bevy = { workspace = true, features = ["3d", "ui", "jpeg"] }
 bevy_egui.workspace = true
 egui_dock.workspace = true
 # Jeton de session du pilotage (aléa du système). MIT / Apache-2.0, déjà dans Cargo.lock.
@@ -26,6 +27,7 @@ mcf_geo.workspace = true
 # Captures du pilotage, même version que mcf_carte.
 png = { version = "0.18", optional = true }
 rfd.workspace = true
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 winit.workspace = true
 

@@ -1,7 +1,7 @@
 # Spec — MCP et LSP pour travailler avec MCF Engine
 
 > Demande d'Aroun (2026-11-24) : « un MCP qui donne vraiment accès à tout ce qu'il faut, et un LSP, pour économiser,
-> que ce soit plus direct ». Statut (2026-11-25) : **étape 2 faite**, étape 1 configurée (à vérifier), étapes 3 et 4
+> que ce soit plus direct ». Statut (2026-11-25) : **étapes 2 et 3 faites**, étape 1 configurée (à vérifier), étape 4
 > à faire. Voir « État » en fin de document.
 
 ## But
@@ -132,5 +132,16 @@ Toute nouvelle crate (serveur MCP, transport) passe par `cargo deny` et la revue
     Plan 278 × 512 px. Critère de l'étape 2 atteint, de justesse : rester à 768 px ou moins par défaut.
   - Tests : refus d'une requête HTTP, d'un mauvais jeton, d'une méthode hors liste ; relais d'une requête valide ;
     base64 ; réduction d'image ; protocole MCP du pont.
-- **Reste** : étape 3 (`commande`, `annuler`, `enregistrer`, mode lecture seule effectif), étape 4, test de CI qui
-  refuse un binaire de release contenant la feature `remote`, outils `lister` / `profil_route` / `relief_stats`.
+- **Étape 3** : faite. Outils `lister` (tronçons, quartiers, bâtiments, lignes ; 200 au plus par catégorie) et
+  `commande` : `tracer_route`, `ligne_electrique`, `affecter`, `zone_libre`, `lotir`, `poser_modele`, `transformer`,
+  `relief`, `nommer`, `annuler`, `refaire`, `enregistrer` (dossier déjà ouvert seulement). Chaque appel = une étape
+  d'historique ; refus avec `--remote-lecture-seule`. Test automatique `commandes_comme_a_la_main_et_annulables` :
+  même réseau, même quartier, même bâti qu'à la main ; annuler / refaire ; entrées hors bornes refusées sans effet.
+  Le lotissement dépend des identifiants des tronçons (tirés au hasard à chaque tracé, à la main aussi) : deux
+  tracés identiques ne donnent pas le même bâti, comportement existant et non propre au MCP.
+- **Démonstration (2026-11-25)** : une ville bâtie de zéro sur une carte vierge de 768 m, uniquement par le MCP :
+  colline et creux, avenue, 8 rues, route de colline, chemin, 6 quartiers + une zone libre, supérette et maison A,
+  lotissement (86 bâtiments, 0 conflit), ligne électrique, 21 tronçons nommés, enregistrement, relance de l'éditeur
+  et reprise à l'identique. Mesures : commandes 3 à 170 ms, captures 60 à 200 ms, recalcul de scène 622 ms.
+- **Reste** : étape 4, test de CI qui refuse un binaire de release contenant la feature `remote`, outils
+  `profil_route` / `relief_stats`.
