@@ -3,6 +3,7 @@
 //! et exports. Sans Bevy : l'éditeur, le serveur et les outils en ligne de commande partagent ce crate.
 
 pub mod batiments;
+pub mod bibliotheque;
 pub mod carte;
 pub mod carte_de_test;
 pub mod catalogue;
@@ -25,6 +26,7 @@ pub mod relief_image;
 pub mod reseau;
 
 pub use batiments::{Batiment, ModelePose, Origine, Transformation};
+pub use bibliotheque::Bibliotheque;
 pub use carte::{Carte, Derive, Revisions, Sale, Transaction};
 pub use catalogue::{CatalogueBatiments, Fiche};
 pub use contours::{Contour, Contours, UsageContour};

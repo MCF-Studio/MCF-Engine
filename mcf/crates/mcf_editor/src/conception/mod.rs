@@ -5,6 +5,7 @@
 //! mêmes maillages, seul le style change (couche de rendu « plan » à aplats, couche « 3D » éclairée). egui ne dessine
 //! aucune géométrie de carte : seulement les panneaux.
 
+pub mod bibliotheque;
 mod camera;
 #[cfg(feature = "remote")]
 mod distant;
@@ -462,6 +463,7 @@ pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppE
         promenade::PromenadePlugin,
         gizmo::GizmoPlugin,
         modeles::ModelesPlugin,
+        bibliotheque::BibliothequePlugin,
     ))
     .add_systems(Startup, preparer)
     .add_systems(EguiPrimaryContextPass, ui::interface);

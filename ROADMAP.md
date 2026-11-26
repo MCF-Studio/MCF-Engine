@@ -182,6 +182,12 @@ du §12 pas encore mesurés en `bench-release`.
 tracés), chaque proposition validée ou rejetée à la main ; noyau `mcf_carte::releve` testé, essayé sur `map_1.png`
 (détail dans `todo.md`). Corrigé : l'éditeur paniquait au démarrage (sonde du ciel de Bevy 0.20.1 sans vue 3D
 active) ; il tourne maintenant, **interface toujours pas vue à l'écran**.
+2026-11-26 : carte `ma_carte` (32 km) peuplée depuis la carte couleurs (`peupler_carte`) : massif à 1 289 m, lacs en
+eau, 4 093 routes, 1 209 zones, 169 009 blocs ; scène reconstruite en **209 s** et image à **283 ms** en vue rapprochée
+(mode dev) : le bâti en blocs à cette échelle demande chunks / LOD. Bibliothèque d'assets : 1 029 modèles du jeu (sauf
+véhicules) copiés, catalogue `bibliotheque.json` en français (15 sections, 206 familles), fenêtre « Bibliothèque » (B) par
+section et famille avec recherche sans accents et vignettes faites par le moteur (`cargo editor -- --vignettes`), vue à
+l'écran. Pas encore posable sur la carte.
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la

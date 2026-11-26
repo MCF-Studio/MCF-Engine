@@ -99,6 +99,8 @@ pub fn interface(
     dialogue: Res<Dialogue>,
     catalogue: Res<Catalogue>,
     mut deposes: MessageReader<FileDragAndDrop>,
+    biblio: Res<super::bibliotheque::Catalogue>,
+    mut etat_biblio: ResMut<super::bibliotheque::Etat>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if !*style_pose {
@@ -167,6 +169,8 @@ pub fn interface(
             {
                 edition.promenade = !edition.promenade;
             }
+            ui.separator();
+            super::bibliotheque::bouton(ui, &mut etat_biblio);
         });
     });
 
@@ -285,6 +289,8 @@ pub fn interface(
                         });
                 });
         });
+
+    super::bibliotheque::fenetre(ctx, &biblio, &mut etat_biblio);
 
     let reste = racine.available_rect_before_wrap();
     zone.rect = Rect::new(reste.min.x, reste.min.y, reste.max.x, reste.max.y);

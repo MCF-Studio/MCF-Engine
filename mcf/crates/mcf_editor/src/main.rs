@@ -186,6 +186,10 @@ fn main() -> AppExit {
         (option("--remote") || option("--remote-lecture-seule")).then_some(conception::OptionsDistant {
             lecture_seule: option("--remote-lecture-seule"),
         });
+    if option("--vignettes") {
+        // Vignettes de la bibliothèque d'assets (`--forcer` : toutes, sinon les manquantes).
+        return conception::bibliotheque::vignettes::lancer(option("--forcer"));
+    }
     match chemin {
         Some(p) if is_mcfmap_path(&p) => editeur_calque(),
         dossier => conception::lancer(dossier, distant),

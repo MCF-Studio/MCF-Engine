@@ -51,3 +51,6 @@ mcf/crates/mcf_editor/assets/personnages/*.glb
 # Bâtiments du jeu copiés pour l'éditeur (assets du jeu, non versionnés ; le catalogue, lui, est versionné)
 mcf/crates/mcf_editor/assets/batiments/**/*.glb
 mcf/crates/mcf_editor/assets/batiments/_textures/
+# Bibliothèque d'assets du jeu copiée pour l'éditeur (mcf/tools/bibliotheque/importer.py) : non versionnée,
+# seul le catalogue `bibliotheque.json` l'est.
+mcf/crates/mcf_editor/assets/bibliotheque/
