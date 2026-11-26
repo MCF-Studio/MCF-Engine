@@ -3645,6 +3645,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcf_meteo"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "mcf_server"
 version = "0.1.0"
 dependencies = [
