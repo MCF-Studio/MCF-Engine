@@ -71,6 +71,12 @@ fn suivre(
 ) {
     let r: Revisions = projet.carte.revisions;
     let eau = projet.carte.manifeste.niveau_eau_m;
+    projet.carte.derive();
+    let version = projet.carte.version_terrain();
+    let refaits = tuiles
+        .terrain_vu
+        .filter(|(m, _)| *m == r.manifeste)
+        .and_then(|(_, v)| projet.carte.rectangles_terrain(Some(v)));
     let d = projet.carte.derive();
     let t = &d.terrain;
     if t.nx < 2 || t.nz < 2 {
@@ -78,16 +84,11 @@ fn suivre(
     }
     // Terrain modifié (pinceau, routes) : seules les tuiles qui touchent les blocs recalculés sont refaites, tout de
     // suite (pas de trou le temps de les reconstruire) ; un nouveau manifeste refait tout.
-    let version = d.maj_terrain.a;
     if tuiles
         .terrain_vu
         .is_none_or(|(m, v)| m != r.manifeste || v != version)
     {
-        let rects = tuiles
-            .terrain_vu
-            .filter(|(m, _)| *m == r.manifeste)
-            .and_then(|(_, v)| d.maj_terrain.rectangles(Some(v), t));
-        match rects {
+        match refaits {
             None => {
                 for (_, e) in tuiles.faites.drain() {
                     commands.entity(e).despawn();

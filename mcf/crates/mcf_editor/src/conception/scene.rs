@@ -307,6 +307,8 @@ fn reconstruire(
     let quartiers = (geometrie || change(|x| x.quartiers)).then(|| projet.carte.quartiers.clone());
     // Terrain, routes et bâti : seulement autour de ce que la carte a recalculé (blocs de terrain), sauf première
     // construction ou changement du manifeste.
+    projet.carte.derive();
+    let refaits = projet.carte.rectangles_terrain(affiche.terrain_vu);
     let d = projet.carte.derive();
     let sol = if !terrain {
         ARefaire::Zones(Vec::new())
@@ -315,7 +317,7 @@ fn reconstruire(
     } else {
         // Les normales du terrain lisent les échantillons voisins : marge d'un échantillon et demi.
         let m = d.terrain.resolution * 1.5;
-        match d.maj_terrain.rectangles(affiche.terrain_vu, &d.terrain) {
+        match refaits {
             Some(z) => ARefaire::Zones(
                 z.into_iter()
                     .map(|[a, b]| [[a[0] - m, a[1] - m], [b[0] + m, b[1] + m]])
@@ -685,7 +687,7 @@ fn reconstruire(
         }
     }
 
-    let version_terrain = d.maj_terrain.a;
+    let version_terrain = projet.carte.version_terrain();
     if geometrie || change(|x| x.batiments) {
         edition.conflits = projet.carte.conflits();
     }

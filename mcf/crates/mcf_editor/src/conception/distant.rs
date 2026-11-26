@@ -405,6 +405,7 @@ fn nombre(params: &Value, cle: &str) -> Result<Option<f64>, String> {
         None | Some(Value::Null) => Ok(None),
         Some(v) => v
             .as_f64()
+            .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
             .filter(|x| x.is_finite())
             .map(Some)
             .ok_or_else(|| format!("« {cle} » doit être un nombre fini")),
@@ -521,10 +522,22 @@ fn camera(
 }
 
 /// Point `[x, z]` d'un paramètre.
+/// Tableau JSON d'un paramètre. Certains clients MCP transmettent un tableau sous forme de texte (`"[1, 2]"`) : il
+/// est relu comme JSON (texte borné), jamais interprété autrement.
+fn tableau(params: &Value, cle: &str) -> Option<Vec<Value>> {
+    match params.get(cle)? {
+        Value::Array(a) => Some(a.clone()),
+        Value::String(t) if t.len() <= 64 * 1024 => match serde_json::from_str::<Value>(t).ok()? {
+            Value::Array(a) => Some(a),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn point(params: &Value, cle: &str) -> Result<[f64; 2], String> {
-    params
-        .get(cle)
-        .and_then(Value::as_array)
+    tableau(params, cle)
+        .as_ref()
         .filter(|a| a.len() == 2)
         .and_then(|a| Some([a[0].as_f64()?, a[1].as_f64()?]))
         .filter(|p| p.iter().all(|v| v.is_finite()))
@@ -533,10 +546,7 @@ fn point(params: &Value, cle: &str) -> Result<[f64; 2], String> {
 
 /// Liste de points `[[x, z], …]` d'un paramètre.
 fn points(params: &Value, cle: &str) -> Result<Vec<[f64; 2]>, String> {
-    let a = params
-        .get(cle)
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("« {cle} » : liste de points [[x, z], …]"))?;
+    let a = tableau(params, cle).ok_or_else(|| format!("« {cle} » : liste de points [[x, z], …]"))?;
     if a.len() > POINTS_MAX {
         return Err(format!("« {cle} » : {POINTS_MAX} points au plus"));
     }
@@ -724,9 +734,7 @@ fn commande(
             Ok(json!({ "message": format!("« {} » posé", fiche.nom), "id": id.to_string() }))
         }
         "transformer" => {
-            let ids: Vec<Id> = params
-                .get("batiments")
-                .and_then(Value::as_array)
+            let ids: Vec<Id> = tableau(params, "batiments")
                 .ok_or("« batiments » : liste d'identifiants")?
                 .iter()
                 .take(LISTE_MAX)

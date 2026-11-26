@@ -288,6 +288,8 @@ fn naviguer_3d(
     edition: Res<Edition>,
     mut projet: ResMut<Projet>,
     mut orbite: ResMut<Orbite>,
+    // Point visé (x, z) à l'image précédente et temps restant de suivi du sol (s).
+    mut suivi: Local<(Option<Vec2>, f32)>,
 ) {
     let curseur = window.cursor_position();
     let survole = curseur.is_some_and(|c| vue_sous(c, &zone, edition.disposition) == Some(Vue::Perspective));
@@ -343,12 +345,21 @@ fn naviguer_3d(
         orbite.elevation =
             (orbite.elevation + v * dist.max(20.0) * 0.6 * vite * temps.delta_secs()).clamp(-200.0, 3_000.0);
     }
-    // La cible suit le sol.
+    // La cible suit le sol quand on déplace la caméra (et une seconde après), pas quand le sol bouge sous elle :
+    // en sculptant à l'endroit visé, la caméra s'enfonçait avec le creux (tout semblait monter autour) ou montait
+    // avec la bosse (rien ne semblait changer).
+    let xz = orbite.cible.xz();
+    if suivi.0.is_none_or(|a| a.distance(xz) > 1e-3) {
+        suivi.1 = 1.0;
+    }
+    suivi.0 = Some(xz);
+    let sculpte = matches!(edition.outil, super::Outil::Pinceau(_)) && boutons.pressed(MouseButton::Left);
     let p = [f64::from(orbite.cible.x), f64::from(orbite.cible.z)];
-    if projet.carte.manifeste.contient(p) {
+    if suivi.1 > 0.0 && !sculpte && projet.carte.manifeste.contient(p) {
         let h = projet.carte.derive().terrain.hauteur(p) as f32;
         orbite.cible.y += (h - orbite.cible.y) * (temps.delta_secs() * 6.0).min(1.0);
     }
+    suivi.1 -= temps.delta_secs();
 }
 
 fn raccourcis_vues(touches: Res<ButtonInput<KeyCode>>, zone: Res<ZoneVues>, mut edition: ResMut<Edition>) {

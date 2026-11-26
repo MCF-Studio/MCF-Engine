@@ -144,25 +144,6 @@ pub struct MajTerrain {
     pub blocs: Option<BTreeSet<(usize, usize)>>,
 }
 
-impl MajTerrain {
-    /// Rectangles `(min, max)` (m) refaits, vus depuis la version `vu` d'un affichage ; `None` : tout refaire.
-    pub fn rectangles(&self, vu: Option<u64>, terrain: &Relief) -> Option<Vec<[P2; 2]>> {
-        if vu == Some(self.a) {
-            return Some(Vec::new());
-        }
-        if vu != Some(self.de) {
-            return None;
-        }
-        let blocs = self.blocs.as_ref()?;
-        Some(
-            blocs
-                .iter()
-                .map(|b| terrain.rectangle_zone(terrain.zone_bloc_terrain(*b)))
-                .collect(),
-        )
-    }
-}
-
 /// Un projet de carte ouvert.
 #[derive(Debug, Clone)]
 pub struct Carte {
@@ -201,7 +182,14 @@ pub struct Carte {
     derive: Option<Derive>,
     /// Échantillons du relief source modifiés depuis le dernier calcul des dérivés.
     relief_touche: Option<Zone>,
+    /// Dernière version du terrain final (croît à chaque mise à jour, jamais remise à zéro).
+    version_terrain: u64,
+    /// Mises à jour récentes du terrain final, des plus anciennes aux plus récentes.
+    historique_terrain: std::collections::VecDeque<MajTerrain>,
 }
+
+/// Mises à jour du terrain gardées pour un affichage qui en a sauté (pinceau ralenti, image lente).
+const HISTORIQUE_TERRAIN: usize = 256;
 
 /// Accès aux sources pendant une transaction ; chaque accès mémorise l'état d'avant.
 pub struct Transaction<'a> {
@@ -374,6 +362,8 @@ impl Carte {
             trait_en_cours: None,
             derive: None,
             relief_touche: None,
+            version_terrain: 0,
+            historique_terrain: std::collections::VecDeque::new(),
         })
     }
 
@@ -408,6 +398,8 @@ impl Carte {
             trait_en_cours: None,
             derive: None,
             relief_touche: None,
+            version_terrain: 0,
+            historique_terrain: std::collections::VecDeque::new(),
         }
     }
 
@@ -716,6 +708,39 @@ impl Carte {
 
     // ---------------------------------------------------------------- dérivés
 
+    /// Rectangles `(min, max)` (m) du terrain final refaits depuis la version `vu` d'un affichage (à appeler après
+    /// [`Carte::derive`]) : vide s'il est à jour, `None` s'il faut tout refaire (première fois, trop de retard, calcul
+    /// complet entre-temps). Les mises à jour sautées par l'affichage sont cumulées.
+    pub fn rectangles_terrain(&self, vu: Option<u64>) -> Option<Vec<[P2; 2]>> {
+        let vu = vu?;
+        if vu == self.version_terrain {
+            return Some(Vec::new());
+        }
+        let mut attendu = vu;
+        let mut blocs = BTreeSet::new();
+        for m in self.historique_terrain.iter().filter(|m| m.a > vu) {
+            if m.de != attendu {
+                return None;
+            }
+            blocs.extend(m.blocs.as_ref()?.iter().copied());
+            attendu = m.a;
+        }
+        if attendu != self.version_terrain {
+            return None;
+        }
+        Some(
+            blocs
+                .into_iter()
+                .map(|b| self.relief.rectangle_zone(self.relief.zone_bloc_terrain(b)))
+                .collect(),
+        )
+    }
+
+    /// Version actuelle du terrain final (voir [`Carte::rectangles_terrain`]).
+    pub fn version_terrain(&self) -> u64 {
+        self.version_terrain
+    }
+
     /// Note des échantillons du relief source modifiés (dérivés à refaire autour).
     fn toucher_relief(&mut self, z: Zone) {
         let z = Zone {
@@ -746,10 +771,22 @@ impl Carte {
                     && d.terrain.nz == self.relief.nz
                     && (d.revisions.relief == r.relief || relief_touche.is_some())
             });
-            self.derive = Some(match reprise {
+            let nouveau = match reprise {
                 Some(d) => self.derive_partiel(d, relief_touche),
                 None => self.derive_complet(),
-            });
+            };
+            let maj = nouveau.maj_terrain.clone();
+            self.version_terrain = maj.a;
+            if maj.a != maj.de {
+                if maj.blocs.is_none() {
+                    self.historique_terrain.clear();
+                }
+                self.historique_terrain.push_back(maj);
+                while self.historique_terrain.len() > HISTORIQUE_TERRAIN {
+                    self.historique_terrain.pop_front();
+                }
+            }
+            self.derive = Some(nouveau);
         }
         let d = self.derive.get_or_insert_with(Derive::default);
         d.revisions = r;
@@ -762,7 +799,7 @@ impl Carte {
         let altitudes = relief::altitudes_reseau(&self.reseau, &geo, &self.relief, profils);
         let terrain = relief::terrain_final(&self.relief, &geo, &altitudes, profils);
         let ilots = ilots::calculer(&self.reseau, &geo, profils);
-        let version = self.derive.as_ref().map_or(0, |d| d.maj_terrain.a) + 1;
+        let version = self.version_terrain + 1;
         Derive {
             geo,
             altitudes,
@@ -854,7 +891,7 @@ impl Carte {
         } else {
             d.ilots
         };
-        let version = d.maj_terrain.a;
+        let version = self.version_terrain;
         let maj_terrain = if blocs.is_empty() {
             MajTerrain {
                 de: version,
@@ -1830,6 +1867,20 @@ mod tests {
         verifier(&mut c, "route tracée", true);
         c.annuler();
         verifier(&mut c, "route annulée", true);
+        // Un affichage qui a sauté des versions refait l'union des zones, et rien s'il est à jour.
+        let vu = c.version_terrain();
+        c.pinceau(Pinceau::Abaisser, [-300.0, -300.0], 15.0, 2.0, 0.0);
+        c.derive();
+        c.pinceau(Pinceau::Abaisser, [300.0, 300.0], 15.0, 2.0, 0.0);
+        c.derive();
+        let z = c.rectangles_terrain(Some(vu)).expect("versions cumulées");
+        let couvre = |p: P2| {
+            z.iter()
+                .any(|[a, b]| a[0] <= p[0] && p[0] <= b[0] && a[1] <= p[1] && p[1] <= b[1])
+        };
+        assert!(couvre([-300.0, -300.0]) && couvre([300.0, 300.0]), "{z:?}");
+        assert_eq!(c.rectangles_terrain(Some(c.version_terrain())), Some(Vec::new()));
+        assert_eq!(c.rectangles_terrain(None), None);
     }
 
     #[test]
