@@ -1,5 +1,6 @@
-//! Rendu de l'océan (étape 5a) : un maillage radial qui suit la caméra, déplacé dans le shader par la houle de
-//! [`crate::houle`] et éclairé par le PBR de Bevy (reflets de l'environnement, soleil, brouillard).
+//! Rendu de l'océan (étapes 5a et 5b) : un maillage radial qui suit la caméra, déplacé dans le shader par la houle
+//! de [`crate::houle`] et par les cascades FFT de [`crate::ocean_fft`], éclairé par le PBR de Bevy (reflets de
+//! l'environnement, soleil, brouillard).
 //!
 //! Utilisation : ajouter [`McfOceanPlugin`] ; l'océan apparaît au niveau [`Ocean::niveau`]. Le gameplay lit la
 //! hauteur de l'eau avec [`Ocean::hauteur`].
@@ -16,6 +17,7 @@ use bevy::shader::ShaderRef;
 use crate::MiseAJourMeteo;
 use crate::etat::EtatMeteo;
 use crate::houle::Ocean;
+use crate::ocean_fft::{McfOceanFftPlugin, ReglagesFft, TexturesOcean};
 
 /// Matériau de l'océan : `StandardMaterial` (couleur de l'eau profonde, réflectance) + extension.
 pub type MateriauOcean = ExtendedMaterial<StandardMaterial, ExtensionOcean>;
@@ -32,6 +34,10 @@ pub struct ReglagesOcean {
     pub part_lineaire: f32,
     /// Intensité de l'écume.
     pub ecume: f32,
+    /// Distance (m) au-delà de laquelle la plus petite cascade (rides) ne déplace plus les sommets.
+    pub lod_proche: f32,
+    /// Distance (m) au-delà de laquelle les cascades FFT s'effacent (il ne reste que la houle).
+    pub lod_loin: f32,
 }
 
 impl Default for ReglagesOcean {
@@ -41,6 +47,8 @@ impl Default for ReglagesOcean {
             rayon: 6000.0,
             part_lineaire: 0.02,
             ecume: 1.0,
+            lod_proche: 50.0,
+            lod_loin: 1500.0,
         }
     }
 }
@@ -58,6 +66,12 @@ pub struct UniformesOcean {
     ecume: f32,
     vent: f32,
     remplissage: f32,
+    /// Taille du motif de chaque cascade (m), w = 0 si la FFT est désactivée.
+    tailles: Vec4,
+    lod_proche: f32,
+    lod_loin: f32,
+    remplissage1: f32,
+    remplissage2: f32,
 }
 
 /// Extension océan du `StandardMaterial`.
@@ -66,6 +80,13 @@ pub struct ExtensionOcean {
     /// Uniformes mis à jour chaque image.
     #[uniform(100)]
     pub uniformes: UniformesOcean,
+    /// Déplacement FFT (xyz) et écume (w), une couche par cascade.
+    #[texture(101, dimension = "2d_array")]
+    #[sampler(102)]
+    pub deplacement: Handle<Image>,
+    /// Pentes et termes du jacobien FFT.
+    #[texture(103, dimension = "2d_array")]
+    pub derivees: Handle<Image>,
 }
 
 impl MaterialExtension for ExtensionOcean {
@@ -127,7 +148,7 @@ pub struct McfOceanPlugin;
 impl Plugin for McfOceanPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "ocean.wesl");
-        app.add_plugins(MaterialPlugin::<MateriauOcean>::default())
+        app.add_plugins((MaterialPlugin::<MateriauOcean>::default(), McfOceanFftPlugin))
             .register_type::<ReglagesOcean>()
             .init_resource::<ReglagesOcean>()
             .add_systems(Startup, creer_ocean)
@@ -144,6 +165,7 @@ fn creer_ocean(
     reglages: Res<ReglagesOcean>,
     mut maillages: ResMut<Assets<Mesh>>,
     mut materiaux: ResMut<Assets<MateriauOcean>>,
+    textures: Res<TexturesOcean>,
 ) {
     let eau = StandardMaterial {
         // Eau profonde : presque noire, c'est le reflet du ciel qui la colore.
@@ -159,7 +181,11 @@ fn creer_ocean(
         Mesh3d(maillages.add(maillage_grille(reglages.quads))),
         MeshMaterial3d(materiaux.add(MateriauOcean {
             base: eau,
-            extension: ExtensionOcean::default(),
+            extension: ExtensionOcean {
+                uniformes: UniformesOcean::default(),
+                deplacement: textures.deplacement.clone(),
+                derivees: textures.derivees.clone(),
+            },
         })),
         Transform::IDENTITY,
         NoFrustumCulling,
@@ -168,7 +194,12 @@ fn creer_ocean(
 }
 
 /// Uniformes de l'image (fonction pure).
-pub fn calculer_uniformes(ocean: &Ocean, etat: &EtatMeteo, reglages: &ReglagesOcean) -> UniformesOcean {
+pub fn calculer_uniformes(
+    ocean: &Ocean,
+    etat: &EtatMeteo,
+    reglages: &ReglagesOcean,
+    fft: &ReglagesFft,
+) -> UniformesOcean {
     let (vague_a, vague_b) = ocean.uniformes_vagues();
     UniformesOcean {
         vague_a,
@@ -181,6 +212,11 @@ pub fn calculer_uniformes(ocean: &Ocean, etat: &EtatMeteo, reglages: &ReglagesOc
         ecume: reglages.ecume,
         vent: etat.vent_vitesse,
         remplissage: 0.0,
+        tailles: Vec4::new(fft.tailles[0], fft.tailles[1], fft.tailles[2], 1.0),
+        lod_proche: reglages.lod_proche,
+        lod_loin: reglages.lod_loin,
+        remplissage1: 0.0,
+        remplissage2: 0.0,
     }
 }
 
@@ -188,10 +224,11 @@ fn mettre_a_jour_ocean(
     ocean: Res<Ocean>,
     etat: Res<EtatMeteo>,
     reglages: Res<ReglagesOcean>,
+    fft: Res<ReglagesFft>,
     surfaces: Query<&MeshMaterial3d<MateriauOcean>, With<SurfaceOcean>>,
     mut materiaux: ResMut<Assets<MateriauOcean>>,
 ) {
-    let u = calculer_uniformes(&ocean, &etat, &reglages);
+    let u = calculer_uniformes(&ocean, &etat, &reglages, &fft);
     for m in &surfaces {
         if let Some(mut mat) = materiaux.get_mut(&m.0) {
             mat.extension.uniformes = u;

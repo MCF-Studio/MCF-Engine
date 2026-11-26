@@ -83,3 +83,62 @@ fn temps_borne() {
     ocean.avancer(&etat, f32::NAN);
     assert!(ocean.hauteur(0.0, 0.0).is_finite());
 }
+
+#[cfg(feature = "rendu")]
+mod fft {
+    use bevy::prelude::*;
+    use mcf_meteo::ocean_fft::{EtatFft, ReglagesFft, bandes, calculer_params};
+    use mcf_meteo::{EtatMeteo, Ocean, PresetMeteo};
+
+    #[test]
+    fn bandes_contigues_et_apres_le_pic() {
+        let (k_min, k_max) = bandes([250.0, 47.0, 9.0], 0.02, 1.5);
+        assert!((k_min.x - 0.03).abs() < 1e-6);
+        // La fin d'une cascade est le début de la suivante : pas de trou ni de double comptage.
+        assert_eq!(k_max.x, k_min.y);
+        assert_eq!(k_max.y, k_min.z);
+        assert!(k_max.z > 1e8);
+    }
+
+    #[test]
+    fn ecume_seulement_par_vent_fort() {
+        let o = Ocean::default();
+        let r = ReglagesFft::default();
+        let calme = calculer_params(
+            &EtatMeteo {
+                vent_vitesse: 2.0,
+                ..default()
+            },
+            &o,
+            &r,
+            0.016,
+        );
+        let tempete = calculer_params(&PresetMeteo::Tempete.etat(), &o, &r, 0.016);
+        assert_eq!(calme.seuil_ecume, 0.0);
+        assert!(tempete.seuil_ecume > 0.7);
+        assert!(calculer_params(&PresetMeteo::Clair.etat(), &o, &r, f32::NAN).dt == 0.0);
+    }
+
+    #[test]
+    fn spectre_recalcule_seulement_si_le_vent_change() {
+        let o = Ocean::default();
+        let r = ReglagesFft::default();
+        let mut e = EtatFft::default();
+        let p = calculer_params(&PresetMeteo::Nuageux.etat(), &o, &r, 0.016);
+        assert!(e.avancer(&p), "première image : calcul initial");
+        assert!(!e.avancer(&p));
+        let leger = calculer_params(
+            &EtatMeteo {
+                vent_vitesse: 9.1,
+                ..PresetMeteo::Nuageux.etat()
+            },
+            &o,
+            &r,
+            0.016,
+        );
+        assert!(!e.avancer(&leger), "écart de 0,1 m/s : inchangé");
+        let fort = calculer_params(&PresetMeteo::Tempete.etat(), &o, &r, 0.016);
+        assert!(e.avancer(&fort));
+        assert_eq!(e.generation_spectre, 2);
+    }
+}

@@ -4,7 +4,7 @@
 //! CPU (étape 2), la pluie et la neige sur le GPU (étape 3, feature `rendu`, [`McfPrecipitationsPlugin`]), les
 //! abris (étape 4a) et les surfaces mouillées, flaques et neige au sol (étape 4b, [`SurfacesMeteo`],
 //! `McfMateriauMeteoPlugin`), puis l'océan : houle de Gerstner calée sur JONSWAP ([`Ocean`], aussi pour la
-//! flottaison) et son rendu (étape 5a, `McfOceanPlugin`).
+//! flottaison) et son rendu (étape 5a, `McfOceanPlugin`), avec les cascades FFT de la mer du vent (étape 5b).
 //! Sans la feature `rendu`, aucune dépendance au rendu : le serveur dédié peut piloter la météo et la diffuser.
 //! Les étapes suivantes (humidité, océan, nuages, son) sont décrites dans `mcf/docs/meteo.md`.
 //!
@@ -35,6 +35,8 @@ pub mod materiau_meteo;
 #[cfg(feature = "rendu")]
 pub mod ocean;
 #[cfg(feature = "rendu")]
+pub mod ocean_fft;
+#[cfg(feature = "rendu")]
 pub mod precipitations;
 pub mod surfaces;
 pub mod transition;
@@ -48,6 +50,8 @@ pub use houle::Ocean;
 pub use materiau_meteo::{MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo};
 #[cfg(feature = "rendu")]
 pub use ocean::{McfOceanPlugin, ReglagesOcean};
+#[cfg(feature = "rendu")]
+pub use ocean_fft::ReglagesFft;
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};
 pub use surfaces::{ParametresSurfaces, SurfacesMeteo};

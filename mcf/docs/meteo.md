@@ -56,7 +56,15 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Exemple `demo_ocean` (bouée qui flotte). 6 tests.
   Limites : pas encore de cascades FFT (la mer de tempête manque de vagues moyennes et d'écume), pas de vagues de
   bord ni d'eau peu profonde, coût GPU non mesuré.
-- ⬜ Étape 5b : cascades FFT. ⬜ Étapes 6 à 9.
+- ✅ Étape 5b : cascades FFT. 3 cascades 256 × 256 (250, 47, 9 m) du spectre JONSWAP, calculées sur le GPU à chaque
+  image dans le graphe de rendu (spectre initial quand le vent change, évolution, IFFT lignes puis colonnes en
+  mémoire partagée, assemblage avec écume par jacobien en ping-pong). La houle de Gerstner garde le pic du spectre,
+  la FFT ajoute la mer du vent (à partir de 1,5 × k_pic). LOD : petite cascade hors des sommets au-delà de 50 m,
+  FFT effacée vers 1,5 km, détails de normale estompés avec la distance. 3 tests CPU, rendu vérifié par capture.
+  Limites : `Ocean::hauteur` n'inclut pas la FFT (la bouée de la démo s'enfonce dans les grosses vagues de
+  tempête ; il faudra une relecture GPU asynchrone), coût GPU non mesuré, mémoire partagée à 16 Kio (limite par
+  défaut de wgpu).
+- ⬜ Étapes 6 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
