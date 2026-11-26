@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use mcf_meteo::{ChangerMeteo, McfMeteoPlugin, McfPrecipitationsPlugin, PresetMeteo};
+use mcf_meteo::{AbriPrecipitations, ChangerMeteo, McfMeteoPlugin, McfPrecipitationsPlugin, PresetMeteo};
 
 fn main() {
     let mut app = App::new();
@@ -35,6 +35,22 @@ fn scene(
             Transform::from_xyz(x, 3.0, z),
         ));
     }
+    // Abri : un toit sur quatre poteaux. Il ne pleut pas dessous.
+    let bois = materiaux.add(Color::srgb(0.45, 0.3, 0.2));
+    commandes.spawn((
+        Mesh3d(maillages.add(Cuboid::new(7.0, 0.3, 5.0))),
+        MeshMaterial3d(bois.clone()),
+        Transform::from_xyz(-3.0, 3.2, 0.0),
+        AbriPrecipitations,
+    ));
+    let poteau = maillages.add(Cuboid::new(0.2, 3.2, 0.2));
+    for (x, z) in [(-6.3, -2.3), (0.3, -2.3), (-6.3, 2.3), (0.3, 2.3)] {
+        commandes.spawn((
+            Mesh3d(poteau.clone()),
+            MeshMaterial3d(bois.clone()),
+            Transform::from_xyz(x, 1.6, z),
+        ));
+    }
     commandes.spawn((
         DirectionalLight {
             illuminance: 8000.0,
@@ -43,10 +59,13 @@ fn scene(
         },
         Transform::from_xyz(30.0, 50.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    commandes.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(0.0, 1.7, 10.0).looking_at(Vec3::new(0.0, 3.0, -20.0), Vec3::Y),
-    ));
+    // `MCF_CAMERA=abri` : caméra sous le toit, regard vers l'extérieur.
+    let camera = if std::env::var("MCF_CAMERA").as_deref() == Ok("abri") {
+        Transform::from_xyz(-3.0, 1.6, -1.5).looking_at(Vec3::new(-3.0, 1.8, 10.0), Vec3::Y)
+    } else {
+        Transform::from_xyz(4.0, 1.7, 9.0).looking_at(Vec3::new(-3.0, 2.0, 0.0), Vec3::Y)
+    };
+    commandes.spawn((Camera3d::default(), camera));
     let preset = match std::env::var("MCF_PRESET").as_deref() {
         Ok("neige") => PresetMeteo::Neige,
         Ok("pluie") => PresetMeteo::Pluie,
