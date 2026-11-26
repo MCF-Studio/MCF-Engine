@@ -635,14 +635,7 @@ fn terrasser_blocs(
                     let h = if d <= w {
                         route
                     } else {
-                        let largeur = ((h_src - route).abs() * TALUS).min(TALUS_MAX_M);
-                        if d - w >= largeur {
-                            return None;
-                        }
-                        // Raccord en S (tangent à la plate-forme et au terrain) : ni arête au pied du talus, ni
-                        // falaise à son sommet.
-                        let u = ((d - w) / largeur.max(1e-6)).clamp(0.0, 1.0);
-                        route + (h_src - route) * u * u * (3.0 - 2.0 * u)
+                        talus(h_src, route, d - w)?
                     };
                     Some((d as f32, h as f32))
                 };
@@ -724,14 +717,10 @@ pub fn terrain_final(
                         let h = if d <= w {
                             route
                         } else {
-                            let largeur = ((h_src - route).abs() * TALUS).min(TALUS_MAX_M);
-                            if d - w >= largeur {
-                                continue;
+                            match talus(h_src, route, d - w) {
+                                Some(h) => h,
+                                None => continue,
                             }
-                            // Raccord en S (tangent à la plate-forme et au terrain) : ni arête au pied du talus, ni
-                            // falaise à son sommet.
-                            let u = ((d - w) / largeur.max(1e-6)).clamp(0.0, 1.0);
-                            route + (h_src - route) * u * u * (3.0 - 2.0 * u)
                         };
                         meilleur[i] = d as f32;
                         sortie.h[i] = h as f32;
@@ -760,6 +749,34 @@ pub fn terrain_final(
         }
     }
     sortie
+}
+
+/// Talus d'une route à `ecart` m du bord de sa plate-forme (altitude `route`), sur un terrain naturel `h_src` : le
+/// terrain naturel est gardé, seulement **borné** par la pente du talus ([`TALUS`] : 1 pour 3) depuis le bord, avec
+/// une butée douce (ni arête au pied, ni marche au sommet). La borne s'élargit jusqu'à ne plus rien contraindre à
+/// [`TALUS_MAX_M`]. `None` : le terrain naturel n'est (presque) pas touché ici, une autre route peut le contraindre.
+///
+/// Croissante en `h_src` : abaisser le relief n'élève jamais le terrain final (l'ancienne règle élargissait le
+/// talus avec la profondeur creusée, et ramenait le terrain vers la route : creuser à côté d'une route en remblai le
+/// faisait monter).
+#[inline]
+fn talus(h_src: f64, route: f64, ecart: f64) -> Option<f64> {
+    let reste = 1.0 - ecart / TALUS_MAX_M;
+    if reste <= 0.0 {
+        return None;
+    }
+    let borne = ecart / TALUS / reste;
+    let x = h_src - route;
+    if borne <= 1e-9 {
+        return Some(route);
+    }
+    let t = x / borne;
+    if t.abs() <= 0.3 {
+        return None;
+    }
+    // Butée douce : x / (1 + t⁴)^¼, ≈ x loin de la borne, tend vers ± borne au-delà.
+    let t2 = t * t;
+    Some(route + x / (1.0 + t2 * t2).sqrt().sqrt())
 }
 
 fn projection(p: P2, a: P2, b: P2) -> (P2, f64) {
@@ -880,6 +897,28 @@ mod tests {
     use crate::geometrie;
     use crate::reseau::Reseau;
     use mcf_geo::ClasseRoute;
+
+    /// Le talus est croissant en terrain naturel (abaisser ne fait jamais monter), part de la route au bord, rend le
+    /// terrain naturel au loin et ne dépasse jamais la pente de 1 pour 3.
+    #[test]
+    fn talus_monotone_et_borne() {
+        let route = 70.0;
+        for ecart in [0.5, 2.0, 5.0, 15.0, 40.0, 90.0, 119.0] {
+            let mut avant = f64::MIN;
+            for k in 0..=400 {
+                let h_src = 20.0 + f64::from(k) * 0.25;
+                let h = talus(h_src, route, ecart).unwrap_or(h_src);
+                assert!(h >= avant - 1e-9, "écart {ecart} : {h_src} donne {h} < {avant}");
+                assert!(
+                    (h - route).abs() <= ecart / TALUS / (1.0 - ecart / TALUS_MAX_M) + 1e-9,
+                    "pente dépassée"
+                );
+                avant = h;
+            }
+        }
+        assert!((talus(10.0, 70.0, 1e-12).expect("bord") - 70.0).abs() < 1e-9);
+        assert!(talus(10.0, 70.0, TALUS_MAX_M).is_none());
+    }
 
     fn m() -> Manifeste {
         Manifeste::nouveau("t", 256.0)
