@@ -66,3 +66,24 @@ fn image_au_bon_format() {
     let img = g.image();
     assert_eq!(img.data.as_ref().map(Vec::len), Some(64 * 64 * 4));
 }
+
+#[test]
+fn materiau_mis_a_jour_seulement_si_changement_visible() {
+    use mcf_meteo::SurfacesMeteo;
+    use mcf_meteo::materiau_meteo::{UniformesSurface, appliquer};
+    let mut u = UniformesSurface::default();
+    let abris = Vec4::new(0.0, 0.0, 0.75, 128.0);
+    let mut s = SurfacesMeteo {
+        mouillage: 0.5,
+        ..Default::default()
+    };
+    assert!(appliquer(&mut u, &s, 0.0, abris));
+    s.mouillage += 0.001;
+    assert!(
+        !appliquer(&mut u, &s, 0.0, abris),
+        "écart invisible : pas de renvoi au GPU"
+    );
+    s.mouillage += 0.01;
+    assert!(appliquer(&mut u, &s, 0.0, abris));
+    assert_eq!(u.mouillage, s.mouillage);
+}
