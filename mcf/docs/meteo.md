@@ -27,7 +27,17 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
 ## État
 
 - ✅ Étape 1 : `EtatMeteo`, `PresetMeteo`, `TransitionMeteo`, message `ChangerMeteo`, 10 tests (`cargo test -p mcf_meteo`).
-- ⬜ Étapes 2 à 9.
+- ✅ Étape 2 (partie CPU) : `ChampVent` (profil de couche limite, rafales, turbulence à divergence nulle), bruit
+  de Perlin identique à SkyForge, transport bouclé sur 2 500 m pour rester précis sur des heures de jeu, 9 tests.
+  Le volume 3D sur GPU viendra avec la pluie (étape 3), qui est la première à en avoir besoin.
+- ✅ Étape 3 : pluie et neige sur le GPU (`McfPrecipitationsPlugin`, feature `rendu`). Particules sans état
+  calculées dans le vertex shader (`precipitations.wesl`) : un seul maillage, aucune simulation par image. Boîte
+  toroïdale autour de la caméra, vitesses quantifiées pour boucler exactement sur 600 s, traînées inclinées par le
+  vent local (`ChampVent`), part de neige selon la température. Démo : `cargo run -p mcf_meteo --example
+  demo_meteo` (touches 1 à 5), capture sans écran avec `MCF_CAPTURE=capture.png`. 4 tests CPU.
+  Pas encore d'occlusion (il pleut sous les toits) : prévue avec l'humidité (étape 4).
+  Coût GPU non mesuré : rendu vérifié seulement avec un GPU logiciel (llvmpipe), à mesurer dans `mcf_bench`.
+- ⬜ Étapes 4 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
