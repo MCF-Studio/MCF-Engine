@@ -1,33 +1,67 @@
-//! Démo de la météo : un sol, quelques blocs, la pluie ou la neige autour de la caméra.
+//! Démo de la météo : un sol, quelques blocs, un auvent, la pluie ou la neige autour de la caméra. Le sol, les
+//! blocs et l'auvent utilisent le matériau météo (mouillé, flaques, neige).
 //!
 //! `cargo run -p mcf_meteo --example demo_meteo`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 5 s).
-//! `MCF_CAPTURE=fichier.png` : enregistre une capture après quelques secondes puis quitte (tests sans écran).
+//! Variables d'environnement (captures sans écran) :
+//! - `MCF_CAPTURE=fichier.png` : enregistre une capture après quelques secondes puis quitte ;
+//! - `MCF_PRESET=pluie|neige` (tempête par défaut) ;
+//! - `MCF_CAMERA=abri` : caméra sous l'auvent ;
+//! - `MCF_SOL=1` : sol déjà détrempé (ou enneigé) au démarrage.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use mcf_meteo::{AbriPrecipitations, ChangerMeteo, McfMeteoPlugin, McfPrecipitationsPlugin, PresetMeteo};
+use mcf_meteo::{
+    AbriPrecipitations, CarteAbris, ChangerMeteo, MateriauMeteo, McfMateriauMeteoPlugin, McfMeteoPlugin,
+    McfPrecipitationsPlugin, PresetMeteo, SurfacesMeteo, materiau_meteo,
+};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins((DefaultPlugins, McfMeteoPlugin, McfPrecipitationsPlugin))
-        .add_systems(Startup, scene)
-        .add_systems(Update, (touches, capture));
+    app.add_plugins((
+        DefaultPlugins,
+        McfMeteoPlugin,
+        McfPrecipitationsPlugin,
+        McfMateriauMeteoPlugin,
+    ))
+    .add_systems(Startup, scene)
+    .add_systems(Update, (touches, capture));
     app.run();
+}
+
+fn materiau(couleur: Color, rugosite: f32) -> StandardMaterial {
+    StandardMaterial {
+        base_color: couleur,
+        perceptual_roughness: rugosite,
+        ..default()
+    }
 }
 
 fn scene(
     mut commandes: Commands,
     mut maillages: ResMut<Assets<Mesh>>,
-    mut materiaux: ResMut<Assets<StandardMaterial>>,
+    mut materiaux: ResMut<Assets<MateriauMeteo>>,
+    carte: Res<CarteAbris>,
+    mut surfaces: ResMut<SurfacesMeteo>,
     mut demandes: MessageWriter<ChangerMeteo>,
 ) {
+    let sol = materiaux.add(materiau_meteo(
+        materiau(Color::srgb(0.35, 0.33, 0.3), 0.9),
+        0.7,
+        1.0,
+        &carte,
+    ));
     commandes.spawn((
         Mesh3d(maillages.add(Plane3d::default().mesh().size(200.0, 200.0))),
-        MeshMaterial3d(materiaux.add(Color::srgb(0.35, 0.33, 0.3))),
+        MeshMaterial3d(sol),
     ));
     let bloc = maillages.add(Cuboid::new(4.0, 6.0, 4.0));
-    let gris = materiaux.add(Color::srgb(0.6, 0.6, 0.62));
+    let gris = materiaux.add(materiau_meteo(
+        materiau(Color::srgb(0.6, 0.6, 0.62), 0.8),
+        0.4,
+        0.0,
+        &carte,
+    ));
     for (x, z) in [(-10.0, -20.0), (8.0, -30.0), (20.0, -12.0), (-25.0, -40.0)] {
         commandes.spawn((
             Mesh3d(bloc.clone()),
@@ -35,8 +69,13 @@ fn scene(
             Transform::from_xyz(x, 3.0, z),
         ));
     }
-    // Abri : un toit sur quatre poteaux. Il ne pleut pas dessous.
-    let bois = materiaux.add(Color::srgb(0.45, 0.3, 0.2));
+    // Abri : un toit sur quatre poteaux. Il ne pleut pas dessous, le sol y reste sec.
+    let bois = materiaux.add(materiau_meteo(
+        materiau(Color::srgb(0.45, 0.3, 0.2), 0.7),
+        0.6,
+        0.0,
+        &carte,
+    ));
     commandes.spawn((
         Mesh3d(maillages.add(Cuboid::new(7.0, 0.3, 5.0))),
         MeshMaterial3d(bois.clone()),
@@ -59,7 +98,6 @@ fn scene(
         },
         Transform::from_xyz(30.0, 50.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    // `MCF_CAMERA=abri` : caméra sous le toit, regard vers l'extérieur.
     let camera = if std::env::var("MCF_CAMERA").as_deref() == Ok("abri") {
         Transform::from_xyz(-3.0, 1.6, -1.5).looking_at(Vec3::new(-3.0, 1.8, 10.0), Vec3::Y)
     } else {
@@ -71,6 +109,14 @@ fn scene(
         Ok("pluie") => PresetMeteo::Pluie,
         _ => PresetMeteo::Tempete,
     };
+    if std::env::var("MCF_SOL").is_ok() {
+        if preset == PresetMeteo::Neige {
+            surfaces.neige = 1.0;
+        } else {
+            surfaces.mouillage = 1.0;
+            surfaces.flaques = 0.8;
+        }
+    }
     demandes.write(ChangerMeteo {
         cible: preset.etat(),
         duree_s: 0.0,

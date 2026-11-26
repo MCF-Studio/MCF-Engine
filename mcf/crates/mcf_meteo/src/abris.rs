@@ -140,11 +140,15 @@ impl CarteAbris {
     }
 }
 
-pub(crate) fn creer_carte_abris(mut commandes: Commands, mut images: ResMut<Assets<Image>>) {
+/// Crée la carte (appelé à la fin de la construction du plugin, pour qu'elle existe dès le premier `Startup`).
+pub(crate) fn creer_carte_abris(monde: &mut World) {
+    if monde.contains_resource::<CarteAbris>() {
+        return;
+    }
     // 128 cases de 0,75 m = 96 m : couvre la boîte de pluie (70 m) avec de la marge.
     let grille = GrilleAbris::nouvelle(128, 0.75);
-    let image = images.add(grille.image());
-    commandes.insert_resource(CarteAbris { grille, image });
+    let image = monde.resource_mut::<Assets<Image>>().add(grille.image());
+    monde.insert_resource(CarteAbris { grille, image });
 }
 
 pub(crate) fn mettre_a_jour_carte_abris(

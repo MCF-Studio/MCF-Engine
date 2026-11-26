@@ -1,7 +1,9 @@
 //! Météo et eau de MCF Engine, porté de SkyForge (C++ / DirectX 12) vers Bevy.
 //!
 //! Contenu actuel : l'état météo, ses préréglages et les transitions (étape 1), le champ de vent 3D évalué sur le
-//! CPU (étape 2), et la pluie et la neige sur le GPU (étape 3, feature `rendu`, [`McfPrecipitationsPlugin`]).
+//! CPU (étape 2), la pluie et la neige sur le GPU (étape 3, feature `rendu`, [`McfPrecipitationsPlugin`]), les
+//! abris (étape 4a) et les surfaces mouillées, flaques et neige au sol (étape 4b, [`SurfacesMeteo`],
+//! `McfMateriauMeteoPlugin`).
 //! Sans la feature `rendu`, aucune dépendance au rendu : le serveur dédié peut piloter la météo et la diffuser.
 //! Les étapes suivantes (humidité, océan, nuages, son) sont décrites dans `mcf/docs/meteo.md`.
 //!
@@ -27,7 +29,10 @@ pub mod abris;
 pub mod bruit;
 pub mod etat;
 #[cfg(feature = "rendu")]
+pub mod materiau_meteo;
+#[cfg(feature = "rendu")]
 pub mod precipitations;
+pub mod surfaces;
 pub mod transition;
 pub mod vent;
 
@@ -35,7 +40,10 @@ pub mod vent;
 pub use abris::{AbriPrecipitations, CarteAbris};
 pub use etat::{EtatMeteo, PresetMeteo};
 #[cfg(feature = "rendu")]
+pub use materiau_meteo::{MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo};
+#[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};
+pub use surfaces::{ParametresSurfaces, SurfacesMeteo};
 pub use transition::{ChangerMeteo, TransitionMeteo};
 pub use vent::{ChampVent, EchantillonVent, ParametresVent};
 
@@ -53,13 +61,20 @@ impl Plugin for McfMeteoPlugin {
             .register_type::<TransitionMeteo>()
             .register_type::<ChampVent>()
             .register_type::<ParametresVent>()
+            .register_type::<SurfacesMeteo>()
+            .register_type::<ParametresSurfaces>()
             .init_resource::<EtatMeteo>()
             .init_resource::<TransitionMeteo>()
             .init_resource::<ChampVent>()
+            .init_resource::<SurfacesMeteo>()
             .add_message::<ChangerMeteo>()
             .add_systems(
                 Update,
-                (transition::mettre_a_jour_meteo, vent::avancer_vent)
+                (
+                    transition::mettre_a_jour_meteo,
+                    vent::avancer_vent,
+                    surfaces::avancer_surfaces,
+                )
                     .chain()
                     .in_set(MiseAJourMeteo),
             );

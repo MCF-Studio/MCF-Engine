@@ -41,7 +41,13 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   englobantes (opt-in : un terrain ou un arbre ne bloque pas la pluie), reconstruite seulement quand la caméra
   change de case ou qu'un abri bouge. `CarteAbris::a_l_abri(p)` pour le gameplay. 6 tests.
   Limite : un abri est sa boîte englobante (un toit en pente abrite comme un toit plat à sa hauteur maximale).
-- ⬜ Étape 4b : humidité et neige au sol (surfaces mouillées, flaques, neige accumulée).
+- ✅ Étape 4b : surfaces. `SurfacesMeteo` (sans rendu) : le sol se mouille sous la pluie, sèche avec le vent,
+  le soleil et la chaleur, les flaques se remplissent une fois la surface saturée, la neige tient quand il gèle et
+  son eau de fonte mouille le sol (modèle de SkyForge). `MateriauMeteo` = `StandardMaterial` + extension
+  (`materiau_meteo(base, porosité, réception des flaques, &carte)`) : albédo assombri et rugosité réduite selon la
+  porosité, flaques avec ondulations des gouttes sur les surfaces planes, neige sur les faces tournées vers le
+  ciel ; les zones abritées restent sèches. Uniformes renvoyés au GPU seulement si l'écart est visible (1/256).
+  10 tests. Limites : valeurs globales (pas de carte d'humidité par endroit), opt-in matériau par matériau.
 - ⬜ Étapes 5 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client

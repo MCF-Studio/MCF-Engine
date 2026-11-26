@@ -169,13 +169,17 @@ impl Plugin for McfPrecipitationsPlugin {
             .register_type::<AbriPrecipitations>()
             .init_resource::<ReglagesPrecipitations>()
             .init_resource::<EtatPrecipitations>()
-            .add_systems(Startup, (abris::creer_carte_abris, creer_precipitations).chain())
+            .add_systems(Startup, creer_precipitations)
             .add_systems(
                 Update,
                 (abris::mettre_a_jour_carte_abris, mettre_a_jour_precipitations)
                     .chain()
                     .after(MiseAJourMeteo),
             );
+    }
+
+    fn finish(&self, app: &mut App) {
+        abris::creer_carte_abris(app.world_mut());
     }
 }
 
