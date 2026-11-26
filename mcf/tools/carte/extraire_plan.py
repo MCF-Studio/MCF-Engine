@@ -124,12 +124,27 @@ def douglas_peucker(pts, tol):
     return [pts[0], pts[-1]]
 
 
+def chaikin(pts, iterations):
+    """Lissage de Chaikin (coins coupés au quart), extrémités conservées : fini les cassures du squelette."""
+    for _ in range(iterations):
+        if len(pts) < 3:
+            return pts
+        out = [pts[0]]
+        for a, b in zip(pts[:-1], pts[1:]):
+            out.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+            out.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+        out.append(pts[-1])
+        # Les deux points ajoutés près de chaque extrémité sont retirés : le raccord au carrefour reste droit.
+        pts = [out[0]] + out[2:-2] + [out[-1]] if len(out) > 4 else out
+    return pts
+
+
 def routes(sq, classe, monde, min_px, tol):
     out = []
     for c in graphe_squelette(sq):
         if len(c) < min_px:
             continue
-        s = douglas_peucker(c, tol)
+        s = chaikin(douglas_peucker(c, tol), 2)
         pts = [monde(y, x) for y, x in s]
         # Une route a au moins 2 points distincts, et pas de segment ridicule.
         propres = [pts[0]]

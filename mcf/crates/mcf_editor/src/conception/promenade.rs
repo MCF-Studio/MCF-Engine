@@ -69,6 +69,42 @@ pub struct Promenade {
     active: bool,
     /// Caméra avant la promenade (distance, tangage), rendue à la sortie.
     camera_avant: Option<(f32, f32, f32)>,
+    /// Physique des bâtiments coupée (touche C) : on traverse les murs.
+    sans_collisions: bool,
+    /// Empreintes des bâtiments indexées, refaites quand le bâti change.
+    obstacles: Option<Obstacles>,
+}
+
+/// Empreintes des bâtiments (murs) pour les collisions du personnage.
+struct Obstacles {
+    revision: u64,
+    index: mcf_carte::grille::Grille,
+    polys: Vec<Vec<P2>>,
+}
+
+/// Rayon du personnage (m).
+const RAYON: f64 = 0.35;
+
+impl Obstacles {
+    fn de(carte: &mcf_carte::Carte) -> Self {
+        let polys: Vec<Vec<P2>> = carte.batiments.values().map(|b| b.empreinte.clone()).collect();
+        Self {
+            revision: carte.revisions.batiments,
+            index: mcf_carte::grille::Grille::de_polygones(&polys, 32.0),
+            polys,
+        }
+    }
+
+    /// Le personnage (disque de `RAYON`) posé en `p` touche un mur.
+    fn bloque(&self, p: P2) -> bool {
+        let b = [[p[0] - RAYON, p[1] - RAYON], [p[0] + RAYON, p[1] + RAYON]];
+        self.index.proches(&b).into_iter().any(|i| {
+            let poly = &self.polys[i as usize];
+            mcf_geo::polygone::contient(poly, p)
+                || (0..poly.len())
+                    .any(|k| mcf_geo::distance_segment(p, poly[k], poly[(k + 1) % poly.len()]) < RAYON)
+        })
+    }
 }
 
 /// Racine du personnage.
@@ -243,6 +279,14 @@ fn marcher(
             }
         }
     }
+    if !zone.clavier_ui && touches.just_pressed(KeyCode::KeyC) {
+        promenade.sans_collisions = !promenade.sans_collisions;
+        projet.info(if promenade.sans_collisions {
+            "Promenade : physique des bâtiments coupée (C pour la remettre)."
+        } else {
+            "Promenade : physique des bâtiments active, on ne traverse plus les murs (C pour la couper)."
+        });
+    }
     let court = touches.pressed(KeyCode::ShiftLeft) || touches.pressed(KeyCode::ShiftRight);
     let allure = match (d.length_squared() > 0.0, court) {
         (false, _) => Allure::Arret,
@@ -257,8 +301,27 @@ fn marcher(
             promenade.position[0] + f64::from(d.x * v * dt),
             promenade.position[1] + f64::from(d.y * v * dt),
         ];
-        if projet.carte.manifeste.contient(suivant) {
-            promenade.position = suivant;
+        // Physique des bâtiments : on ne traverse pas un mur, on glisse le long (un axe à la fois).
+        if !promenade.sans_collisions
+            && promenade
+                .obstacles
+                .as_ref()
+                .is_none_or(|o| o.revision != projet.carte.revisions.batiments)
+        {
+            promenade.obstacles = Some(Obstacles::de(&projet.carte));
+        }
+        let depart = promenade.position;
+        let libre = |q: P2| {
+            projet.carte.manifeste.contient(q)
+                && (promenade.sans_collisions || promenade.obstacles.as_ref().is_none_or(|o| !o.bloque(q)))
+        };
+        // Déjà dans un mur (posé dedans, ou physique remise en marche) : on peut en sortir.
+        let coince = !libre(depart);
+        for q in [suivant, [suivant[0], depart[1]], [depart[0], suivant[1]]] {
+            if libre(q) || (coince && projet.carte.manifeste.contient(q)) {
+                promenade.position = q;
+                break;
+            }
         }
         // Le modèle regarde vers +Z (glTF) : cap = angle de +Z vers la direction de marche.
         let voulu = bevy::math::ops::atan2(d.x, d.y);

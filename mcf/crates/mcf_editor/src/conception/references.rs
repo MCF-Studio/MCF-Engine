@@ -20,6 +20,8 @@ use super::{COUCHE_3D, COUCHE_PLAN, CibleGlisse, Edition, Projet, textures::mipm
 
 /// Points du drapé 3D par côté : une maille tous les 1/`DRAPE` de l'image.
 const DRAPE: usize = 128;
+/// Morceaux du drapé par côté (`DRAPE` doit en être un multiple).
+const DRAPE_MORCEAUX: usize = 16;
 /// Hauteur du drapé au-dessus du sol (m) : évite le scintillement avec le terrain.
 const DRAPE_DESSUS_M: f64 = 0.35;
 /// Écart vertical entre deux calques superposés dans le Plan (m) : 16 calques au plus tiennent sous le voile des
@@ -161,13 +163,20 @@ fn afficher(
             Transform::IDENTITY,
             RenderLayers::layer(COUCHE_PLAN),
         ));
-        commands.spawn((
-            Calque,
-            Mesh3d(meshes.add(drape(r, sol, DRAPE_DESSUS_M + ETAGE_3D_M * f64::from(etage)))),
-            MeshMaterial3d(materiau),
-            Transform::IDENTITY,
-            RenderLayers::layer(COUCHE_3D),
-        ));
+        // Le drapé suit le sol de loin (une maille tous les ~250 m sur une grande carte) : de près il couvrirait les
+        // routes et ferait croire à un sol plus haut que le vrai. Il ne sert donc que de repère au loin, là où le
+        // terrain fin s'arrête (`terrain_fin`) ; découpé en morceaux pour que la distance soit celle de chaque morceau.
+        for morceau in drape(r, sol, DRAPE_DESSUS_M + ETAGE_3D_M * f64::from(etage)) {
+            let (morceau, transform) = super::scene::recentrer(morceau);
+            commands.spawn((
+                Calque,
+                Mesh3d(meshes.add(morceau)),
+                MeshMaterial3d(materiau.clone()),
+                transform,
+                RenderLayers::layer(COUCHE_3D),
+                super::terrain_fin::portee_grossier(),
+            ));
+        }
     }
     affichees.vu = voulu;
     affichees.altitude = altitude;
@@ -210,38 +219,51 @@ fn quadrilatere(r: &Reference, y: f32) -> Mesh {
 }
 
 /// Image drapée sur le terrain : grille de `DRAPE` × `DRAPE` mailles entre les quatre coins du calque, chaque
-/// point posé `dessus` mètres au-dessus du sol (hors de la carte : hauteur du bord le plus proche, cf. `Relief::hauteur`).
-fn drape(r: &Reference, sol: &Relief, dessus: f64) -> Mesh {
+/// point posé `dessus` mètres au-dessus du sol (hors de la carte : hauteur du bord le plus proche, cf. `Relief::hauteur`),
+/// rendue en `DRAPE_MORCEAUX` × `DRAPE_MORCEAUX` morceaux.
+fn drape(r: &Reference, sol: &Relief, dessus: f64) -> Vec<Mesh> {
     let [hg, hd, bd, bg] = r.coins();
     let lerp = |a: [f64; 2], b: [f64; 2], t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    let n = DRAPE + 1;
-    let mut positions = Vec::with_capacity(n * n);
-    let mut uvs = Vec::with_capacity(n * n);
-    for j in 0..n {
-        let v = j as f64 / DRAPE as f64;
-        let (gauche, droite) = (lerp(hg, bg, v), lerp(hd, bd, v));
-        for i in 0..n {
-            let u = i as f64 / DRAPE as f64;
-            let p = lerp(gauche, droite, u);
-            let y = sol.hauteur(p) + dessus;
-            positions.push([p[0] as f32, y as f32, p[1] as f32]);
-            uvs.push([u as f32, v as f32]);
+    let point = |i: usize, j: usize| {
+        let (u, v) = (i as f64 / DRAPE as f64, j as f64 / DRAPE as f64);
+        let p = lerp(lerp(hg, bg, v), lerp(hd, bd, v), u);
+        (
+            [p[0] as f32, (sol.hauteur(p) + dessus) as f32, p[1] as f32],
+            [u as f32, v as f32],
+        )
+    };
+    let cote = DRAPE / DRAPE_MORCEAUX;
+    let n = cote + 1;
+    let mut morceaux = Vec::with_capacity(DRAPE_MORCEAUX * DRAPE_MORCEAUX);
+    for mj in 0..DRAPE_MORCEAUX {
+        for mi in 0..DRAPE_MORCEAUX {
+            let (mut positions, mut uvs) = (Vec::with_capacity(n * n), Vec::with_capacity(n * n));
+            for j in 0..n {
+                for i in 0..n {
+                    let (p, uv) = point(mi * cote + i, mj * cote + j);
+                    positions.push(p);
+                    uvs.push(uv);
+                }
+            }
+            let mut indices = Vec::with_capacity(cote * cote * 6);
+            for j in 0..cote {
+                for i in 0..cote {
+                    let a = (j * n + i) as u32;
+                    let (b, c, d) = (a + 1, a + n as u32, a + n as u32 + 1);
+                    // Même sens que `quadrilatere` : face vers +Y.
+                    indices.extend_from_slice(&[a, c, b, b, c, d]);
+                }
+            }
+            morceaux.push(
+                Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n * n])
+                    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+                    .with_inserted_indices(Indices::U32(indices)),
+            );
         }
     }
-    let mut indices = Vec::with_capacity(DRAPE * DRAPE * 6);
-    for j in 0..DRAPE {
-        for i in 0..DRAPE {
-            let a = (j * n + i) as u32;
-            let (b, c, d) = (a + 1, a + n as u32, a + n as u32 + 1);
-            // Même sens que `quadrilatere` : face vers +Y.
-            indices.extend_from_slice(&[a, c, b, b, c, d]);
-        }
-    }
-    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n * n])
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(indices))
+    morceaux
 }
 
 #[cfg(test)]

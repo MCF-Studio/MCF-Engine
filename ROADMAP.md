@@ -194,6 +194,11 @@ modèles chargés par zone autour de la caméra (1,4 km, bloc au-delà en fondu)
 Cause des 170 ms par image trouvée : l'Inspecteur recomptait les carrefours (nœuds × tronçons) à chaque image. Mesuré
 (mode dev) : **≈ 16 ms par image** en vue d'ensemble et en ville (283 ms avant), scène en ≈ 10 s (200 s avant).
 Profileur ajouté : `cargo editor-profil` (Tracy) et `cargo editor-trace` (Perfetto).
+Terrain fin : tuiles de 512 m à pleine résolution (4 m) autour de la caméra (1,5 km), terrain grossier (32 m) et
+calque de référence drapé (250 m) seulement au-delà : routes posées dans le vrai terrain, pieds au sol en promenade.
+Morceaux recentrés (le fondu GPU de `VisibilityRange` mesure depuis l'origine de l'objet). Routes lissées (Chaikin)
+à l'extraction, 4 097 / 4 097 tracées. Promenade : collisions avec les empreintes des bâtiments (C pour couper),
+essayé à l'écran (arrêt contre un mur, traversée physique coupée).
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la

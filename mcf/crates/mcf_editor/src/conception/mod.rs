@@ -17,6 +17,7 @@ mod promenade;
 mod references;
 mod releve;
 mod scene;
+mod terrain_fin;
 mod textures;
 mod ui;
 
@@ -464,6 +465,7 @@ pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppE
         gizmo::GizmoPlugin,
         modeles::ModelesPlugin,
         bibliotheque::BibliothequePlugin,
+        terrain_fin::TerrainFinPlugin,
     ))
     .add_systems(Startup, preparer)
     .add_systems(EguiPrimaryContextPass, ui::interface);

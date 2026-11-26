@@ -287,13 +287,17 @@ fn reconstruire(
                 mats.plan.clone(),
                 COUCHE_PLAN,
             );
-            ajouter(
+            let (mesh, transform) = recentrer(trois_d);
+            let e = ajouter(
                 &mut commands,
                 Partie::Terrain,
-                trois_d,
+                mesh,
                 surfaces.herbe.clone(),
                 COUCHE_3D,
             );
+            commands
+                .entity(e)
+                .insert((transform, super::terrain_fin::portee_grossier()));
         }
         // Courbes de niveau du Plan : un maillage de lignes construit ici, une fois (elles étaient redessinées une à
         // une à chaque image, des centaines de milliers de segments sur une grande carte).
@@ -506,18 +510,14 @@ fn reconstruire(
             }
             for (lot, mat) in [(toits, &surfaces.toit), (murs, &surfaces.facade)] {
                 if !lot.vide() {
-                    let e = ajouter(
-                        &mut commands,
-                        Partie::Bati,
-                        lot.maillage(),
-                        mat.clone(),
-                        COUCHE_3D,
-                    );
-                    commands.entity(e).insert(if modele {
+                    let (mesh, transform) = recentrer(lot.maillage());
+                    let e = ajouter(&mut commands, Partie::Bati, mesh, mat.clone(), COUCHE_3D);
+                    let portee = if modele {
                         portee_lod.clone()
                     } else {
                         portee.clone()
-                    });
+                    };
+                    commands.entity(e).insert((transform, portee));
                 }
             }
         }
@@ -562,70 +562,109 @@ fn reconstruire(
 
 /// Maillages du terrain par morceaux (plan, 3D). Au plus ~1024 échantillons par côté sont affichés : au-delà, la
 /// grille est sous-échantillonnée (le relief source et le terrain final restent à pleine résolution).
+/// Ramène les sommets d'un maillage autour de son centre et rend le `Transform` qui le replace. Indispensable avec
+/// `VisibilityRange` : le fondu calculé par la carte graphique mesure la distance à l'**origine** de l'objet, pas à sa
+/// boîte ; un morceau aux sommets en coordonnées du monde (origine au centre de la carte) serait jugé à des kilomètres.
+pub fn recentrer(mut mesh: Mesh) -> (Mesh, Transform) {
+    use bevy::mesh::VertexAttributeValues;
+    let mut centre = Vec3::ZERO;
+    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+        && !pos.is_empty()
+    {
+        let (mut min, mut max) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for p in pos.iter() {
+            min = min.min(Vec3::from(*p));
+            max = max.max(Vec3::from(*p));
+        }
+        centre = (min + max) / 2.0;
+        for p in pos.iter_mut() {
+            *p = (Vec3::from(*p) - centre).to_array();
+        }
+    }
+    (mesh, Transform::from_translation(centre))
+}
+
+/// Échantillons d'un axe de `0` à `n - 1` au pas `pas` (le dernier toujours inclus).
+fn echantillons(n: usize, pas: usize) -> Vec<usize> {
+    (0..n)
+        .step_by(pas)
+        .chain((!(n - 1).is_multiple_of(pas)).then_some(n - 1))
+        .collect()
+}
+
+/// Maillages (Plan, 3D) d'un morceau de terrain : échantillons `xs` × `zs` du relief.
+pub fn maillage_morceau(t: &Relief, xs: &[usize], zs: &[usize], eau: Option<f64>) -> (Mesh, Mesh) {
+    let (nx, nz) = (xs.len(), zs.len());
+    let mut pos = Vec::with_capacity(nx * nz);
+    let mut nor = Vec::with_capacity(nx * nz);
+    let mut col_plan = Vec::with_capacity(nx * nz);
+    let mut col_3d = Vec::with_capacity(nx * nz);
+    let mut uv = Vec::with_capacity(nx * nz);
+    let mut tan = Vec::with_capacity(nx * nz);
+    for &iz in zs {
+        for &ix in xs {
+            let p = t.position(ix, iz);
+            let h = f64::from(t.h[t.index(ix, iz)]);
+            let n = t.normale(p);
+            pos.push([p[0] as f32, h as f32, p[1] as f32]);
+            nor.push(n.map(|c| c as f32));
+            col_plan.push(lin_f(relief::couleur_plan(h, n, eau)));
+            col_3d.push(lin_f(teinte_terrain(h, n, eau)));
+            uv.push([p[0] as f32, p[1] as f32]);
+            tan.push(tangente_sol(Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32)));
+        }
+    }
+    let mut idx = Vec::with_capacity((nx - 1) * (nz - 1) * 6);
+    for j in 0..nz - 1 {
+        for i in 0..nx - 1 {
+            let a = (j * nx + i) as u32;
+            let b = a + 1;
+            let c = a + nx as u32;
+            let d = c + 1;
+            // Face avant vers +Y (sens direct vu du dessus avec +Z vers le bas de l'écran).
+            idx.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+    let fabriquer = |col: Vec<[f32; 4]>| {
+        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos.clone())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nor.clone())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, col)
+            .with_inserted_indices(Indices::U32(idx.clone()))
+    };
+    // Le Plan n'a pas de texture : UV et tangentes seulement pour la 3D.
+    let trois_d = fabriquer(col_3d)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, tan);
+    (fabriquer(col_plan), trois_d)
+}
+
+/// Maillages du terrain grossier par morceaux de `super::terrain_fin::TUILE` échantillons (même découpage que les
+/// tuiles fines, pour que chaque tuile fine remplace exactement son morceau grossier). Au plus ~1024 échantillons par
+/// côté sont affichés : au-delà, la grille est sous-échantillonnée (le relief source et le terrain final restent à
+/// pleine résolution, et la 3D proche est à pleine résolution, `terrain_fin`).
 fn maillages_terrain(t: &Relief, eau: Option<f64>) -> Vec<(Mesh, Mesh)> {
     let mut v = Vec::new();
     if t.nx < 2 || t.nz < 2 {
         return v;
     }
     let pas = t.nx.max(t.nz).div_ceil(1024).max(1);
-    let xs: Vec<usize> = (0..t.nx)
-        .step_by(pas)
-        .chain((!(t.nx - 1).is_multiple_of(pas)).then_some(t.nx - 1))
-        .collect();
-    let zs: Vec<usize> = (0..t.nz)
-        .step_by(pas)
-        .chain((!(t.nz - 1).is_multiple_of(pas)).then_some(t.nz - 1))
-        .collect();
-    const MORCEAU: usize = 128;
+    let tuile = super::terrain_fin::TUILE;
     let mut z0 = 0;
-    while z0 + 1 < zs.len() {
-        let z1 = (z0 + MORCEAU).min(zs.len() - 1);
+    while z0 + 1 < t.nz {
+        let z1 = (z0 + tuile).min(t.nz - 1);
         let mut x0 = 0;
-        while x0 + 1 < xs.len() {
-            let x1 = (x0 + MORCEAU).min(xs.len() - 1);
-            let (nx, nz) = (x1 - x0 + 1, z1 - z0 + 1);
-            let mut pos = Vec::with_capacity(nx * nz);
-            let mut nor = Vec::with_capacity(nx * nz);
-            let mut col_plan = Vec::with_capacity(nx * nz);
-            let mut col_3d = Vec::with_capacity(nx * nz);
-            let mut uv = Vec::with_capacity(nx * nz);
-            let mut tan = Vec::with_capacity(nx * nz);
-            for &iz in &zs[z0..=z1] {
-                for &ix in &xs[x0..=x1] {
-                    let p = t.position(ix, iz);
-                    let h = f64::from(t.h[t.index(ix, iz)]);
-                    let n = t.normale(p);
-                    pos.push([p[0] as f32, h as f32, p[1] as f32]);
-                    nor.push(n.map(|c| c as f32));
-                    col_plan.push(lin_f(relief::couleur_plan(h, n, eau)));
-                    col_3d.push(lin_f(teinte_terrain(h, n, eau)));
-                    uv.push([p[0] as f32, p[1] as f32]);
-                    tan.push(tangente_sol(Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32)));
-                }
-            }
-            let mut idx = Vec::with_capacity((nx - 1) * (nz - 1) * 6);
-            for j in 0..nz - 1 {
-                for i in 0..nx - 1 {
-                    let a = (j * nx + i) as u32;
-                    let b = a + 1;
-                    let c = a + nx as u32;
-                    let d = c + 1;
-                    // Face avant vers +Y (sens direct vu du dessus avec +Z vers le bas de l'écran).
-                    idx.extend_from_slice(&[a, c, b, b, c, d]);
-                }
-            }
-            let fabriquer = |col: Vec<[f32; 4]>| {
-                Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos.clone())
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, nor.clone())
-                    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, col)
-                    .with_inserted_indices(Indices::U32(idx.clone()))
-            };
-            // Le Plan n'a pas de texture : UV et tangentes seulement pour la 3D.
-            let trois_d = fabriquer(col_3d)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, tan);
-            v.push((fabriquer(col_plan), trois_d));
+        while x0 + 1 < t.nx {
+            let x1 = (x0 + tuile).min(t.nx - 1);
+            let xs: Vec<usize> = echantillons(x1 - x0 + 1, pas)
+                .into_iter()
+                .map(|i| x0 + i)
+                .collect();
+            let zs: Vec<usize> = echantillons(z1 - z0 + 1, pas)
+                .into_iter()
+                .map(|i| z0 + i)
+                .collect();
+            v.push(maillage_morceau(t, &xs, &zs, eau));
             x0 = x1;
         }
         z0 = z1;
