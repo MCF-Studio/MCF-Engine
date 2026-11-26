@@ -49,6 +49,10 @@ pub struct Etat {
     textures: HashMap<String, Option<egui::TextureId>>,
     /// Vignettes demandées par la dernière image de l'interface.
     demandes: Vec<String>,
+    /// Section à afficher à la prochaine ouverture (identifiant).
+    aller_section: Option<String>,
+    /// Replier la fenêtre à la prochaine image (une pose vient d'être armée).
+    replier: bool,
 }
 
 pub struct BibliothequePlugin;
@@ -98,6 +102,46 @@ pub fn charger(assets: &Path) -> Catalogue {
 /// Chemin d'asset d'une vignette.
 pub fn vignette(id: &str) -> String {
     format!("{DOSSIER}/{VIGNETTES}/{id}.png")
+}
+
+impl Etat {
+    /// Ouvre la fenêtre sur la section d'identifiant `section` (si elle existe ; sinon telle quelle).
+    pub fn ouvrir_sur(&mut self, section: &str) {
+        self.ouverte = true;
+        self.recherche.clear();
+        self.aller_section = Some(section.to_owned());
+    }
+}
+
+/// Bâtiment modélisé (fiche du catalogue des bâtiments) qui correspond à un objet de la bibliothèque : même modèle,
+/// d'après son chemin (`props/` en tête et extension `.gltf` / `.glb` mis à part). Un tel objet se pose comme un
+/// bâtiment (empreinte, conflits, lotissement), les autres comme du décor.
+pub fn fiche_de(o: &bibliotheque::Objet, fiches: &super::modeles::Catalogue) -> Option<usize> {
+    let sans = |c: &str| {
+        let c = c.strip_prefix("props/").unwrap_or(c);
+        c.rsplit_once('.').map_or(c, |(a, _)| a).to_ascii_lowercase()
+    };
+    let cle = sans(&o.fichier);
+    fiches.fiches.iter().position(|f| sans(&f.fichier) == cle)
+}
+
+/// Arme la pose de l'objet `p` : bâtiment modélisé s'il a une fiche, décor sinon ; la fenêtre se replie pour
+/// laisser voir la carte.
+fn armer(
+    p: Place,
+    b: &Bibliotheque,
+    etat: &mut Etat,
+    edition: &mut super::Edition,
+    fiches: &super::modeles::Catalogue,
+) {
+    let Some(o) = b.objet(p) else { return };
+    edition.selection = super::Selection::Rien;
+    edition.outil = match fiche_de(o, fiches) {
+        Some(i) => super::Outil::Poser(i),
+        None => super::Outil::PoserObjet(p),
+    };
+    etat.selection = Some(p);
+    etat.replier = true;
 }
 
 /// Touche B : ouvrir / fermer (sauf pendant une saisie).
@@ -156,13 +200,39 @@ pub fn bouton(ui: &mut egui::Ui, etat: &mut Etat) {
 }
 
 /// Fenêtre de la bibliothèque.
-pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, etat: &mut Etat) {
+pub fn fenetre(
+    ctx: &egui::Context,
+    catalogue: &Catalogue,
+    etat: &mut Etat,
+    edition: &mut super::Edition,
+    fiches: &super::modeles::Catalogue,
+) {
     if !etat.ouverte {
         return;
     }
+    if let (Some(id), Some(b)) = (etat.aller_section.take(), &catalogue.biblio)
+        && let Some(i) = b.sections.iter().position(|s| s.id == id)
+    {
+        etat.section = i;
+        etat.famille = 0;
+    }
     let mut ouverte = true;
-    egui::Window::new("📚 Bibliothèque d'assets")
-        .open(&mut ouverte)
+    let replier = std::mem::take(&mut etat.replier);
+    let mut fenetre = egui::Window::new("📚 Bibliothèque d'assets");
+    if replier {
+        fenetre = fenetre.open(&mut ouverte).collapsible(true);
+        // Repliée : la carte reste visible pendant la pose ; un clic sur la barre la rouvre.
+        let id = egui::Id::new("📚 Bibliothèque d'assets");
+        if let Some(mut etat_egui) =
+            egui::collapsing_header::CollapsingState::load(ctx, id.with("collapsing"))
+        {
+            etat_egui.set_open(false);
+            etat_egui.store(ctx);
+        }
+    } else {
+        fenetre = fenetre.open(&mut ouverte);
+    }
+    fenetre
         .default_size([1040.0, 660.0])
         .min_size([640.0, 360.0])
         .resizable(true)
@@ -176,12 +246,18 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, etat: &mut Etat) {
                 ui.label("Importer : python mcf/tools/bibliotheque/importer.py");
                 return;
             };
-            contenu(ui, b, etat);
+            contenu(ui, b, etat, edition, fiches);
         });
     etat.ouverte = ouverte;
 }
 
-fn contenu(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
+fn contenu(
+    ui: &mut egui::Ui,
+    b: &Bibliotheque,
+    etat: &mut Etat,
+    edition: &mut super::Edition,
+    fiches: &super::modeles::Catalogue,
+) {
     // Les panneaux intérieurs se rétrécissent à leur contenu : on garde une fenêtre confortable.
     ui.set_min_size(egui::vec2(980.0, 600.0));
     // Barre de recherche.
@@ -224,22 +300,24 @@ fn contenu(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
         .resizable(true)
         .default_size(280.0)
         .size_range(220.0..=420.0)
-        .show(ui, |ui| fiche(ui, b, etat));
+        .show(ui, |ui| fiche(ui, b, etat, edition, fiches));
 
     egui::CentralPanel::default().show(ui, |ui| {
-        if recherche.is_empty() {
-            famille_courante(ui, b, etat);
+        let arme = if recherche.is_empty() {
+            famille_courante(ui, b, etat)
         } else {
-            resultats(ui, b, etat, &recherche);
+            resultats(ui, b, etat, &recherche)
+        };
+        if let Some(p) = arme {
+            armer(p, b, etat, edition, fiches);
         }
     });
 }
 
-/// Familles de la section courante (une ligne de choix) puis la grille de la famille choisie.
-fn famille_courante(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
-    let Some(s) = b.sections.get(etat.section) else {
-        return;
-    };
+/// Familles de la section courante (une ligne de choix) puis la grille de la famille choisie. Renvoie l'objet
+/// double-cliqué (à poser).
+fn famille_courante(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) -> Option<Place> {
+    let s = b.sections.get(etat.section)?;
     ui.heading(format!("{} {}", s.icone, s.nom));
     ui.horizontal_wrapped(|ui| {
         for (j, f) in s.familles.iter().enumerate() {
@@ -250,19 +328,18 @@ fn famille_courante(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
         }
     });
     ui.separator();
-    let Some(f) = s.familles.get(etat.famille) else {
-        return;
-    };
+    let f = s.familles.get(etat.famille)?;
     let places: Vec<Place> = (0..f.objets.len())
         .map(|k| (etat.section, etat.famille, k))
         .collect();
     egui::ScrollArea::vertical()
         .id_salt(("famille", etat.section, etat.famille))
         .auto_shrink([false, false])
-        .show(ui, |ui| grille(ui, b, etat, &places));
+        .show(ui, |ui| grille(ui, b, etat, &places))
+        .inner
 }
 
-fn resultats(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, recherche: &str) {
+fn resultats(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, recherche: &str) -> Option<Place> {
     let places = b.chercher(recherche, MAX_RESULTATS);
     ui.horizontal(|ui| {
         ui.heading("Résultats");
@@ -279,18 +356,20 @@ fn resultats(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, recherche: &s
     ui.separator();
     if places.is_empty() {
         ui.label("Aucun objet ne correspond. Essayez un autre mot (en français ou en anglais).");
-        return;
+        return None;
     }
     egui::ScrollArea::vertical()
         .id_salt("resultats")
         .auto_shrink([false, false])
-        .show(ui, |ui| grille(ui, b, etat, &places));
+        .show(ui, |ui| grille(ui, b, etat, &places))
+        .inner
 }
 
-/// Grille de cartes (vignette + nom).
-fn grille(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, places: &[Place]) {
+/// Grille de cartes (vignette + nom). Renvoie l'objet double-cliqué.
+fn grille(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, places: &[Place]) -> Option<Place> {
     let largeur = ui.available_width();
     let colonnes = ((largeur / (CARTE + 8.0)).floor() as usize).max(1);
+    let mut arme = None;
     egui::Grid::new(("grille", places.first().copied()))
         .spacing([8.0, 8.0])
         .show(ui, |ui| {
@@ -302,13 +381,17 @@ fn grille(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat, places: &[Place]
                 if rep.clicked() {
                     etat.selection = Some(*p);
                 }
+                if rep.double_clicked() {
+                    arme = Some(*p);
+                }
                 let famille = &b.sections[p.0].familles[p.1].nom;
-                rep.on_hover_text(format!("{}\n{famille}", o.nom));
+                rep.on_hover_text(format!("{}\n{famille}\nDouble-clic : poser sur la carte", o.nom));
                 if (n + 1) % colonnes == 0 {
                     ui.end_row();
                 }
             }
         });
+    arme
 }
 
 fn carte(ui: &mut egui::Ui, nom: &str, tex: Option<egui::TextureId>, choisi: bool) -> egui::Response {
@@ -369,7 +452,13 @@ fn carte(ui: &mut egui::Ui, nom: &str, tex: Option<egui::TextureId>, choisi: boo
 }
 
 /// Fiche de l'objet choisi.
-fn fiche(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
+fn fiche(
+    ui: &mut egui::Ui,
+    b: &Bibliotheque,
+    etat: &mut Etat,
+    edition: &mut super::Edition,
+    fiches: &super::modeles::Catalogue,
+) {
     let Some(p) = etat.selection else {
         ui.add_space(12.0);
         ui.label(egui::RichText::new("Choisissez un objet pour voir sa fiche.").weak());
@@ -421,8 +510,63 @@ fn fiche(ui: &mut egui::Ui, b: &Bibliotheque, etat: &mut Etat) {
         );
     }
     ui.add_space(8.0);
-    if ui.button("📋 Copier l'identifiant").clicked() {
+    let batiment = fiche_de(o, fiches).and_then(|i| fiches.fiches.get(i));
+    let present = racine_assets().join(DOSSIER).join(&o.fichier).is_file();
+    let texte = match batiment {
+        Some(_) => "✋ Poser ce bâtiment",
+        None => "✋ Poser sur la carte",
+    };
+    let bouton = ui.add_enabled(
+        present,
+        egui::Button::new(egui::RichText::new(texte).strong())
+            .min_size(egui::vec2(ui.available_width(), 32.0)),
+    );
+    let bouton = match batiment {
+        Some(f) => bouton.on_hover_text(format!(
+            "Bâtiment modélisé « {} » : posé avec son empreinte ({:.0} × {:.0} m), vu par les routes et le lotissement.",
+            f.nom, f.largeur_m, f.profondeur_m
+        )),
+        None => bouton.on_hover_text("Décor : clic sur la carte pour poser, R pour tourner, Échap pour finir."),
+    };
+    let bouton = if present {
+        bouton
+    } else {
+        bouton.on_disabled_hover_text("Modèle absent du dossier assets/bibliotheque (importer.py).")
+    };
+    if bouton.clicked() {
+        armer(p, b, etat, edition, fiches);
+    }
+    if ui.small_button("📋 Copier l'identifiant").clicked() {
         ui.ctx().copy_text(o.id.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Chaque bâtiment modélisé du catalogue se retrouve dans la bibliothèque (il s'y pose avec son empreinte), et
+    /// un objet de décor n'est pas pris pour un bâtiment.
+    #[test]
+    fn batiments_du_catalogue_reconnus_dans_la_bibliotheque() {
+        let b = charger(&racine_assets()).biblio.expect("bibliothèque");
+        let fiches = super::super::modeles::charger(&super::super::modeles::dossier());
+        let tous: Vec<&bibliotheque::Objet> = b
+            .sections
+            .iter()
+            .flat_map(|s| &s.familles)
+            .flat_map(|f| &f.objets)
+            .collect();
+        for (i, f) in fiches.fiches.iter().enumerate() {
+            assert!(
+                tous.iter().any(|o| fiche_de(o, &fiches) == Some(i)),
+                "{} introuvable dans la bibliothèque",
+                f.id
+            );
+        }
+        let banc = b.chercher("banc", 1);
+        let o = b.objet(banc[0]).expect("banc");
+        assert_eq!(fiche_de(o, &fiches), None);
     }
 }
 

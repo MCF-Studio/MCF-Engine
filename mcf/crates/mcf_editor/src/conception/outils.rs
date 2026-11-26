@@ -177,6 +177,17 @@ pub fn quartier_en(carte: &mut Carte, p: P2) -> Option<Id> {
         .map(|(id, _)| *id)
 }
 
+/// Objet de décor le plus proche de `p`, à `rayon` m au plus.
+pub fn objet_en(carte: &Carte, p: P2, rayon: f64) -> Option<Id> {
+    carte
+        .decor
+        .iter()
+        .map(|(id, o)| (*id, mcf_geo::distance(o.position, p)))
+        .filter(|(_, d)| *d <= rayon)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
+}
+
 fn batiment_en(carte: &Carte, p: P2) -> Option<Id> {
     carte
         .batiments
@@ -313,6 +324,10 @@ pub fn supprimer(projet: &mut Projet, edition: &mut Edition) {
             }
             Ok(format!("{n} bâtiment(s) supprimé(s)."))
         }),
+        Selection::Objets(ids) => projet
+            .carte
+            .supprimer_objets(ids)
+            .map(|n| format!("{n} objet(s) supprimé(s) (les objets verrouillés restent).")),
         Selection::Troncon(id) => projet.carte.modifier("Supprimer un tronçon", |tx| {
             if tx.reseau().supprimer_troncon(*id) {
                 Ok("Tronçon supprimé.".to_string())
@@ -390,6 +405,7 @@ fn souris(
     mut edition: ResMut<Edition>,
     mut orbite: ResMut<super::camera::Orbite>,
     catalogue: Res<super::modeles::Catalogue>,
+    biblio: Res<super::bibliotheque::Catalogue>,
     // Vue où le glisser en cours a commencé (`Some(None)` : hors des vues).
     mut vue_glisse: Local<Option<Option<Vue>>>,
 ) {
@@ -642,6 +658,22 @@ fn souris(
                 }
             }
         }
+        Outil::PoserObjet(place) => {
+            if appui {
+                match biblio.biblio.as_ref().and_then(|b| b.objet(place)) {
+                    Some(o) => {
+                        let r = projet.carte.poser_objet(&o.id, p, edition.cap_pose);
+                        let nom = o.nom.clone();
+                        projet.resultat(r, |_| {
+                            format!(
+                                "« {nom} » posé. Cliquez pour en poser un autre, R : tourner, Échap : fini."
+                            )
+                        });
+                    }
+                    None => edition.outil = Outil::Selection,
+                }
+            }
+        }
         Outil::Lotir => {
             if appui {
                 // Un clic sur un bâtiment le sélectionne (pour le déplacer) au lieu de tout relotir.
@@ -778,7 +810,41 @@ fn selectionner(
             (None, false) => {}
         }
     }
-    // 2. Bâtiment (Ctrl : ajoute / retire de la sélection).
+    // 2. Objet de décor (petit : il passe avant le bâtiment ou la route sur lesquels il est posé). Ctrl : ajoute /
+    // retire de la sélection.
+    let marge_objet = marge_ecran_m(projet, p, viseur).max(0.8) * 1.5;
+    if let Some(id) = objet_en(&projet.carte, p, marge_objet) {
+        let mut ids = match &edition.selection {
+            Selection::Objets(v) => v.clone(),
+            _ => Vec::new(),
+        };
+        if ctrl {
+            if let Some(i) = ids.iter().position(|x| *x == id) {
+                ids.remove(i);
+            } else {
+                ids.push(id);
+            }
+            edition.selection = if ids.is_empty() {
+                Selection::Rien
+            } else {
+                Selection::Objets(ids)
+            };
+        } else {
+            if !ids.contains(&id) {
+                ids = vec![id];
+            }
+            edition.selection = Selection::Objets(ids);
+            edition.glisse = Some(Glisse {
+                depart: p,
+                actuel: p,
+                ecran: [Vec2::ZERO; 2],
+                cible: CibleGlisse::Objets,
+            });
+        }
+        suivre_selection(edition);
+        return;
+    }
+    // 3. Bâtiment (Ctrl : ajoute / retire de la sélection).
     if let Some(id) = bat.or_else(|| batiment_en(&projet.carte, p)) {
         let mut ids = match &edition.selection {
             Selection::Batiments(v) => v.clone(),
@@ -810,8 +876,8 @@ fn selectionner(
         suivre_selection(edition);
         return;
     }
-    // 3. Ligne électrique (un trait fin, cliqué à quelques pixels près : avant la route qu'elle longe peut-être),
-    // 4. tronçon, 5. quartier.
+    // 4. Ligne électrique (un trait fin, cliqué à quelques pixels près : avant la route qu'elle longe peut-être),
+    // 5. tronçon, 6. quartier.
     let profils = projet.carte.manifeste.profils;
     let marge = marge_ecran_m(projet, p, viseur);
     let ligne = projet.carte.reseau.ligne_electrique_proche(p, marge);
@@ -854,7 +920,7 @@ fn suivre_selection(edition: &mut Edition) {
         (Selection::Batiments(_), _) => Etape::Bati,
         (Selection::Quartier(_), Etape::Bati) => Etape::Bati,
         (Selection::Quartier(_), _) => Etape::Quartiers,
-        (Selection::Rien, e) => e,
+        (Selection::Objets(_) | Selection::Rien, e) => e,
     };
     if cible != edition.etape || edition.outil != Outil::Selection {
         edition.etape = cible;
@@ -938,6 +1004,15 @@ fn appliquer_glisse(projet: &mut Projet, edition: &Edition, g: Glisse, alt: bool
                 };
                 format!("{n} bâtiment(s) {quoi} (désormais « manuels »).")
             });
+        }
+        CibleGlisse::Objets => {
+            let Selection::Objets(ids) = &edition.selection else {
+                return;
+            };
+            let r = projet
+                .carte
+                .transformer_objets(ids, &mcf_carte::Transformation::deplacement(delta));
+            projet.resultat(r, |n| format!("{n} objet(s) déplacé(s)."));
         }
         CibleGlisse::Reference(id) => {
             let r = projet
@@ -1055,7 +1130,9 @@ fn clavier(
         let sens = if maj { -90.0 } else { 90.0 };
         tourner_90(&mut projet, &mut edition, sens);
     }
-    if touches.just_pressed(KeyCode::Escape) && matches!(edition.outil, Outil::Poser(_)) {
+    if touches.just_pressed(KeyCode::Escape)
+        && matches!(edition.outil, Outil::Poser(_) | Outil::PoserObjet(_))
+    {
         edition.outil = Outil::Selection;
         return;
     }
@@ -1102,9 +1179,27 @@ fn clavier(
 
 /// R : tourne de `deg` le bâtiment en cours de pose, sinon les bâtiments sélectionnés (autour de leur centre).
 pub fn tourner_90(projet: &mut Projet, edition: &mut Edition, deg: f64) {
-    if matches!(edition.outil, Outil::Poser(_)) {
+    if matches!(edition.outil, Outil::Poser(_) | Outil::PoserObjet(_)) {
         edition.cap_pose = mcf_carte::batiments::normaliser_cap(edition.cap_pose + deg);
         projet.info(format!("Cap de pose : {:.0}°.", edition.cap_pose));
+        return;
+    }
+    if let Selection::Objets(ids) = &edition.selection {
+        // Chaque objet tourne sur lui-même (un banc garde sa place, il change d'orientation).
+        let r = projet.carte.modifier("Tourner des objets", |tx| {
+            let mut n = 0;
+            for id in ids {
+                if let Some(o) = tx.objet(*id)
+                    && !o.verrou
+                {
+                    let pivot = o.position;
+                    o.transformer(&mcf_carte::Transformation::rotation(deg, pivot));
+                    n += 1;
+                }
+            }
+            Ok(n)
+        });
+        projet.resultat(r, |n| format!("{n} objet(s) tourné(s) de {deg:.0}°."));
         return;
     }
     let Selection::Batiments(ids) = &edition.selection else {
@@ -1147,6 +1242,14 @@ pub(super) fn nettoyer_selection(projet: &Projet, edition: &mut Edition) {
                 Selection::Rien
             } else {
                 Selection::Batiments(v)
+            }
+        }
+        Selection::Objets(v) => {
+            let v: Vec<Id> = v.into_iter().filter(|i| c.decor.contains_key(i)).collect();
+            if v.is_empty() {
+                Selection::Rien
+            } else {
+                Selection::Objets(v)
             }
         }
         Selection::Troncon(i) if c.reseau.troncons.contains_key(&i) => Selection::Troncon(i),
@@ -1430,7 +1533,8 @@ fn dessiner(
                 dessus.linestrip(drape(terrain, &poly, true, 0.6), jaune);
             }
         }
-        Selection::Rien => {}
+        // Objets de décor : dessinés par `decor`.
+        Selection::Rien | Selection::Objets(_) => {}
     }
     // Tracé ou zone en cours, avec la position du curseur.
     let mut pts = edition.points.clone();

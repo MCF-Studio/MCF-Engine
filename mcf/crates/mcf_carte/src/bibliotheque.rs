@@ -167,6 +167,15 @@ impl Bibliotheque {
             .sum()
     }
 
+    /// Objet d'identifiant `id`.
+    pub fn chercher_id(&self, id: &str) -> Option<&Objet> {
+        self.sections
+            .iter()
+            .flat_map(|s| &s.familles)
+            .flat_map(|f| &f.objets)
+            .find(|o| o.id == id)
+    }
+
     /// Objet à une place.
     pub fn objet(&self, (s, f, o): Place) -> Option<&Objet> {
         self.sections.get(s)?.familles.get(f)?.objets.get(o)

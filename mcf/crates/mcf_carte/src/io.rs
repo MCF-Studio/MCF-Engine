@@ -8,6 +8,7 @@
 //!          /references.json        calques de référence (facultatif)
 //!          /references/r_<id>.png  leurs images, réencodées à l'import
 //!          /batiments/c_X_Z.json   bâti par cellule
+//!          /decor/c_X_Z.json       décor posé depuis la bibliothèque, par cellule (facultatif)
 //!          /relief/t_X_Z.png       heightmap source 16 bits par tuile (bords partagés)
 //!          /calques/<nom>.mcfmap   objets posés
 //!          /exports/               rendus (dérivés, régénérables)
@@ -29,6 +30,7 @@ use serde::de::DeserializeOwned;
 use crate::batiments::{self, FichierBatiments};
 use crate::carte::{Carte, Sale};
 use crate::contours::Contours;
+use crate::decor::{self, FichierDecor};
 use crate::ids::Id;
 use crate::manifeste::{Manifeste, nom_sur};
 use crate::quartiers::Quartiers;
@@ -311,6 +313,31 @@ impl Carte {
                 }
             }
         }
+        let mut tout_decor = BTreeMap::new();
+        let dossier_decor = dossier.join("decor");
+        if dossier_decor.exists() {
+            verifier_pas_lien(&dossier_decor)?;
+            for entree in fs::read_dir(&dossier_decor).map_err(|e| erreur(&dossier_decor, e))? {
+                let chemin = entree.map_err(|e| erreur(&dossier_decor, e))?.path();
+                let nom = chemin.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !(nom.starts_with("c_") && nom.ends_with(".json")) {
+                    continue;
+                }
+                verifier_pas_lien(&chemin)?;
+                let f: FichierDecor = lire_json(&chemin, MAX_CELLULE)?;
+                if f.format != decor::FORMAT || f.version != decor::VERSION {
+                    return Err(erreur(&chemin, "format de décor non géré"));
+                }
+                for (id, o) in f.objets {
+                    if tout_decor.insert(id, o).is_some() {
+                        return Err(erreur(&chemin, format!("objet de décor {id} en double")));
+                    }
+                    if tout_decor.len() > decor::MAX_OBJETS {
+                        return Err(erreur(&chemin, "trop d'objets de décor"));
+                    }
+                }
+            }
+        }
         let mut relief = Relief::plat(&manifeste, 0.0);
         let (tx, tz) = manifeste.tuiles();
         for z in 0..tz {
@@ -344,7 +371,7 @@ impl Carte {
                 }
             }
         }
-        let carte = Carte::assembler(
+        let mut carte = Carte::assembler(
             dossier.to_path_buf(),
             manifeste,
             reseau,
@@ -355,6 +382,7 @@ impl Carte {
             relief,
             calques,
         );
+        carte.decor = tout_decor;
         carte.valider()?;
         Ok(carte)
     }
@@ -382,6 +410,7 @@ impl Carte {
                     contours: true,
                     references: true,
                     batiments: true,
+                    decor: true,
                     relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                     calques: self.calques.keys().cloned().collect(),
                     images: std::collections::BTreeSet::new(),
@@ -421,6 +450,30 @@ impl Carte {
                         format: batiments::FORMAT.into(),
                         version: batiments::VERSION,
                         batiments: contenu,
+                    },
+                )?;
+                a_garder.insert(nom);
+            }
+            // Cellules devenues vides : seuls nos propres fichiers `c_*.json` sont supprimés.
+            for entree in fs::read_dir(&d).map_err(|e| erreur(&d, e))?.flatten() {
+                let nom = entree.file_name().to_string_lossy().into_owned();
+                if nom.starts_with("c_") && nom.ends_with(".json") && !a_garder.contains(&nom) {
+                    fs::remove_file(entree.path()).map_err(|e| erreur(&entree.path(), e))?;
+                }
+            }
+        }
+        if self.sale.decor {
+            let d = cible.join("decor");
+            fs::create_dir_all(&d).map_err(|e| erreur(&d, e))?;
+            let mut a_garder = std::collections::BTreeSet::new();
+            for ((x, z), contenu) in decor::par_cellule(&self.manifeste, &self.decor) {
+                let nom = nom_cellule(x, z);
+                ecrire_json(
+                    &d.join(&nom),
+                    &FichierDecor {
+                        format: decor::FORMAT.into(),
+                        version: decor::VERSION,
+                        objets: contenu,
                     },
                 )?;
                 a_garder.insert(nom);
@@ -507,6 +560,43 @@ mod tests {
         // Dossier non vide refusé.
         let mut autre = Carte::nouvelle(Manifeste::nouveau("autre", 256.0)).expect("carte");
         assert!(autre.enregistrer(Some(&d)).is_err());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn decor_aller_retour_annulation_et_pieges() {
+        let mut c = Carte::nouvelle(Manifeste::nouveau("decor", 512.0)).expect("carte");
+        let a = c.poser_objet("bench_wood", [10.0, 20.0], 45.0).expect("poser");
+        let b = c.poser_objet("tree_oak", [-200.0, 150.0], 0.0).expect("poser");
+        c.mettre_a_l_echelle(&[b], 1.5).expect("échelle");
+        c.transformer_objets(&[a], &crate::Transformation::deplacement([2.0, 0.0]))
+            .expect("déplacer");
+        assert_eq!(c.decor[&a].position, [12.0, 20.0]);
+        c.annuler();
+        assert_eq!(c.decor[&a].position, [10.0, 20.0]);
+        c.refaire();
+        assert!(
+            c.poser_objet("../piege", [0.0, 0.0], 0.0).is_err(),
+            "identifiant non sûr refusé"
+        );
+        assert!(
+            c.poser_objet("banc", [9_000.0, 0.0], 0.0).is_err(),
+            "hors de la carte refusé"
+        );
+        let d = dossier_test("decor");
+        c.enregistrer(Some(&d)).expect("enregistrer");
+        assert_eq!(Carte::ouvrir(&d).expect("ouvrir").decor, c.decor);
+        // Supprimer tout : les cellules vides disparaissent.
+        c.supprimer_objets(&[a, b]).expect("supprimer");
+        c.enregistrer(None).expect("enregistrer");
+        assert!(fs::read_dir(d.join("decor")).expect("dossier").next().is_none());
+        // Fichier piégé (champ inconnu) : la carte est refusée.
+        fs::write(
+            d.join("decor").join("c_000_000.json"),
+            r#"{"format":"mcfdecor","version":1,"objets":{},"code":"x"}"#,
+        )
+        .expect("écrire");
+        assert!(Carte::ouvrir(&d).is_err());
         let _ = fs::remove_dir_all(&d);
     }
 

@@ -252,7 +252,14 @@ pub fn interface(
                                         Etape::Relief => etape_relief(ui, edition),
                                         Etape::Reseau => etape_reseau(ui, projet, edition),
                                         Etape::Quartiers => etape_quartiers(ui, edition),
-                                        Etape::Bati => etape_bati(ui, projet, edition, &catalogue),
+                                        Etape::Bati => etape_bati(
+                                            ui,
+                                            projet,
+                                            edition,
+                                            &catalogue,
+                                            &biblio,
+                                            &mut etat_biblio,
+                                        ),
                                         Etape::Export => etape_export(ui, projet, edition),
                                     }
                                 });
@@ -272,7 +279,7 @@ pub fn interface(
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.heading("Inspecteur");
-                    inspecteur(ui, projet, edition, &catalogue);
+                    inspecteur(ui, projet, edition, &catalogue, &biblio);
                     ui.separator();
                     statistiques(ui, projet);
                     ui.separator();
@@ -290,7 +297,7 @@ pub fn interface(
                 });
         });
 
-    super::bibliotheque::fenetre(ctx, &biblio, &mut etat_biblio);
+    super::bibliotheque::fenetre(ctx, &biblio, &mut etat_biblio, edition, &catalogue);
 
     let reste = racine.available_rect_before_wrap();
     zone.rect = Rect::new(reste.min.x, reste.min.y, reste.max.x, reste.max.y);
@@ -638,7 +645,14 @@ fn familles(ui: &mut egui::Ui, edition: &mut Edition) {
     });
 }
 
-fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, catalogue: &Catalogue) {
+fn etape_bati(
+    ui: &mut egui::Ui,
+    projet: &mut Projet,
+    edition: &mut Edition,
+    catalogue: &Catalogue,
+    biblio: &super::bibliotheque::Catalogue,
+    etat_biblio: &mut super::bibliotheque::Etat,
+) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .selectable_label(edition.outil == Outil::Lotir, "Lotir un quartier")
@@ -681,62 +695,80 @@ fn etape_bati(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, cat
         ],
     );
     ui.separator();
-    liste_batiments(ui, edition, catalogue);
+    pose(ui, edition, catalogue, biblio, etat_biblio);
 }
 
-/// Liste des bâtiments modélisés du catalogue : un clic arme la pose.
-fn liste_batiments(ui: &mut egui::Ui, edition: &mut Edition, catalogue: &Catalogue) {
-    ui.strong("Bâtiments modélisés");
+/// Pose depuis la bibliothèque : bâtiments et décor se choisissent dans la fenêtre 📚 (B) ; ici, ce qui est en
+/// main et son cap.
+fn pose(
+    ui: &mut egui::Ui,
+    edition: &mut Edition,
+    catalogue: &Catalogue,
+    biblio: &super::bibliotheque::Catalogue,
+    etat_biblio: &mut super::bibliotheque::Etat,
+) {
+    ui.strong("Poser depuis la bibliothèque");
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .button("🏠 Bâtiments…")
+            .on_hover_text("Ouvre la bibliothèque sur les bâtiments.")
+            .clicked()
+        {
+            etat_biblio.ouvrir_sur("batiments");
+        }
+        if ui
+            .button("🪑 Décor…")
+            .on_hover_text("Ouvre la bibliothèque : mobilier urbain, arbres, signalisation, barrières…")
+            .clicked()
+        {
+            etat_biblio.ouvrir_sur("mobilier");
+        }
+    });
     if let Some(e) = &catalogue.erreur {
         ui.label(
-            egui::RichText::new(format!("⚠ Catalogue refusé : {e}"))
+            egui::RichText::new(format!("⚠ Catalogue des bâtiments refusé : {e}"))
                 .color(egui::Color32::from_rgb(230, 80, 70)),
         );
-        return;
     }
-    if catalogue.fiches.is_empty() {
-        ui.label(egui::RichText::new("Catalogue vide.").weak());
-        return;
-    }
-    for (i, f) in catalogue.fiches.iter().enumerate() {
-        let dispo = catalogue.disponibles.contains(&f.id);
-        let texte = format!(
-            "{}{} · {:.1} × {:.1} m, {:.1} m de haut",
-            if dispo { "" } else { "⚠ " },
-            f.nom,
-            f.largeur_m,
-            f.profondeur_m,
-            f.hauteur_m
-        );
-        let r = ui.selectable_label(edition.outil == Outil::Poser(i), texte);
-        let r = if dispo {
-            r.on_hover_text(format!("{} ({})", f.fichier, f.famille.nom()))
-        } else {
-            r.on_hover_text(format!(
-                "Modèle absent : {}. Copiez-le du jeu dans assets/batiments (le bâtiment s'affiche en bloc).",
-                f.fichier
-            ))
-        };
-        if r.clicked() {
-            edition.selection = Selection::Rien;
-            edition.outil = if edition.outil == Outil::Poser(i) {
-                Outil::Selection
-            } else {
-                Outil::Poser(i)
-            };
+    let en_main = match edition.outil {
+        Outil::Poser(i) => catalogue.fiches.get(i).map(|f| {
+            format!(
+                "🏠 {} · {:.0} × {:.0} m, {:.0} m de haut",
+                f.nom, f.largeur_m, f.profondeur_m, f.hauteur_m
+            )
+        }),
+        Outil::PoserObjet(place) => biblio
+            .biblio
+            .as_ref()
+            .and_then(|b| b.objet(place))
+            .map(|o| format!("🪑 {}", o.nom)),
+        _ => None,
+    };
+    match en_main {
+        Some(nom) => {
+            ui.label(egui::RichText::new(format!("En main : {nom}")).strong());
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::DragValue::new(&mut edition.cap_pose)
+                        .range(0.0..=359.9)
+                        .speed(1.0)
+                        .suffix("°")
+                        .prefix("cap : "),
+                );
+                if ui.button("Fini (Échap)").clicked() {
+                    edition.outil = Outil::Selection;
+                }
+            });
+            ui.label(egui::RichText::new("Clic : poser · R : +90° · Maj+R : −90°").weak());
         }
-    }
-    if let Outil::Poser(_) = edition.outil {
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::DragValue::new(&mut edition.cap_pose)
-                    .range(0.0..=359.9)
-                    .speed(1.0)
-                    .suffix("°")
-                    .prefix("cap : "),
+        None => {
+            ui.label(
+                egui::RichText::new(
+                    "Choisissez un objet dans la bibliothèque, puis « ✋ Poser » (ou double-clic sur sa vignette).",
+                )
+                .weak(),
             );
-            ui.label(egui::RichText::new("clic : poser · R : +90° · Échap : fini").weak());
-        });
+        }
     }
 }
 
@@ -793,8 +825,15 @@ fn etape_export(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     );
 }
 
-fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, catalogue: &Catalogue) {
+fn inspecteur(
+    ui: &mut egui::Ui,
+    projet: &mut Projet,
+    edition: &mut Edition,
+    catalogue: &Catalogue,
+    biblio: &super::bibliotheque::Catalogue,
+) {
     match edition.selection.clone() {
+        Selection::Objets(ids) => objets(ui, projet, edition, biblio, &ids),
         Selection::Rien => {
             ui.label(egui::RichText::new("Rien de sélectionné.").weak());
         }
@@ -1032,6 +1071,144 @@ fn inspecteur(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition, cat
             });
         }
     }
+}
+
+/// Objets de décor sélectionnés : nom, position, cap, échelle, hauteur, verrou ; une étape d'historique par valeur
+/// saisie.
+fn objets(
+    ui: &mut egui::Ui,
+    projet: &mut Projet,
+    edition: &mut Edition,
+    biblio: &super::bibliotheque::Catalogue,
+    ids: &[mcf_carte::Id],
+) {
+    let premiers: Vec<mcf_carte::ObjetDecor> = ids
+        .iter()
+        .filter_map(|i| projet.carte.decor.get(i).cloned())
+        .collect();
+    let Some(o) = premiers.first().cloned() else {
+        return;
+    };
+    let nom = |id: &str| {
+        biblio
+            .biblio
+            .as_ref()
+            .and_then(|b| b.chercher_id(id))
+            .map_or_else(|| format!("{id} (absent de la bibliothèque)"), |x| x.nom.clone())
+    };
+    if ids.len() == 1 {
+        let id = ids[0];
+        ui.strong(nom(&o.modele));
+        ui.label(egui::RichText::new(&o.modele).monospace().weak());
+        ui.add_enabled_ui(!o.verrou, |ui| {
+            let (mut x, mut z) = (o.position[0], o.position[1]);
+            ui.horizontal(|ui| {
+                let rx = ui.add(
+                    egui::DragValue::new(&mut x)
+                        .speed(0.05)
+                        .fixed_decimals(2)
+                        .prefix("X : ")
+                        .suffix(" m"),
+                );
+                let rz = ui.add(
+                    egui::DragValue::new(&mut z)
+                        .speed(0.05)
+                        .fixed_decimals(2)
+                        .prefix("Z : ")
+                        .suffix(" m"),
+                );
+                if rx.changed() || rz.changed() {
+                    let t = Transformation::deplacement([x - o.position[0], z - o.position[1]]);
+                    let r = projet.carte.transformer_objets(&[id], &t);
+                    projet.resultat(r, |_| format!("Objet en ({x:.2} ; {z:.2})."));
+                }
+            });
+            let mut cap = o.cap_deg;
+            let mut deg = 0.0;
+            ui.horizontal(|ui| {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut cap)
+                            .range(0.0..=359.9)
+                            .speed(0.5)
+                            .fixed_decimals(1)
+                            .prefix("cap : ")
+                            .suffix("°"),
+                    )
+                    .changed()
+                {
+                    deg = cap - o.cap_deg;
+                }
+                for (texte, d) in [
+                    ("⟲ 90°", 90.0),
+                    ("⟳ 90°", -90.0),
+                    ("⟲ 15°", 15.0),
+                    ("⟳ 15°", -15.0),
+                ] {
+                    if ui.small_button(texte).clicked() {
+                        deg = d;
+                    }
+                }
+            });
+            if deg != 0.0 {
+                let r = projet
+                    .carte
+                    .transformer_objets(&[id], &Transformation::rotation(deg, o.position));
+                projet.resultat(r, |_| format!("Tourné de {deg:.1}°."));
+            }
+            let mut dy = o.decalage_y_m;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut dy)
+                        .range(-mcf_carte::decor::DECALAGE_Y_MAX_M..=mcf_carte::decor::DECALAGE_Y_MAX_M)
+                        .speed(0.02)
+                        .fixed_decimals(2)
+                        .prefix("hauteur : ")
+                        .suffix(" m"),
+                )
+                .changed()
+            {
+                let t = Transformation {
+                    dy_m: dy - o.decalage_y_m,
+                    ..Default::default()
+                };
+                let r = projet.carte.transformer_objets(&[id], &t);
+                projet.resultat(r, |_| format!("Hauteur : {dy:+.2} m."));
+            }
+        });
+    } else {
+        ui.strong(format!("{} objets", ids.len()));
+    }
+    let mut echelle = o.echelle;
+    let (min, max) = mcf_carte::decor::ECHELLE;
+    if ui
+        .add(
+            egui::DragValue::new(&mut echelle)
+                .range(min..=max)
+                .speed(0.01)
+                .fixed_decimals(2)
+                .prefix("échelle : ×"),
+        )
+        .changed()
+    {
+        let r = projet.carte.mettre_a_l_echelle(ids, echelle);
+        projet.resultat(r, |n| format!("{n} objet(s) à l'échelle ×{echelle:.2}."));
+    }
+    ui.horizontal_wrapped(|ui| {
+        let verrou = premiers.iter().all(|x| x.verrou);
+        let mut v = verrou;
+        if ui.checkbox(&mut v, "Verrouillé").changed() {
+            let r = projet.carte.verrouiller_objets(ids, v);
+            projet.resultat(r, |_| if v { "Verrouillé." } else { "Déverrouillé." }.into());
+        }
+        if ui.button("Supprimer (Suppr)").clicked() {
+            outils::supprimer(projet, edition);
+        }
+    });
+    ui.label(
+        egui::RichText::new("Glisser : déplacer · R / Maj+R : tourner · Ctrl+clic : ajouter à la sélection")
+            .weak(),
+    );
 }
 
 /// Position du centre et orientation, au clavier : une étape d'historique par valeur saisie.

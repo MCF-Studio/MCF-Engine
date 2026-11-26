@@ -319,6 +319,11 @@ fn selection_json(s: &Selection) -> Value {
         Selection::Troncon(id) => json!({ "type": "troncon", "id": id.to_string() }),
         Selection::Quartier(id) => json!({ "type": "quartier", "id": id.to_string() }),
         Selection::LigneElectrique(id) => json!({ "type": "ligne_electrique", "id": id.to_string() }),
+        Selection::Objets(ids) => json!({
+            "type": "objets",
+            "ids": ids.iter().take(50).map(Id::to_string).collect::<Vec<_>>(),
+            "nombre": ids.len(),
+        }),
     }
 }
 

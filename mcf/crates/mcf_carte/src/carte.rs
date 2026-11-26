@@ -9,6 +9,7 @@ use mcf_geo::{ClasseRoute, P2, polygone};
 
 use crate::batiments::{Batiment, Origine, Transformation};
 use crate::contours::{Contour, Contours, UsageContour};
+use crate::decor::ObjetDecor;
 use crate::gabarits::{Densite, Famille};
 use crate::geometrie::{self, GeoReseau};
 use crate::ids::Id;
@@ -36,6 +37,7 @@ struct Etape {
     contours: Option<Contours>,
     references: Option<References>,
     batiments: BTreeMap<Id, Option<Batiment>>,
+    decor: BTreeMap<Id, Option<ObjetDecor>>,
     relief: BTreeMap<(usize, usize), Vec<f32>>,
     calques: BTreeMap<String, Option<mcf_map::McfMap>>,
     /// Pixels des calques de référence peints (image « avant »).
@@ -50,6 +52,7 @@ impl Etape {
             && self.contours.is_none()
             && self.references.is_none()
             && self.batiments.is_empty()
+            && self.decor.is_empty()
             && self.relief.is_empty()
             && self.calques.is_empty()
             && self.images.is_empty()
@@ -71,6 +74,8 @@ pub struct Sale {
     pub references: bool,
     /// Cellules de bâti.
     pub batiments: bool,
+    /// Cellules de décor.
+    pub decor: bool,
     /// Tuiles de relief `(x, z)`.
     pub relief: BTreeSet<(usize, usize)>,
     /// Calques d'objets.
@@ -101,6 +106,8 @@ pub struct Revisions {
     pub references: u64,
     /// Bâti.
     pub batiments: u64,
+    /// Décor.
+    pub decor: u64,
     /// Calques d'objets.
     pub calques: u64,
     /// Manifeste.
@@ -178,6 +185,8 @@ pub struct Carte {
     pub versions_images: BTreeMap<Id, u64>,
     /// Bâti.
     pub batiments: BTreeMap<Id, Batiment>,
+    /// Décor posé depuis la bibliothèque.
+    pub decor: BTreeMap<Id, ObjetDecor>,
     /// Relief source.
     pub relief: Relief,
     /// Calques d'objets posés (`.mcfmap`), par nom de fichier.
@@ -279,6 +288,31 @@ impl Transaction<'_> {
         self.carte.batiments.remove(&id)
     }
 
+    fn noter_objet(&mut self, id: Id) {
+        self.etape
+            .decor
+            .entry(id)
+            .or_insert_with(|| self.carte.decor.get(&id).cloned());
+    }
+
+    /// Objet de décor modifiable.
+    pub fn objet(&mut self, id: Id) -> Option<&mut ObjetDecor> {
+        self.noter_objet(id);
+        self.carte.decor.get_mut(&id)
+    }
+
+    /// Ajoute ou remplace un objet de décor.
+    pub fn poser_objet(&mut self, id: Id, o: ObjetDecor) {
+        self.noter_objet(id);
+        self.carte.decor.insert(id, o);
+    }
+
+    /// Retire un objet de décor.
+    pub fn retirer_objet(&mut self, id: Id) -> Option<ObjetDecor> {
+        self.noter_objet(id);
+        self.carte.decor.remove(&id)
+    }
+
     /// Calque d'objets modifiable.
     pub fn calque(&mut self, nom: &str) -> Option<&mut mcf_map::McfMap> {
         self.etape
@@ -319,6 +353,7 @@ impl Carte {
             images_references: BTreeMap::new(),
             versions_images: BTreeMap::new(),
             batiments: BTreeMap::new(),
+            decor: BTreeMap::new(),
             calques: BTreeMap::new(),
             sale: Sale {
                 manifeste: true,
@@ -327,6 +362,7 @@ impl Carte {
                 contours: true,
                 references: true,
                 batiments: true,
+                decor: true,
                 relief: (0..tz).flat_map(|z| (0..tx).map(move |x| (x, z))).collect(),
                 calques: BTreeSet::new(),
                 images: BTreeSet::new(),
@@ -362,6 +398,7 @@ impl Carte {
             images_references,
             versions_images: BTreeMap::new(),
             batiments,
+            decor: BTreeMap::new(),
             relief,
             calques,
             sale: Sale::default(),
@@ -393,6 +430,13 @@ impl Carte {
         for (id, b) in &self.batiments {
             b.valider(&self.manifeste)
                 .map_err(|e| format!("bâtiment {id} : {e}"))?;
+        }
+        if self.decor.len() > crate::decor::MAX_OBJETS {
+            return Err("trop d'objets de décor".into());
+        }
+        for (id, o) in &self.decor {
+            o.valider(&self.manifeste)
+                .map_err(|e| format!("objet de décor {id} : {e}"))?;
         }
         Ok(())
     }
@@ -439,6 +483,14 @@ impl Carte {
                 if let Some(b) = c.batiments.get(id) {
                     b.valider(&c.manifeste).map_err(|m| format!("bâtiment : {m}"))?;
                 }
+            }
+            for id in e.decor.keys() {
+                if let Some(o) = c.decor.get(id) {
+                    o.valider(&c.manifeste).map_err(|m| format!("décor : {m}"))?;
+                }
+            }
+            if c.decor.len() > crate::decor::MAX_OBJETS {
+                return Err("trop d'objets de décor".into());
             }
             Ok(r)
         });
@@ -487,6 +539,10 @@ impl Carte {
         if !e.batiments.is_empty() {
             self.sale.batiments = true;
             self.revisions.batiments += 1;
+        }
+        if !e.decor.is_empty() {
+            self.sale.decor = true;
+            self.revisions.decor += 1;
         }
         if !e.relief.is_empty() {
             self.revisions.relief += 1;
@@ -548,6 +604,13 @@ impl Carte {
                 None => self.batiments.remove(&id),
             };
             inverse.batiments.insert(id, courant);
+        }
+        for (id, avant) in e.decor {
+            let courant = match avant {
+                Some(o) => self.decor.insert(id, o),
+                None => self.decor.remove(&id),
+            };
+            inverse.decor.insert(id, courant);
         }
         for ((bx, bz), valeurs) in e.relief {
             let z = self.zone_bloc(bx, bz);
@@ -1382,6 +1445,83 @@ impl Carte {
                 {
                     b.transformer(t);
                     b.origine = Origine::Manuel;
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+    }
+
+    /// Pose un objet de décor de la bibliothèque. Renvoie son identifiant.
+    pub fn poser_objet(&mut self, modele: &str, position: P2, cap_deg: f64) -> Result<Id, String> {
+        self.modifier("Poser un objet", |tx| {
+            let id = Id::nouveau();
+            tx.poser_objet(id, ObjetDecor::nouveau(modele, position, cap_deg));
+            Ok(id)
+        })
+    }
+
+    /// Transforme des objets de décor (les verrouillés ne bougent pas). Renvoie le nombre d'objets transformés.
+    pub fn transformer_objets(&mut self, ids: &[Id], t: &Transformation) -> Result<usize, String> {
+        let libelle = if t.cap_deg != 0.0 {
+            "Tourner des objets"
+        } else if t.dy_m != 0.0 && t.delta == [0.0, 0.0] {
+            "Monter / descendre des objets"
+        } else {
+            "Déplacer des objets"
+        };
+        self.modifier(libelle, |tx| {
+            let mut n = 0;
+            for id in ids {
+                if let Some(o) = tx.objet(*id)
+                    && !o.verrou
+                {
+                    o.transformer(t);
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+    }
+
+    /// Règle l'échelle d'objets de décor (bornée).
+    pub fn mettre_a_l_echelle(&mut self, ids: &[Id], echelle: f64) -> Result<usize, String> {
+        let e = echelle.clamp(crate::decor::ECHELLE.0, crate::decor::ECHELLE.1);
+        self.modifier("Échelle d'objets", |tx| {
+            let mut n = 0;
+            for id in ids {
+                if let Some(o) = tx.objet(*id)
+                    && !o.verrou
+                {
+                    o.echelle = e;
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+    }
+
+    /// Supprime des objets de décor (pas les verrouillés). Renvoie le nombre d'objets supprimés.
+    pub fn supprimer_objets(&mut self, ids: &[Id]) -> Result<usize, String> {
+        self.modifier("Supprimer des objets", |tx| {
+            let mut n = 0;
+            for id in ids {
+                if tx.carte().decor.get(id).is_some_and(|o| !o.verrou) {
+                    tx.retirer_objet(*id);
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+    }
+
+    /// Verrouille ou déverrouille des objets de décor.
+    pub fn verrouiller_objets(&mut self, ids: &[Id], verrou: bool) -> Result<usize, String> {
+        self.modifier(if verrou { "Verrouiller" } else { "Déverrouiller" }, |tx| {
+            let mut n = 0;
+            for id in ids {
+                if let Some(o) = tx.objet(*id) {
+                    o.verrou = verrou;
                     n += 1;
                 }
             }

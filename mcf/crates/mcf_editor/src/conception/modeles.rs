@@ -63,12 +63,12 @@ impl Plugin for ModelesPlugin {
     }
 }
 
-fn dossier() -> PathBuf {
+pub(super) fn dossier() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(DOSSIER)
 }
 
 /// Lit le catalogue (taille plafonnée avant lecture) et repère les modèles présents dans le dossier.
-fn charger(dossier: &Path) -> Catalogue {
+pub(super) fn charger(dossier: &Path) -> Catalogue {
     let chemin = dossier.join(FICHIER);
     let lire = || -> Result<CatalogueBatiments, String> {
         let meta = std::fs::symlink_metadata(&chemin).map_err(|e| format!("{} : {e}", chemin.display()))?;

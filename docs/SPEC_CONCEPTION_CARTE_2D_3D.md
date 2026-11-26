@@ -218,6 +218,11 @@ comme un bloc ; le modèle s'y pose (sol au centre de l'empreinte, comme un bloc
 - **Inspecteur** : position du centre, cap, hauteur et inclinaison saisis au clavier.
 - **Pose** : liste des bâtiments du catalogue (étape Bâti), clic pour poser au curseur, `R` tourne de 90°
   pendant la pose ; le bâtiment posé est `manuel`.
+- **Pose depuis la bibliothèque** (2026-11-26) : la fenêtre 📚 arme la pose (« ✋ Poser », double-clic). Un objet
+  dont le modèle est celui d'une fiche se pose comme bâtiment modélisé ; tout autre objet est du **décor**
+  (`mcf_carte::decor`) : identifiant d'objet de la bibliothèque (jamais un chemin), position, cap, échelle
+  (0,1 à 10), décalage vertical (± 50 m), verrou ; validé strictement, annulable, sans effet sur routes et
+  lotissement. Les `.mcfmap` (bornés à ± 5 km, 20 000 objets) ne couvrent pas une carte de 32 km : d'où ce format.
 - **Plus tard** : catalogue commun avec le jeu (`mcf_map::Catalog`), kits de façade, portes animées.
 
 ## 7. Édition croisée 2D ↔ 3D
@@ -260,6 +265,7 @@ cartes/<nom>/                      (dans le dépôt du jeu MCF-Remember-this-lif
   quartiers.json           affectation des îlots, zones libres, règles de lotissement
   batiments/c_<x>_<z>.json blocs par cellule (limite les conflits Git entre Aroun et Joaquine)
   gameplay.json            zones de gameplay
+  decor/c_<x>_<z>.json     décor posé depuis la bibliothèque, par cellule (id d'objet, position, cap, échelle, hauteur)
   calques/*.mcfmap         objets posés (format existant, inchangé)
   references.json + references/*.png    calques image
   .derive/                 NON versionné : terrain final, maillages, rendus, caches (supprimable)

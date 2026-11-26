@@ -7,6 +7,7 @@
 
 pub mod bibliotheque;
 mod camera;
+mod decor;
 #[cfg(feature = "remote")]
 mod distant;
 mod fichiers;
@@ -178,6 +179,8 @@ pub enum Outil {
     PeindreCalque(mcf_carte::relief_image::PinceauCalque),
     /// Poser le bâtiment modélisé d'indice donné du catalogue (clic : poser, R : tourner de 90°).
     Poser(usize),
+    /// Poser l'objet de la bibliothèque à cette place (décor : clic pour poser, R : tourner de 90°).
+    PoserObjet(mcf_carte::bibliotheque::Place),
 }
 
 /// Ce qui est sélectionné.
@@ -194,6 +197,8 @@ pub enum Selection {
     Quartier(Id),
     /// Une ligne électrique.
     LigneElectrique(Id),
+    /// Un ou plusieurs objets de décor.
+    Objets(Vec<Id>),
 }
 
 /// Ce qu'on fait glisser.
@@ -201,6 +206,8 @@ pub enum Selection {
 pub enum CibleGlisse {
     /// Les bâtiments sélectionnés.
     Batiments,
+    /// Les objets de décor sélectionnés.
+    Objets,
     /// Un calque de référence.
     Reference(Id),
     /// Un sommet d'une zone libre.
@@ -464,6 +471,7 @@ pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppE
         promenade::PromenadePlugin,
         gizmo::GizmoPlugin,
         modeles::ModelesPlugin,
+        decor::DecorPlugin,
         bibliotheque::BibliothequePlugin,
         terrain_fin::TerrainFinPlugin,
     ))

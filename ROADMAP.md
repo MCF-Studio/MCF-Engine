@@ -199,6 +199,14 @@ calque de référence drapé (250 m) seulement au-delà : routes posées dans le
 Morceaux recentrés (le fondu GPU de `VisibilityRange` mesure depuis l'origine de l'objet). Routes lissées (Chaikin)
 à l'extraction, 4 097 / 4 097 tracées. Promenade : collisions avec les empreintes des bâtiments (C pour couper),
 essayé à l'écran (arrêt contre un mur, traversée physique coupée).
+2026-11-26 (soir) : **retouche de route locale** : seuls les profils en long et les blocs de terrain de 128 m autour
+de ce qui a bougé sont recalculés, résultat identique bit à bit au calcul complet (test). Mesuré (release, ma_carte,
+nœud déplacé) : **8 263 ms → 57 ms** ; l'affichage ne refait plus que les morceaux de 512 m touchés (terrain, routes,
+bâti, tuiles fines). Le temps d'affichage après retouche reste à mesurer à l'écran (le pont MCP transmet mal les
+listes de points). Promenade : murs = coupe des maillages `-col` des modèles à 0,9 m (portes exclues), glissade le
+long des murs et des coins. **Décor** : la bibliothèque se pose sur la carte (« ✋ Poser » ou double-clic ; un
+bâtiment du catalogue se pose avec son empreinte, le reste en décor `decor/c_<x>_<z>.json`), sélection, glisser,
+R, Suppr, inspecteur (position, cap, échelle, hauteur, verrou), annulable.
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la
