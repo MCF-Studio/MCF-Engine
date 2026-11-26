@@ -48,7 +48,15 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   porosité, flaques avec ondulations des gouttes sur les surfaces planes, neige sur les faces tournées vers le
   ciel ; les zones abritées restent sèches. Uniformes renvoyés au GPU seulement si l'écart est visible (1/256).
   10 tests. Limites : valeurs globales (pas de carte d'humidité par endroit), opt-in matériau par matériau.
-- ⬜ Étapes 5 à 9.
+- ✅ Étape 5a : océan. `Ocean` (sans rendu) : 4 vagues de Gerstner calées sur le pic du spectre JONSWAP (vent et
+  fetch de la météo), pulsations quantifiées pour boucler sur 200 s, `Ocean::hauteur(x, z)` pour la flottaison
+  (inversion du déplacement horizontal par point fixe). `McfOceanPlugin` : maillage radial 256 × 256 sur 6 km qui
+  suit la caméra (aligné sur ses cellules), déplacé dans le vertex shader, normale recalculée par pixel + rides,
+  écume sur les crêtes, éclairage PBR de Bevy (reflets de l'atmosphère avec `AtmosphereEnvironmentMapLight`).
+  Exemple `demo_ocean` (bouée qui flotte). 6 tests.
+  Limites : pas encore de cascades FFT (la mer de tempête manque de vagues moyennes et d'écume), pas de vagues de
+  bord ni d'eau peu profonde, coût GPU non mesuré.
+- ⬜ Étape 5b : cascades FFT. ⬜ Étapes 6 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
