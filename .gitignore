@@ -54,3 +54,5 @@ mcf/crates/mcf_editor/assets/batiments/_textures/
 # Bibliothèque d'assets du jeu copiée pour l'éditeur (mcf/tools/bibliotheque/importer.py) : non versionnée,
 # seul le catalogue `bibliotheque.json` l'est.
 mcf/crates/mcf_editor/assets/bibliotheque/
+mcf/crates/mcf_editor/assets/batiments/city_kit/
+mcf/trace-*.json

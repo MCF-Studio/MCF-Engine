@@ -10,7 +10,36 @@
       "largeur_m": 15.1,
       "profondeur_m": 9.5,
       "hauteur_m": 6.22,
-      "centre_m": [1.65, 0.25]
+      "centre_m": [
+        1.65,
+        0.25
+      ]
+    },
+    {
+      "id": "maison_b",
+      "nom": "Maison B",
+      "famille": "residentiel",
+      "fichier": "11_Batiments/Houses/House_B.glb",
+      "largeur_m": 8.7,
+      "profondeur_m": 11.9,
+      "hauteur_m": 9.1,
+      "centre_m": [
+        0.0,
+        0.65
+      ]
+    },
+    {
+      "id": "maison_c",
+      "nom": "Maison C",
+      "famille": "residentiel",
+      "fichier": "11_Batiments/Houses/House_C.glb",
+      "largeur_m": 13.23,
+      "profondeur_m": 9.06,
+      "hauteur_m": 6.72,
+      "centre_m": [
+        0.08,
+        0.0
+      ]
     },
     {
       "id": "superette",
@@ -20,7 +49,257 @@
       "largeur_m": 17.0,
       "profondeur_m": 12.7,
       "hauteur_m": 5.22,
-      "centre_m": [0.0, 0.35]
+      "centre_m": [
+        0.0,
+        0.35
+      ]
+    },
+    {
+      "id": "station_service",
+      "nom": "Station-service",
+      "famille": "commerce",
+      "fichier": "11_Batiments/GasStation/GasStation.glb",
+      "largeur_m": 36,
+      "profondeur_m": 30,
+      "hauteur_m": 6.24,
+      "centre_m": [
+        0.0,
+        -2.0
+      ]
+    },
+    {
+      "id": "banque",
+      "nom": "Banque",
+      "famille": "services",
+      "fichier": "11_Batiments/Bank/BankCentral.glb",
+      "largeur_m": 26.5,
+      "profondeur_m": 22.65,
+      "hauteur_m": 14.75,
+      "centre_m": [
+        0.0,
+        1.07
+      ]
+    },
+    {
+      "id": "usine",
+      "nom": "Usine",
+      "famille": "activite",
+      "fichier": "11_Batiments/Factory/Factory.glb",
+      "largeur_m": 37.0,
+      "profondeur_m": 34.5,
+      "hauteur_m": 27.0,
+      "centre_m": [
+        0.0,
+        0.95
+      ]
+    },
+    {
+      "id": "ferme_moderne",
+      "nom": "Ferme moderne",
+      "famille": "activite",
+      "fichier": "11_Batiments/Farms/Farm_Modern.glb",
+      "largeur_m": 51.95,
+      "profondeur_m": 18.0,
+      "hauteur_m": 12.65,
+      "centre_m": [
+        -0.38,
+        1.0
+      ]
+    },
+    {
+      "id": "ferme_traditionnelle",
+      "nom": "Ferme traditionnelle",
+      "famille": "activite",
+      "fichier": "11_Batiments/Farms/Farm_Traditional.glb",
+      "largeur_m": 28.3,
+      "profondeur_m": 19.4,
+      "hauteur_m": 8.8,
+      "centre_m": [
+        7.45,
+        -4.7
+      ]
+    },
+    {
+      "id": "garage",
+      "nom": "Garage mécanique",
+      "famille": "activite",
+      "fichier": "15_Garage/Garage/Workshop_Garage.glb",
+      "largeur_m": 31.0,
+      "profondeur_m": 26.5,
+      "hauteur_m": 8.38,
+      "centre_m": [
+        0.0,
+        1.75
+      ]
+    },
+    {
+      "id": "cite_barre",
+      "nom": "Barre d'immeubles",
+      "famille": "residentiel",
+      "fichier": "14_Cite/Barre/Cite_Barre.glb",
+      "largeur_m": 61.8,
+      "profondeur_m": 14.1,
+      "hauteur_m": 16.75,
+      "centre_m": [
+        0.0,
+        0.55
+      ]
+    },
+    {
+      "id": "cite_tour",
+      "nom": "Tour de la cité",
+      "famille": "residentiel",
+      "fichier": "14_Cite/Tour/Cite_Tour.glb",
+      "largeur_m": 20.2,
+      "profondeur_m": 18.1,
+      "hauteur_m": 36.35,
+      "centre_m": [
+        0.0,
+        0.55
+      ]
+    },
+    {
+      "id": "cite_commerces",
+      "nom": "Commerces de la cité",
+      "famille": "commerce",
+      "fichier": "14_Cite/Commerces/Cite_Commerces.glb",
+      "largeur_m": 41.0,
+      "profondeur_m": 15.03,
+      "hauteur_m": 4.5,
+      "centre_m": [
+        0.0,
+        1.48
+      ]
+    },
+    {
+      "id": "hangar_ouvert",
+      "nom": "Hangar ouvert",
+      "famille": "activite",
+      "fichier": "10_Elements_Structurels/Hangars/HangarOpen8x12.glb",
+      "largeur_m": 12.6,
+      "profondeur_m": 8.6,
+      "hauteur_m": 6.73,
+      "centre_m": [
+        6.0,
+        -4.0
+      ]
+    },
+    {
+      "id": "immeuble_petit",
+      "nom": "Petit immeuble",
+      "famille": "residentiel",
+      "fichier": "buildings/Immeuble_Petit.glb",
+      "largeur_m": 12.46,
+      "profondeur_m": 12.46,
+      "hauteur_m": 16.0,
+      "centre_m": [
+        -0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "immeuble_moyen",
+      "nom": "Immeuble moyen",
+      "famille": "residentiel",
+      "fichier": "buildings/Immeuble_Moyen.glb",
+      "largeur_m": 14.64,
+      "profondeur_m": 12.64,
+      "hauteur_m": 22.0,
+      "centre_m": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "immeuble_grand",
+      "nom": "Grand immeuble",
+      "famille": "residentiel",
+      "fichier": "buildings/Immeuble_Grand.glb",
+      "largeur_m": 20.46,
+      "profondeur_m": 16.46,
+      "hauteur_m": 25.0,
+      "centre_m": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "tour_appartements",
+      "nom": "Tour d'appartements",
+      "famille": "residentiel",
+      "fichier": "buildings/Tour_Appartements.glb",
+      "largeur_m": 24.46,
+      "profondeur_m": 22.83,
+      "hauteur_m": 55.0,
+      "centre_m": [
+        0.0,
+        1.18
+      ]
+    },
+    {
+      "id": "tour_bureaux",
+      "nom": "Tour de bureaux",
+      "famille": "commerce",
+      "fichier": "buildings/Tour_Bureaux.glb",
+      "largeur_m": 28.64,
+      "profondeur_m": 22.92,
+      "hauteur_m": 63.2,
+      "centre_m": [
+        0.0,
+        1.14
+      ]
+    },
+    {
+      "id": "hotel_affaires",
+      "nom": "Hôtel d'affaires",
+      "famille": "commerce",
+      "fichier": "buildings/Hotel_Affaires.glb",
+      "largeur_m": 28.46,
+      "profondeur_m": 22.83,
+      "hauteur_m": 61.0,
+      "centre_m": [
+        0.0,
+        1.18
+      ]
+    },
+    {
+      "id": "caserne",
+      "nom": "Caserne de pompiers",
+      "famille": "services",
+      "fichier": "buildings/Caserne.glb",
+      "largeur_m": 16.46,
+      "profondeur_m": 14.83,
+      "hauteur_m": 10.0,
+      "centre_m": [
+        -0.0,
+        1.18
+      ]
+    },
+    {
+      "id": "commissariat",
+      "nom": "Commissariat",
+      "famille": "services",
+      "fichier": "buildings/Commissariat.glb",
+      "largeur_m": 20.46,
+      "profondeur_m": 18.83,
+      "hauteur_m": 24.2,
+      "centre_m": [
+        0.0,
+        1.18
+      ]
+    },
+    {
+      "id": "hopital",
+      "nom": "Hôpital",
+      "famille": "services",
+      "fichier": "buildings/Hopital.glb",
+      "largeur_m": 24.64,
+      "profondeur_m": 20.92,
+      "hauteur_m": 30.2,
+      "centre_m": [
+        0.0,
+        1.14
+      ]
     }
   ]
 }

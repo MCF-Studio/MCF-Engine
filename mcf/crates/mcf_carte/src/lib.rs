@@ -13,6 +13,7 @@ pub mod export;
 pub mod gabarits;
 pub mod geometrie;
 pub mod graphe;
+pub mod grille;
 pub mod ids;
 pub mod ilots;
 pub mod io;

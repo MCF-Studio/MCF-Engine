@@ -13,6 +13,11 @@ dev = ["bevy/dynamic_linking", "bevy/file_watcher"]
 # Pilotage par l'IA (pont MCP `mcf_mcp`, spec docs/SPEC_MCP_LSP_MOTEUR.md) : outil de développement, jamais dans un
 # build distribué. Actif seulement avec l'option `--remote` au lancement.
 remote = ["dep:getrandom", "dep:png", "dep:serde", "dep:serde_json"]
+# Profilage (docs/profiling.md de Bevy) : chaque système, chaque étape du rendu, mesurés image par image.
+# - `profil` : en direct dans Tracy (application Tracy de la version qui correspond à tracy-client, voir mcf/README.md).
+# - `profil-fichier` : trace écrite dans `trace-<horodatage>.json`, à ouvrir dans https://ui.perfetto.dev (rien à installer).
+profil = ["bevy/trace_tracy"]
+profil-fichier = ["bevy/trace_chrome"]
 
 [dependencies]
 # jpeg : textures Poly Haven des bâtiments modélisés (.jpg), refusées sans elle (murs et toits invisibles).

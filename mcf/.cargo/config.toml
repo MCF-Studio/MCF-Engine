@@ -9,6 +9,9 @@ linker = "rust-lld.exe"
 [alias]
 # `cargo editor` / `cargo server` / `cargo client` : lancement en mode dev (liaison dynamique de Bevy).
 editor = "run -p mcf_editor --features dev"
+# Profilage de l'éditeur : Tracy en direct / trace JSON pour Perfetto (voir mcf/README.md, « Profiler »).
+editor-profil = "run -p mcf_editor --features dev,profil"
+editor-trace = "run -p mcf_editor --features dev,profil-fichier"
 client = "run -p mcf_client --features dev"
 server = "run -p mcf_server"
 bench-scene = "run -p mcf_bench --bin mcf_bench_scene --profile bench-release"

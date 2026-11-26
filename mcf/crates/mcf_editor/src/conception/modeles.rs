@@ -10,13 +10,21 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use bevy::{camera::visibility::RenderLayers, prelude::*, world_serialization::WorldInstanceReady};
+use bevy::{
+    camera::visibility::{RenderLayers, VisibilityRange},
+    prelude::*,
+    world_serialization::WorldInstanceReady,
+};
 use mcf_carte::{Batiment, CatalogueBatiments, Fiche, Id, ModelePose, Revisions, catalogue::MAX_OCTETS};
 
 use super::{COUCHE_3D, Edition, Projet};
 
 /// Dossier du catalogue, relatif au dossier `assets` de l'éditeur.
 pub const DOSSIER: &str = "batiments";
+/// Distance au-delà de laquelle un bâtiment modélisé laisse place à son bloc (m).
+pub const PORTEE_MODELE_M: f32 = 1400.0;
+/// Case du chargement par zone (m) : les modèles sont recalculés quand l'œil en change.
+const PAS_ZONE_M: f32 = 200.0;
 /// Fichier du catalogue dans ce dossier.
 const FICHIER: &str = "catalogue.json";
 
@@ -149,9 +157,22 @@ fn synchroniser(
     mut projet: ResMut<Projet>,
     mut instances: ResMut<Instances>,
     mut transforms: Query<&mut Transform, With<ModeleBatiment>>,
-    mut vu: Local<Option<(Revisions, Option<super::Glisse>)>>,
+    orbite: Res<super::camera::Orbite>,
+    mut vu: Local<Option<(Revisions, Option<super::Glisse>, Option<(i64, i64)>)>>,
 ) {
-    let etat = (projet.carte.revisions, edition.glisse);
+    // Chargement par zone : seuls les modèles proches de l'œil de la caméra 3D existent (au-delà, le bloc du bâtiment
+    // les remplace, `scene`). Recalculé quand l'œil change de case de `PAS_ZONE_M`.
+    let (s, c) = bevy::math::ops::sin_cos(orbite.lacet);
+    let avant = Vec3::new(-s, 0.0, -c);
+    let oeil = orbite.cible - avant * orbite.distance * bevy::math::ops::cos(orbite.tangage);
+    let hauteur = orbite.distance * bevy::math::ops::sin(orbite.tangage);
+    let zone = (hauteur < PORTEE_MODELE_M).then(|| {
+        (
+            (oeil.x / PAS_ZONE_M).floor() as i64,
+            (oeil.z / PAS_ZONE_M).floor() as i64,
+        )
+    });
+    let etat = (projet.carte.revisions, edition.glisse, zone);
     if *vu == Some(etat) {
         return;
     }
@@ -167,6 +188,12 @@ fn synchroniser(
         .batiments
         .iter()
         .filter(|(_, b)| catalogue.modele_affiche(b))
+        .filter(|(_, b)| {
+            let c = b.centre();
+            zone.is_some()
+                && Vec2::new(c[0] as f32 - oeil.x, c[1] as f32 - oeil.z).length()
+                    < PORTEE_MODELE_M + PAS_ZONE_M * 1.5
+        })
         .map(|(i, b)| (*i, b.clone()))
         .collect();
     let terrain = &projet.carte.derive().terrain;
@@ -230,9 +257,14 @@ fn preparer(
     noms: Query<&Name>,
 ) {
     let racine = pret.event_target();
+    let portee = VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: (PORTEE_MODELE_M - 200.0)..PORTEE_MODELE_M,
+        use_aabb: false,
+    };
     for e in enfants.iter_descendants(racine) {
         let mut ec = commands.entity(e);
-        ec.insert(RenderLayers::layer(COUCHE_3D));
+        ec.insert((RenderLayers::layer(COUCHE_3D), portee.clone()));
         if noms.get(e).is_ok_and(|n| n.as_str().contains("-col")) {
             ec.insert(Visibility::Hidden);
         }

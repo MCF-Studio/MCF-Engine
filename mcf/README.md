@@ -58,6 +58,23 @@ Dans l’inspecteur d’une route, **+ Point final** et **− Point final** modi
 | `cargo bench-scene -- --objets 100000` | Scène de calibrage, mesure puis écrit `bench/results/` |
 | `cargo big-map -- --palier stress` | Génère la grosse carte du test A dans `bench/maps/` (`depart` par défaut ; `--graine`, `--cellule`, `--sortie`) |
 | `cargo test --workspace` | Tous les tests |
+| `cargo editor-profil -- <dossier>` | Éditeur profilé en direct dans **Tracy** (voir « Profiler ») |
+| `cargo editor-trace -- <dossier>` | Éditeur qui écrit une trace `trace-<horodatage>.json`, à ouvrir dans https://ui.perfetto.dev |
+
+### Profiler
+
+Chaque système (les nôtres et ceux de Bevy) et chaque étape du rendu sont mesurés image par image.
+
+- **Tracy (en direct)** : `cargo editor-profil -- <dossier>`, puis ouvrir l'application Tracy et se connecter. La version
+  de Tracy doit correspondre à `tracy-client` (0.19.0 aujourd'hui : `cargo tree -p mcf_editor --features profil -i
+  tracy-client`) d'après le tableau de https://github.com/nagisa/rust_tracy_client#version-support-table.
+- **Trace dans un fichier** : `cargo editor-trace -- <dossier>`, quelques secondes sur la vue à étudier, fermer, puis
+  glisser le fichier dans https://ui.perfetto.dev. Le format est bavard (≈ 1,8 Mo par image) : captures courtes.
+  Les fichiers `mcf/trace-*.json` sont ignorés par git.
+- Première compilation de chaque variante : Bevy est recompilé avec l'instrumentation (≈ 10 min sur le PC, `-j 6`).
+
+Mesures de référence (2026-11-26, `ma_carte` 32 km, 23 466 bâtiments modélisés, mode dev) : ≈ 16 ms par image en vue
+d'ensemble comme en ville ; chargement de la scène ≈ 10 s.
 | `cargo clippy --workspace --all-targets -- -D warnings` | Lints (comme la CI) |
 | `cargo fmt` | Mise en forme (sans `--all`, qui toucherait aussi Bevy) |
 

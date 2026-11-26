@@ -1229,11 +1229,15 @@ impl Carte {
     /// Bâtiments qui empiètent sur une route ou un carrefour.
     pub fn conflits(&mut self) -> Vec<Id> {
         let emprises = self.derive().geo.polygones_emprise();
+        let index = crate::grille::Grille::de_polygones(&emprises, 64.0);
         self.batiments
             .iter()
             .filter(|(_, b)| {
                 let r = polygone::reduit(&b.empreinte, 0.05);
-                emprises.iter().any(|e| polygone::se_chevauchent(&r, e))
+                index
+                    .proches(&crate::grille::boite(&r))
+                    .into_iter()
+                    .any(|i| polygone::se_chevauchent(&r, &emprises[i as usize]))
             })
             .map(|(i, _)| *i)
             .collect()

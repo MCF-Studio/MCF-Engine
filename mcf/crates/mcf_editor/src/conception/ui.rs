@@ -763,14 +763,30 @@ fn etape_export(ui: &mut egui::Ui, projet: &mut Projet, edition: &mut Edition) {
     }
     ui.separator();
     ui.strong("Graphe routier (GPS, IA)");
-    let g = GrapheRoutier::construire(&projet.carte.reseau, &projet.carte.manifeste.profils);
-    ui.label(format!(
-        "{} nœud(s), {} arête(s), {} composante(s){}",
-        g.noeuds.len(),
-        g.aretes.len(),
-        g.composantes(),
-        if g.connexe() { " — tout est relié" } else { "" }
-    ));
+    // Résumé du graphe recalculé seulement quand le réseau change (pas à chaque image).
+    let rev = projet.carte.revisions.reseau;
+    let resume = ui
+        .ctx()
+        .memory_mut(|m| m.data.get_temp::<(u64, String)>(egui::Id::new("graphe_routier")));
+    let texte = match resume {
+        Some((r, t)) if r == rev => t,
+        _ => {
+            let g = GrapheRoutier::construire(&projet.carte.reseau, &projet.carte.manifeste.profils);
+            let t = format!(
+                "{} nœud(s), {} arête(s), {} composante(s){}",
+                g.noeuds.len(),
+                g.aretes.len(),
+                g.composantes(),
+                if g.connexe() { " — tout est relié" } else { "" }
+            );
+            ui.ctx().memory_mut(|m| {
+                m.data
+                    .insert_temp(egui::Id::new("graphe_routier"), (rev, t.clone()))
+            });
+            t
+        }
+    };
+    ui.label(texte);
     aide(
         ui,
         &["Les exports exigent une carte enregistrée ; ils vont dans <projet>/exports/."],
@@ -1144,12 +1160,14 @@ fn position_et_cap(ui: &mut egui::Ui, projet: &mut Projet, id: mcf_carte::Id, b:
 
 fn statistiques(ui: &mut egui::Ui, projet: &mut Projet) {
     let c = &projet.carte;
-    let carrefours = c
-        .reseau
-        .noeuds
-        .keys()
-        .filter(|n| c.reseau.degre(**n) >= 3)
-        .count();
+    // Un seul passage sur les tronçons (demander le degré de chaque nœud reparcourait tout le réseau : 7 848 nœuds ×
+    // 4 100 tronçons à chaque image).
+    let mut degres: std::collections::HashMap<mcf_carte::Id, u32> = std::collections::HashMap::new();
+    for t in c.reseau.troncons.values() {
+        *degres.entry(t.de).or_default() += 1;
+        *degres.entry(t.vers).or_default() += 1;
+    }
+    let carrefours = degres.values().filter(|d| **d >= 3).count();
     let (troncons, batiments) = (c.reseau.troncons.len(), c.batiments.len());
     let quartiers = c.quartiers.affectations.len() + c.quartiers.zones.len();
     let ilots = projet.carte.derive().ilots.len();

@@ -4,11 +4,12 @@
 //!
 //! La scène n'est reconstruite que pour les familles de données qui ont changé (révisions de `mcf_carte`).
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use bevy::{
     asset::RenderAssetUsages,
-    camera::visibility::RenderLayers,
+    camera::visibility::{RenderLayers, VisibilityRange},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
@@ -43,8 +44,6 @@ pub struct Affiche {
     vu: Option<Revisions>,
     /// Dernière reconstruction du terrain.
     dernier_terrain: Option<Instant>,
-    /// Courbes de niveau `(a, b, maîtresse)`, posées sur le terrain final.
-    pub courbes: Vec<(Vec3, Vec3, bool)>,
     /// Matériaux partagés.
     materiaux: Option<Materiaux>,
 }
@@ -79,6 +78,11 @@ struct Tampon {
 
 /// Tangente d'une surface de normale `n` dont la texture avance selon `u` (direction monde) et `v` : `u` projeté sur
 /// la surface, `w` tel que `w · (n × t)` pointe vers les `v` croissants (convention MikkTSpace de Bevy).
+/// Côté des morceaux du bâti (m).
+const MORCEAU_BATI_M: f64 = 512.0;
+/// Distance au-delà de laquelle la 3D ne dessine plus le bâti en blocs (m).
+pub const PORTEE_BATI_M: f32 = 4500.0;
+
 fn tangente(n: Vec3, u: Vec3, v: Vec3) -> [f32; 4] {
     let mut t = (u - n * n.dot(u)).normalize_or_zero();
     if t == Vec3::ZERO {
@@ -253,7 +257,8 @@ fn reconstruire(
                        partie: Partie,
                        mesh: Mesh,
                        mat: Handle<StandardMaterial>,
-                       couche: usize| {
+                       couche: usize|
+     -> Entity {
         // Plan : routes et bâti passent au-dessus des calques de référence (altitude max + 10 à + 18 m) et du voile
         // des quartiers (+ 20 m), sinon un calque opaque les cache. En vue verticale l'altitude ne sert qu'à l'ordre
         // d'affichage : le relief est écrasé (× 0,001, quelques mètres) et posé au-dessus.
@@ -262,13 +267,15 @@ fn reconstruire(
             (COUCHE_PLAN, Partie::Bati) => plan_au_dessus(alt_max + 34.0),
             _ => Transform::IDENTITY,
         };
-        commands.spawn((
-            partie,
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(mat),
-            transform,
-            RenderLayers::layer(couche),
-        ));
+        commands
+            .spawn((
+                partie,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(mat),
+                transform,
+                RenderLayers::layer(couche),
+            ))
+            .id()
     };
 
     if terrain {
@@ -288,18 +295,34 @@ fn reconstruire(
                 COUCHE_3D,
             );
         }
+        // Courbes de niveau du Plan : un maillage de lignes construit ici, une fois (elles étaient redessinées une à
+        // une à chaque image, des centaines de milliers de segments sur une grande carte).
         let pas = d.terrain.nx.max(d.terrain.nz).div_ceil(400).max(1);
-        affiche.courbes = relief::courbes_de_niveau(&d.terrain, 5.0, pas)
-            .into_iter()
-            .map(|(a, b, h)| {
-                let y = h as f32 + 0.3;
-                (
-                    Vec3::new(a[0] as f32, y, a[1] as f32),
-                    Vec3::new(b[0] as f32, y, b[1] as f32),
-                    (h / 25.0).fract().abs() < 1e-6,
-                )
-            })
-            .collect();
+        let (mut positions, mut couleurs) = (Vec::new(), Vec::new());
+        for (a, b, h) in relief::courbes_de_niveau(&d.terrain, 5.0, pas) {
+            let y = h as f32 + 0.3;
+            let alpha = if (h / 25.0).fract().abs() < 1e-6 {
+                0.6
+            } else {
+                0.28
+            };
+            let c = Color::srgba(0.45, 0.32, 0.2, alpha).to_linear().to_f32_array();
+            positions.push([a[0] as f32, y, a[1] as f32]);
+            positions.push([b[0] as f32, y, b[1] as f32]);
+            couleurs.extend([c, c]);
+        }
+        if !positions.is_empty() {
+            let mut lignes = Mesh::new(PrimitiveTopology::LineList, RenderAssetUsages::RENDER_WORLD);
+            lignes.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+            lignes.insert_attribute(Mesh::ATTRIBUTE_COLOR, couleurs);
+            ajouter(
+                &mut commands,
+                Partie::Terrain,
+                lignes,
+                mats.voile_plan.clone(),
+                COUCHE_PLAN,
+            );
+        }
         affiche.dernier_terrain = Some(Instant::now());
     }
 
@@ -446,30 +469,56 @@ fn reconstruire(
     }
 
     if terrain || change(|x| x.batiments) {
-        let (mut plan, mut toits, mut murs) = (Tampon::default(), Tampon::default(), Tampon::default());
+        // Bâti découpé en morceaux de `MORCEAU_BATI_M` : le moteur écarte ceux hors du champ, et la 3D ne dessine pas
+        // ceux au-delà de `PORTEE_BATI_M` (un seul maillage pour toute la carte était dessiné entier à chaque image,
+        // ombres comprises).
+        // Bâtiment modélisé : de près le modèle (`modeles`), de loin son bloc (niveau de détail, fondu entre les deux).
+        let mut morceaux: HashMap<(i64, i64, bool), (Tampon, Tampon, Tampon)> = HashMap::new();
         for b in &batiments {
-            // Bâtiment modélisé : le modèle remplace le bloc en 3D (`modeles`), le Plan garde l'aplat.
-            let en_3d = !catalogue.modele_affiche(b);
-            bloc(&mut plan, &mut toits, &mut murs, b, &d.terrain, en_3d);
-        }
-        if !plan.vide() {
-            ajouter(
-                &mut commands,
-                Partie::Bati,
-                plan.maillage(),
-                mats.plan.clone(),
-                COUCHE_PLAN,
+            let modele = catalogue.modele_affiche(b);
+            let c = b.centre();
+            let cle = (
+                (c[0] / MORCEAU_BATI_M).floor() as i64,
+                (c[1] / MORCEAU_BATI_M).floor() as i64,
+                modele,
             );
+            let (plan, toits, murs) = morceaux.entry(cle).or_default();
+            bloc(plan, toits, murs, b, &d.terrain, true);
         }
-        for (lot, mat) in [(toits, &surfaces.toit), (murs, &surfaces.facade)] {
-            if !lot.vide() {
+        let portee = VisibilityRange {
+            start_margin: 0.0..0.0,
+            end_margin: (PORTEE_BATI_M - 400.0)..PORTEE_BATI_M,
+            use_aabb: true,
+        };
+        let portee_lod = VisibilityRange {
+            start_margin: (super::modeles::PORTEE_MODELE_M - 200.0)..super::modeles::PORTEE_MODELE_M,
+            ..portee.clone()
+        };
+        for ((_, _, modele), (plan, toits, murs)) in morceaux {
+            if !plan.vide() {
                 ajouter(
                     &mut commands,
                     Partie::Bati,
-                    lot.maillage(),
-                    mat.clone(),
-                    COUCHE_3D,
+                    plan.maillage(),
+                    mats.plan.clone(),
+                    COUCHE_PLAN,
                 );
+            }
+            for (lot, mat) in [(toits, &surfaces.toit), (murs, &surfaces.facade)] {
+                if !lot.vide() {
+                    let e = ajouter(
+                        &mut commands,
+                        Partie::Bati,
+                        lot.maillage(),
+                        mat.clone(),
+                        COUCHE_3D,
+                    );
+                    commands.entity(e).insert(if modele {
+                        portee_lod.clone()
+                    } else {
+                        portee.clone()
+                    });
+                }
             }
         }
     }

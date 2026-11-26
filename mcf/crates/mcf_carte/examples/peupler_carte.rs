@@ -3,7 +3,7 @@
 //! blocs. Chaque élément passe par l'API validée de `mcf_carte` ; le projet est enregistré après chaque phase.
 //!
 //! ```text
-//! cargo run -p mcf_carte --example peupler_carte --release -- <projet> <plan.json> [stats|relief|routes|quartiers|tout]
+//! cargo run -p mcf_carte --example peupler_carte --release -- <projet> <plan.json> [stats|relief|routes|quartiers|bati|tout]
 //! ```
 //!
 //! Les bâtiments déjà posés à la main (modélisés ou déplacés) ne sont jamais touchés : `lotir` ne remplace que le bâti
@@ -361,6 +361,243 @@ fn quartiers(c: &mut Carte, plan: &Plan) {
     );
 }
 
+/// Choix d'un modèle selon l'usage du quartier : (fiche, poids). Les rues de pavillons restent aérées.
+fn modeles_pour(famille: Famille, densite: Densite) -> &'static [(&'static str, u32)] {
+    use Densite::*;
+    use Famille::*;
+    match (famille, densite) {
+        (Residentiel, Faible) => &[("maison_a", 4), ("maison_b", 3), ("maison_c", 4)],
+        (Residentiel, Moyenne) => &[
+            ("immeuble_petit", 4),
+            ("immeuble_moyen", 3),
+            ("maison_b", 2),
+            ("maison_c", 1),
+        ],
+        (Residentiel, Forte) => &[
+            ("immeuble_moyen", 4),
+            ("immeuble_grand", 4),
+            ("cite_barre", 1),
+            ("cite_tour", 1),
+        ],
+        (Residentiel, Centre) => &[
+            ("immeuble_grand", 4),
+            ("tour_appartements", 2),
+            ("tour_bureaux", 2),
+            ("hotel_affaires", 1),
+        ],
+        (Commerce, _) => &[
+            ("superette", 3),
+            ("cite_commerces", 2),
+            ("immeuble_petit", 2),
+            ("immeuble_moyen", 1),
+        ],
+        (Activite, _) => &[("usine", 2), ("garage", 3), ("hangar_ouvert", 3)],
+        (Services, _) => &[("immeuble_moyen", 1)],
+        _ => &[],
+    }
+}
+
+/// Part des places le long d'une rue qui reçoivent un bâtiment.
+fn remplissage(densite: Densite) -> f64 {
+    match densite {
+        Densite::Faible => 0.45,
+        Densite::Moyenne => 0.6,
+        Densite::Forte => 0.7,
+        Densite::Centre => 0.8,
+    }
+}
+
+/// Retrait de la façade derrière le bord de l'emprise (m) et écart entre voisins (m).
+fn retrait_ecart(famille: Famille, densite: Densite) -> (f64, f64) {
+    match (famille, densite) {
+        (Famille::Residentiel, Densite::Faible) => (6.0, 7.0),
+        (Famille::Activite, _) => (10.0, 14.0),
+        (_, Densite::Centre) => (1.5, 3.0),
+        _ => (3.0, 4.0),
+    }
+}
+
+/// Petit générateur déterministe (xorshift).
+struct Hasard(u64);
+impl Hasard {
+    fn suivant(&mut self) -> f64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 >> 11) as f64 / (1u64 << 53) as f64
+    }
+    fn choisir<'a>(&mut self, liste: &'a [(&'a str, u32)]) -> Option<&'a str> {
+        let total: u32 = liste.iter().map(|x| x.1).sum();
+        if total == 0 {
+            return None;
+        }
+        let mut t = (self.suivant() * f64::from(total)) as u32;
+        for (n, p) in liste {
+            if t < *p {
+                return Some(n);
+            }
+            t -= p;
+        }
+        liste.last().map(|x| x.0)
+    }
+}
+
+/// Retire le bâti généré (blocs) dont le quartier n'existe plus ; garde les bâtiments posés à la main et ceux des
+/// quartiers présents (dessinés par l'auteur).
+fn vider_bati(c: &mut Carte) -> Result<usize, String> {
+    let q = &c.quartiers;
+    let ids: Vec<mcf_carte::Id> = c
+        .batiments
+        .iter()
+        .filter(|(_, b)| b.origine == mcf_carte::Origine::Genere)
+        .filter(|(_, b)| {
+            b.affectation
+                .is_none_or(|a| !q.zones.contains_key(&a) && !q.affectations.contains_key(&a))
+        })
+        .map(|(i, _)| *i)
+        .collect();
+    let n = ids.len();
+    c.modifier("Retirer le bâti en blocs", |tx| {
+        for i in &ids {
+            tx.retirer_batiment(*i);
+        }
+        Ok(())
+    })?;
+    Ok(n)
+}
+
+/// Pose des bâtiments modélisés le long des rues et routes des quartiers du plan (façade vers la rue).
+fn bati(c: &mut Carte, plan: &Plan, catalogue: &mcf_carte::CatalogueBatiments) -> Result<(), String> {
+    use mcf_carte::grille::{Grille, boite};
+    use mcf_geo::polygone;
+    let debut = Instant::now();
+    let retires = vider_bati(c)?;
+    println!("{retires} bloc(s) retiré(s)");
+    // Quartiers du plan : usage et densité en un point.
+    let mut index_zones = Grille::new(256.0);
+    for z in &plan.zones {
+        index_zones.ajouter(boite(&z.points));
+    }
+    let zone_en = |p: [f64; 2]| {
+        index_zones
+            .proches(&[p, p])
+            .into_iter()
+            .map(|i| &plan.zones[i as usize])
+            .find(|z| polygone::contient(&z.points, p))
+            .map(|z| (z.famille, z.densite))
+    };
+    let emprises = c.derive().geo.polygones_emprise();
+    let index_routes = Grille::de_polygones(&emprises, 64.0);
+    let mut poses: Vec<Vec<[f64; 2]>> = c.batiments.values().map(|b| b.empreinte.clone()).collect();
+    let mut index_poses = Grille::de_polygones(&poses, 64.0);
+    let eau = c.manifeste.niveau_eau_m.unwrap_or(f64::MIN);
+    let profils = c.manifeste.profils;
+    let mut hasard = Hasard(c.manifeste.graine | 1);
+    let troncons: Vec<_> = c
+        .reseau
+        .troncons
+        .values()
+        .filter(|t| {
+            matches!(
+                t.classe,
+                ClasseRoute::Rue | ClasseRoute::Route | ClasseRoute::Avenue | ClasseRoute::Ruelle
+            )
+        })
+        .filter_map(|t| c.reseau.controle(t).map(|(pts, _)| (t.classe, pts)))
+        .collect();
+    let mut a_poser: Vec<(String, [f64; 2], f64)> = Vec::new();
+    for (classe, pts) in &troncons {
+        let demi = profils.get(*classe).emprise_m() / 2.0;
+        for seg in pts.windows(2) {
+            let (a, b) = (seg[0], seg[1]);
+            let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
+            let long = dx.hypot(dz);
+            if long < 8.0 {
+                continue;
+            }
+            let (ux, uz) = (dx / long, dz / long);
+            for cote in [-1.0, 1.0] {
+                // Normale vers ce côté de la rue.
+                let (nx, nz) = (-uz * cote, ux * cote);
+                let mut s = 6.0;
+                while s < long - 6.0 {
+                    let pied = [a[0] + ux * s, a[1] + uz * s];
+                    let sonde = [pied[0] + nx * (demi + 12.0), pied[1] + nz * (demi + 12.0)];
+                    let Some((famille, densite)) = zone_en(sonde) else {
+                        s += 25.0;
+                        continue;
+                    };
+                    let (retrait, ecart) = retrait_ecart(famille, densite);
+                    let Some(f) = hasard
+                        .choisir(modeles_pour(famille, densite))
+                        .and_then(|id| catalogue.fiche(id))
+                    else {
+                        s += 25.0;
+                        continue;
+                    };
+                    let (larg, prof) = (f.largeur_m, f.profondeur_m);
+                    if s + larg / 2.0 > long - 4.0 {
+                        break;
+                    }
+                    let centre_le_long = s + larg / 2.0;
+                    let recul = demi + retrait + prof / 2.0;
+                    let centre = [
+                        a[0] + ux * centre_le_long + nx * recul,
+                        a[1] + uz * centre_le_long + nz * recul,
+                    ];
+                    // Façade (+Z du modèle) tournée vers la rue.
+                    let cap = (-nx).atan2(-nz).to_degrees();
+                    let b = f.batiment(centre, cap);
+                    let marge = polygone::reduit(&b.empreinte, -1.0);
+                    let bt = boite(&marge);
+                    let libre_route = !index_routes
+                        .proches(&bt)
+                        .into_iter()
+                        .any(|i| polygone::se_chevauchent(&marge, &emprises[i as usize]));
+                    let libre_bati = !index_poses
+                        .proches(&bt)
+                        .into_iter()
+                        .any(|i| polygone::se_chevauchent(&marge, &poses[i as usize]));
+                    let hs: Vec<f64> = b.empreinte.iter().map(|p| c.relief.hauteur(*p)).collect();
+                    let (hmin, hmax) = hs
+                        .iter()
+                        .fold((f64::MAX, f64::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
+                    let sec = hmin > eau + 0.8 && hmax - hmin < 3.5;
+                    let dedans = b.empreinte.iter().all(|p| c.manifeste.contient(*p));
+                    let garde = hasard.suivant() < remplissage(densite);
+                    if libre_route && libre_bati && sec && dedans {
+                        if garde {
+                            index_poses.ajouter(boite(&b.empreinte));
+                            poses.push(b.empreinte.clone());
+                            a_poser.push((f.id.clone(), centre, cap));
+                        }
+                        s += larg + ecart;
+                    } else {
+                        s += 4.0;
+                    }
+                }
+            }
+        }
+    }
+    println!("{} bâtiment(s) à poser ({:?})", a_poser.len(), debut.elapsed());
+    let mut par_fiche = std::collections::BTreeMap::new();
+    c.modifier("Poser les bâtiments de la bibliothèque", |tx| {
+        for (id, centre, cap) in &a_poser {
+            if let Some(f) = catalogue.fiche(id) {
+                tx.poser_batiment(mcf_carte::Id::nouveau(), f.batiment(*centre, *cap));
+                *par_fiche.entry(id.clone()).or_insert(0) += 1;
+            }
+        }
+        Ok(())
+    })?;
+    println!(
+        "{} bâtiment(s) modélisé(s) posé(s) en {:?} : {par_fiche:?}",
+        a_poser.len(),
+        debut.elapsed()
+    );
+    Ok(())
+}
+
 fn enregistrer(c: &mut Carte, phase: &str) -> Result<(), String> {
     let debut = Instant::now();
     c.enregistrer(None)?;
@@ -370,7 +607,7 @@ fn enregistrer(c: &mut Carte, phase: &str) -> Result<(), String> {
 
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
-    let usage = "usage : peupler_carte <projet> <plan.json> [stats|relief|routes|quartiers|tout]";
+    let usage = "usage : peupler_carte <projet> <plan.json> [stats|relief|routes|quartiers|bati|tout]";
     let projet = PathBuf::from(args.next().ok_or(usage)?);
     let plan = PathBuf::from(args.next().ok_or(usage)?);
     let quoi = args.next().unwrap_or_else(|| "stats".into());
@@ -404,6 +641,14 @@ fn main() -> Result<(), String> {
     if tout || quoi == "quartiers" {
         quartiers(&mut c, &plan);
         enregistrer(&mut c, "quartiers")?;
+    }
+    if quoi == "bati" {
+        let chemin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../mcf_editor/assets/batiments/catalogue.json");
+        let texte = std::fs::read_to_string(&chemin).map_err(|e| format!("{} : {e}", chemin.display()))?;
+        let catalogue = mcf_carte::CatalogueBatiments::lire(&texte)?;
+        bati(&mut c, &plan, &catalogue)?;
+        enregistrer(&mut c, "bâti")?;
     }
     Ok(())
 }

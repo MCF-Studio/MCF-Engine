@@ -13,7 +13,6 @@ use super::{
     COUCHE_3D, COUCHE_PLAN, CibleGlisse, Disposition, Edition, Etape, Glisse, Outil, Projet, Selection,
     ZoneVues,
     camera::{Vue, vue_sous},
-    scene::Affiche,
 };
 
 /// Repères visibles seulement dans le Plan.
@@ -1236,7 +1235,6 @@ fn dessiner(
     mut trois_d: Gizmos<Gizmos3d>,
     mut dessus_3d: Gizmos<GizmosDessus>,
     mut dessus_plan: Gizmos<GizmosPlanDessus>,
-    affiche: Res<Affiche>,
     edition: Res<Edition>,
     orbite: Res<super::camera::Orbite>,
     touches: Res<ButtonInput<KeyCode>>,
@@ -1261,21 +1259,23 @@ fn dessiner(
     let jaune = Color::srgb(1.0, 0.82, 0.1);
     let rouge = Color::srgb(0.95, 0.15, 0.1);
     let violet = Color::srgb(0.65, 0.3, 0.95);
-    // Courbes de niveau (Plan).
-    for (a, b, maitresse) in &affiche.courbes {
-        let c = if *maitresse {
-            Color::srgba(0.45, 0.32, 0.2, 0.6)
-        } else {
-            Color::srgba(0.45, 0.32, 0.2, 0.28)
-        };
-        plan.line(*a, *b, c);
-    }
     let carte = &mut projet.carte;
     let (coin, fin) = carte.manifeste.bornes();
     let affectations = carte.quartiers.affectations.clone();
     let zones = carte.quartiers.zones.clone();
     let contours: Vec<_> = carte.contours.contours.values().cloned().collect();
-    let batiments = carte.batiments.clone();
+    // Seuls les bâtiments en conflit ou sélectionnés sont dessinés ici : copier toute la carte à chaque image
+    // coûtait des dizaines de millisecondes.
+    let selection_bati: &[Id] = match &edition.selection {
+        Selection::Batiments(ids) => ids,
+        _ => &[],
+    };
+    let batiments: std::collections::HashMap<Id, mcf_carte::Batiment> = edition
+        .conflits
+        .iter()
+        .chain(selection_bati)
+        .filter_map(|id| carte.batiments.get(id).map(|b| (*id, b.clone())))
+        .collect();
     let profils = carte.manifeste.profils;
     let lignes: Vec<(Id, Vec<P2>)> = carte
         .reseau

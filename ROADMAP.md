@@ -188,6 +188,12 @@ eau, 4 093 routes, 1 209 zones, 169 009 blocs ; scène reconstruite en **209 s**
 véhicules) copiés, catalogue `bibliotheque.json` en français (15 sections, 206 familles), fenêtre « Bibliothèque » (B) par
 section et famille avec recherche sans accents et vignettes faites par le moteur (`cargo editor -- --vignettes`), vue à
 l'écran. Pas encore posable sur la carte.
+2026-11-26 (suite) : blocs retirés, **23 466 bâtiments de la bibliothèque** posés le long des rues (`peupler_carte …
+bati`, catalogue des bâtiments modélisés porté à 23 fiches mesurées). Bâti en morceaux de 512 m + portée de 4,5 km,
+modèles chargés par zone autour de la caméra (1,4 km, bloc au-delà en fondu), conflits indexés (`mcf_carte::grille`).
+Cause des 170 ms par image trouvée : l'Inspecteur recomptait les carrefours (nœuds × tronçons) à chaque image. Mesuré
+(mode dev) : **≈ 16 ms par image** en vue d'ensemble et en ville (283 ms avant), scène en ≈ 10 s (200 s avant).
+Profileur ajouté : `cargo editor-profil` (Tracy) et `cargo editor-trace` (Perfetto).
 
 Critères de fin :
 - une personne qui n'a jamais vu l'outil pose, déplace et enregistre 20 objets en moins de 10 minutes avec la
