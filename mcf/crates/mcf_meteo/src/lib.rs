@@ -22,6 +22,8 @@
 
 use bevy::prelude::*;
 
+#[cfg(feature = "rendu")]
+pub mod abris;
 pub mod bruit;
 pub mod etat;
 #[cfg(feature = "rendu")]
@@ -29,6 +31,8 @@ pub mod precipitations;
 pub mod transition;
 pub mod vent;
 
+#[cfg(feature = "rendu")]
+pub use abris::{AbriPrecipitations, CarteAbris};
 pub use etat::{EtatMeteo, PresetMeteo};
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};

@@ -255,6 +255,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 1 : état météo, préréglages, transitions, tests.
 - ✅ Étape 2 : champ de vent sur le CPU (couche limite, rafales, turbulence), tests.
 - ✅ Étape 3 : pluie et neige sur le GPU, démo `demo_meteo` (coût GPU pas encore mesuré).
+- ✅ Étape 4a : pas de pluie sous les abris (`AbriPrecipitations`).
 
 ---
 

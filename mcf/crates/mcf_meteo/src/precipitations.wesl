@@ -22,8 +22,21 @@ struct Uniformes {
     quantum_vitesse: f32,       // pas des vitesses de chute : hauteur de boîte / période (m/s)
     periode: f32,               // période de bouclage (s)
     _remplissage: f32,
+    abris: vec4<f32>,           // carte des abris : origine x, origine z, côté d'une case, cases par côté
 };
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> u: Uniformes;
+// Hauteur du plus haut toit au-dessus de chaque case (R32Float).
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var carte_abris: texture_2d<f32>;
+
+// Vrai si le point est sous un abri (toit, pont, véhicule).
+fn sous_abri(p: vec3<f32>) -> bool {
+    let n = i32(u.abris.w);
+    let c = vec2<i32>(floor((p.xz - u.abris.xy) / u.abris.z));
+    if (any(c < vec2<i32>(0)) || any(c >= vec2<i32>(n))) {
+        return false;
+    }
+    return p.y < textureLoad(carte_abris, c, 0).r;
+}
 
 const PI: f32 = 3.14159265359;
 
@@ -75,7 +88,7 @@ fn particule(i: u32) -> Particule {
     let distance = length(camera - p.position);
     let demi = 0.5 * min(u.boite.x, u.boite.z);
     p.alpha = saturate(1.0 - distance / demi) * saturate(distance / 0.5) * u.luminosite;
-    if (f32(i) >= u.actives) {
+    if (f32(i) >= u.actives || sous_abri(p.position)) {
         p.alpha = 0.0;
     }
     return p;

@@ -4,8 +4,8 @@
 //! de quads, aucune simulation par image, aucun tampon à relire. Les gouttes vivent dans une boîte toroïdale
 //! centrée sur la caméra qui affiche le rendu ; le CPU ne fournit que quelques uniformes (vent, temps, quantité).
 //!
-//! Pas encore d'occlusion : il pleut aussi sous les toits. La carte de hauteur vue du ciel arrivera avec
-//! l'humidité (étape 4), qui en a besoin elle aussi.
+//! Les entités marquées [`AbriPrecipitations`] (toits, ponts, véhicules) arrêtent la pluie et la neige : voir
+//! [`crate::abris`].
 
 use bevy::asset::{RenderAssetUsages, embedded_asset, embedded_path};
 use bevy::camera::visibility::NoFrustumCulling;
@@ -19,6 +19,7 @@ use bevy::render::render_resource::{
 use bevy::shader::ShaderRef;
 
 use crate::MiseAJourMeteo;
+use crate::abris::{self, AbriPrecipitations, CarteAbris};
 use crate::etat::EtatMeteo;
 use crate::vent::ChampVent;
 
@@ -72,6 +73,8 @@ pub struct UniformesPrecipitations {
     quantum_vitesse: f32,
     periode: f32,
     remplissage: f32,
+    /// Carte des abris : origine x, origine z, côté d'une case, nombre de cases par côté.
+    abris: Vec4,
 }
 
 /// Matériau des précipitations : tout le calcul est dans le shader.
@@ -80,6 +83,9 @@ pub struct MateriauPrecipitations {
     /// Uniformes mis à jour chaque image.
     #[uniform(0)]
     pub uniformes: UniformesPrecipitations,
+    /// Carte des abris (R32Float, lue sans filtrage).
+    #[texture(1, filterable = false)]
+    pub carte_abris: Handle<Image>,
 }
 
 impl Material for MateriauPrecipitations {
@@ -160,10 +166,16 @@ impl Plugin for McfPrecipitationsPlugin {
         embedded_asset!(app, "precipitations.wesl");
         app.add_plugins(MaterialPlugin::<MateriauPrecipitations>::default())
             .register_type::<ReglagesPrecipitations>()
+            .register_type::<AbriPrecipitations>()
             .init_resource::<ReglagesPrecipitations>()
             .init_resource::<EtatPrecipitations>()
-            .add_systems(Startup, creer_precipitations)
-            .add_systems(Update, mettre_a_jour_precipitations.after(MiseAJourMeteo));
+            .add_systems(Startup, (abris::creer_carte_abris, creer_precipitations).chain())
+            .add_systems(
+                Update,
+                (abris::mettre_a_jour_carte_abris, mettre_a_jour_precipitations)
+                    .chain()
+                    .after(MiseAJourMeteo),
+            );
     }
 }
 
@@ -173,12 +185,16 @@ fn creer_precipitations(
     mut etat: ResMut<EtatPrecipitations>,
     mut maillages: ResMut<Assets<Mesh>>,
     mut materiaux: ResMut<Assets<MateriauPrecipitations>>,
+    carte: Res<CarteAbris>,
 ) {
     let entite = commandes
         .spawn((
             Name::new("Précipitations"),
             Mesh3d(maillages.add(maillage_particules(reglages.max_particules))),
-            MeshMaterial3d(materiaux.add(MateriauPrecipitations::default())),
+            MeshMaterial3d(materiaux.add(MateriauPrecipitations {
+                uniformes: UniformesPrecipitations::default(),
+                carte_abris: carte.image.clone(),
+            })),
             Transform::IDENTITY,
             // Les particules suivent la caméra dans le shader : la boîte englobante du maillage n'a pas de sens.
             NoFrustumCulling,
@@ -215,6 +231,7 @@ pub fn calculer_uniformes(
         quantum_vitesse: reglages.hauteur / PERIODE_S,
         periode: PERIODE_S,
         remplissage: 0.0,
+        abris: Vec4::new(0.0, 0.0, 1.0, 0.0),
     }
 }
 
@@ -247,6 +264,7 @@ fn mettre_a_jour_precipitations(
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     porteurs: Query<&MeshMaterial3d<MateriauPrecipitations>>,
     mut materiaux: ResMut<Assets<MateriauPrecipitations>>,
+    carte: Option<Res<CarteAbris>>,
 ) {
     // Vent mesuré à la première caméra 3D (la pluie l'entoure) ; à l'origine s'il n'y en a pas.
     let centre = cameras.iter().next().map_or(Vec3::ZERO, |c| c.translation());
@@ -260,6 +278,14 @@ fn mettre_a_jour_precipitations(
     let uniformes = UniformesPrecipitations {
         decalage_vent: etat.decalage_vent,
         temps: etat.temps,
+        abris: carte.map_or(u0.abris, |c| {
+            Vec4::new(
+                c.grille.origine.x,
+                c.grille.origine.y,
+                c.grille.texel,
+                c.grille.taille as f32,
+            )
+        }),
         ..u0
     };
     // Ne touche l'asset que s'il change (sinon Bevy le renverrait au GPU pour rien).

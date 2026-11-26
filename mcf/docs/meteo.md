@@ -35,9 +35,14 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   toroïdale autour de la caméra, vitesses quantifiées pour boucler exactement sur 600 s, traînées inclinées par le
   vent local (`ChampVent`), part de neige selon la température. Démo : `cargo run -p mcf_meteo --example
   demo_meteo` (touches 1 à 5), capture sans écran avec `MCF_CAPTURE=capture.png`. 4 tests CPU.
-  Pas encore d'occlusion (il pleut sous les toits) : prévue avec l'humidité (étape 4).
   Coût GPU non mesuré : rendu vérifié seulement avec un GPU logiciel (llvmpipe), à mesurer dans `mcf_bench`.
-- ⬜ Étapes 4 à 9.
+- ✅ Étape 4a : abris. Les entités marquées `AbriPrecipitations` (toits, ponts, véhicules) arrêtent la pluie et la
+  neige. Carte de hauteur 128 × 128 cases de 0,75 m autour de la caméra, construite sur le CPU depuis les boîtes
+  englobantes (opt-in : un terrain ou un arbre ne bloque pas la pluie), reconstruite seulement quand la caméra
+  change de case ou qu'un abri bouge. `CarteAbris::a_l_abri(p)` pour le gameplay. 6 tests.
+  Limite : un abri est sa boîte englobante (un toit en pente abrite comme un toit plat à sa hauteur maximale).
+- ⬜ Étape 4b : humidité et neige au sol (surfaces mouillées, flaques, neige accumulée).
+- ⬜ Étapes 5 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
