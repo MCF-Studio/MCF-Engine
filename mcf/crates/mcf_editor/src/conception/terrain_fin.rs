@@ -49,7 +49,8 @@ struct TuileFine;
 #[derive(Resource, Default)]
 struct Tuiles {
     faites: HashMap<(usize, usize), Entity>,
-    terrain_vu: Option<(u64, u64, u64)>,
+    /// Révision du manifeste et version du terrain final (`mcf_carte::MajTerrain`) affichées.
+    terrain_vu: Option<(u64, u64)>,
 }
 
 pub struct TerrainFinPlugin;
@@ -68,19 +69,58 @@ fn suivre(
     mut meshes: ResMut<Assets<Mesh>>,
     mut tuiles: ResMut<Tuiles>,
 ) {
-    // Terrain modifié (pinceau, routes) : toutes les tuiles sont refaites.
     let r: Revisions = projet.carte.revisions;
-    let vu = (r.reseau, r.relief, r.manifeste);
-    if tuiles.terrain_vu != Some(vu) {
-        for (_, e) in tuiles.faites.drain() {
-            commands.entity(e).despawn();
-        }
-        tuiles.terrain_vu = Some(vu);
-    }
     let eau = projet.carte.manifeste.niveau_eau_m;
-    let t = &projet.carte.derive().terrain;
+    let d = projet.carte.derive();
+    let t = &d.terrain;
     if t.nx < 2 || t.nz < 2 {
         return;
+    }
+    // Terrain modifié (pinceau, routes) : seules les tuiles qui touchent les blocs recalculés sont refaites, tout de
+    // suite (pas de trou le temps de les reconstruire) ; un nouveau manifeste refait tout.
+    let version = d.maj_terrain.a;
+    if tuiles
+        .terrain_vu
+        .is_none_or(|(m, v)| m != r.manifeste || v != version)
+    {
+        let rects = tuiles
+            .terrain_vu
+            .filter(|(m, _)| *m == r.manifeste)
+            .and_then(|(_, v)| d.maj_terrain.rectangles(Some(v), t));
+        match rects {
+            None => {
+                for (_, e) in tuiles.faites.drain() {
+                    commands.entity(e).despawn();
+                }
+            }
+            Some(zones) => {
+                let marge = t.resolution * 1.5;
+                let a_refaire: Vec<(usize, usize)> = tuiles
+                    .faites
+                    .keys()
+                    .copied()
+                    .filter(|&(i, j)| {
+                        let (x0, z0) = (i * TUILE, j * TUILE);
+                        let a = t.position(x0, z0);
+                        let b = t.position((x0 + TUILE).min(t.nx - 1), (z0 + TUILE).min(t.nz - 1));
+                        zones.iter().any(|[za, zb]| {
+                            za[0] - marge <= b[0]
+                                && a[0] <= zb[0] + marge
+                                && za[1] - marge <= b[1]
+                                && a[1] <= zb[1] + marge
+                        })
+                    })
+                    .collect();
+                for (i, j) in a_refaire {
+                    if let Some(e) = tuiles.faites.remove(&(i, j)) {
+                        commands.entity(e).despawn();
+                    }
+                    let e = fabriquer(&mut commands, &mut meshes, &surfaces, t, i, j, eau);
+                    tuiles.faites.insert((i, j), e);
+                }
+            }
+        }
+        tuiles.terrain_vu = Some((r.manifeste, version));
     }
     // Œil de la caméra (au sol) et hauteur : vue de très haut, rien de fin à montrer.
     let (s, c) = bevy::math::ops::sin_cos(orbite.lacet);
@@ -128,22 +168,35 @@ fn suivre(
     }
     a_faire.sort_by(|a, b| a.0.total_cmp(&b.0));
     for (_, i, j) in a_faire.into_iter().take(TUILES_PAR_IMAGE) {
-        let (x0, z0) = (i * TUILE, j * TUILE);
-        let xs: Vec<usize> = (x0..=(x0 + TUILE).min(t.nx - 1)).collect();
-        let zs: Vec<usize> = (z0..=(z0 + TUILE).min(t.nz - 1)).collect();
-        let (_, trois_d) = super::scene::maillage_morceau(t, &xs, &zs, eau);
-        let (mesh, transform) = super::scene::recentrer(trois_d);
-        let e = commands
-            .spawn((
-                TuileFine,
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(surfaces.herbe.clone()),
-                transform,
-                RenderLayers::layer(COUCHE_3D),
-                portee_fin(),
-            ))
-            .id();
+        let e = fabriquer(&mut commands, &mut meshes, &surfaces, t, i, j, eau);
         tuiles.faites.insert((i, j), e);
         debug!("terrain fin : tuile ({i}, {j}), {} en tout", tuiles.faites.len());
     }
+}
+
+/// Fabrique la tuile fine `(i, j)`.
+fn fabriquer(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    surfaces: &Surfaces,
+    t: &mcf_carte::relief::Relief,
+    i: usize,
+    j: usize,
+    eau: Option<f64>,
+) -> Entity {
+    let (x0, z0) = (i * TUILE, j * TUILE);
+    let xs: Vec<usize> = (x0..=(x0 + TUILE).min(t.nx - 1)).collect();
+    let zs: Vec<usize> = (z0..=(z0 + TUILE).min(t.nz - 1)).collect();
+    let (_, trois_d) = super::scene::maillage_morceau(t, &xs, &zs, eau);
+    let (mesh, transform) = super::scene::recentrer(trois_d);
+    commands
+        .spawn((
+            TuileFine,
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(surfaces.herbe.clone()),
+            transform,
+            RenderLayers::layer(COUCHE_3D),
+            portee_fin(),
+        ))
+        .id()
 }

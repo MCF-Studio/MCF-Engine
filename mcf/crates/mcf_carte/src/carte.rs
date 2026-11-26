@@ -120,6 +120,40 @@ pub struct Derive {
     pub terrain: Relief,
     /// Révisions des sources ayant servi.
     pub revisions: Revisions,
+    /// Dernière mise à jour du terrain final (ce que l'affichage doit refaire).
+    pub maj_terrain: MajTerrain,
+}
+
+/// Mise à jour du terrain final : il passe de la version `de` à la version `a`. `blocs` : blocs de terrain
+/// ([`relief::BLOC_TERRAIN`]) refaits, `None` si tout a été refait. Un affichage resté à la version `de` ne refait
+/// que ces blocs ; sinon il refait tout.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MajTerrain {
+    /// Version d'avant.
+    pub de: u64,
+    /// Version actuelle.
+    pub a: u64,
+    /// Blocs refaits (`None` : tout).
+    pub blocs: Option<BTreeSet<(usize, usize)>>,
+}
+
+impl MajTerrain {
+    /// Rectangles `(min, max)` (m) refaits, vus depuis la version `vu` d'un affichage ; `None` : tout refaire.
+    pub fn rectangles(&self, vu: Option<u64>, terrain: &Relief) -> Option<Vec<[P2; 2]>> {
+        if vu == Some(self.a) {
+            return Some(Vec::new());
+        }
+        if vu != Some(self.de) {
+            return None;
+        }
+        let blocs = self.blocs.as_ref()?;
+        Some(
+            blocs
+                .iter()
+                .map(|b| terrain.rectangle_zone(terrain.zone_bloc_terrain(*b)))
+                .collect(),
+        )
+    }
 }
 
 /// Un projet de carte ouvert.
@@ -156,6 +190,8 @@ pub struct Carte {
     futur: Vec<Etape>,
     trait_en_cours: Option<Etape>,
     derive: Option<Derive>,
+    /// Échantillons du relief source modifiés depuis le dernier calcul des dérivés.
+    relief_touche: Option<Zone>,
 }
 
 /// Accès aux sources pendant une transaction ; chaque accès mémorise l'état d'avant.
@@ -301,6 +337,7 @@ impl Carte {
             futur: Vec::new(),
             trait_en_cours: None,
             derive: None,
+            relief_touche: None,
         })
     }
 
@@ -333,6 +370,7 @@ impl Carte {
             futur: Vec::new(),
             trait_en_cours: None,
             derive: None,
+            relief_touche: None,
         }
     }
 
@@ -452,6 +490,10 @@ impl Carte {
         }
         if !e.relief.is_empty() {
             self.revisions.relief += 1;
+            for (bx, bz) in e.relief.keys() {
+                let z = self.zone_bloc(*bx, *bz);
+                self.toucher_relief(z);
+            }
             let par_tuile = (self.manifeste.tuile_m as f64 / self.manifeste.resolution_relief_m) as usize;
             for (bx, bz) in e.relief.keys() {
                 let (x0, z0) = (bx * BLOC, bz * BLOC);
@@ -590,6 +632,7 @@ impl Carte {
         let bornes = (m.altitude_min_m, m.altitude_max_m);
         self.relief
             .pinceau(outil, centre, rayon, force, cible, graine, bornes);
+        self.toucher_relief(zone);
         self.revisions.relief += 1;
         self.trait_en_cours = Some(etape);
     }
@@ -610,7 +653,20 @@ impl Carte {
 
     // ---------------------------------------------------------------- dérivés
 
-    /// Dérivés à jour (recalcule ce qui a changé).
+    /// Note des échantillons du relief source modifiés (dérivés à refaire autour).
+    fn toucher_relief(&mut self, z: Zone) {
+        let z = Zone {
+            x0: z.x0.saturating_sub(1),
+            z0: z.z0.saturating_sub(1),
+            x1: (z.x1 + 1).min(self.relief.nx),
+            z1: (z.z1 + 1).min(self.relief.nz),
+        };
+        self.relief_touche = Some(self.relief_touche.map_or(z, |t| t.union(z)));
+    }
+
+    /// Dérivés à jour (recalcule ce qui a changé). Après une retouche du réseau ou du relief, seuls les profils en
+    /// long et les blocs de terrain concernés sont refaits (voir [`MajTerrain`]) ; le résultat est identique à un
+    /// calcul complet (test `derives_incrementaux_identiques`).
     pub fn derive(&mut self) -> &Derive {
         let r = self.revisions;
         let a_jour = self.derive.as_ref().is_some_and(|d| {
@@ -619,22 +675,144 @@ impl Carte {
                 && d.revisions.manifeste == r.manifeste
         });
         if !a_jour {
-            let profils = &self.manifeste.profils;
-            let geo = geometrie::calculer(&self.reseau, profils);
-            let altitudes = relief::altitudes_reseau(&self.reseau, &geo, &self.relief, profils);
-            let terrain = relief::terrain_final(&self.relief, &geo, &altitudes, profils);
-            let ilots = ilots::calculer(&self.reseau, &geo, profils);
-            self.derive = Some(Derive {
-                geo,
-                altitudes,
-                ilots,
-                terrain,
-                revisions: r,
+            let relief_touche = self.relief_touche.take();
+            let ancien = self.derive.take();
+            let reprise = ancien.filter(|d| {
+                d.revisions.manifeste == r.manifeste
+                    && d.terrain.nx == self.relief.nx
+                    && d.terrain.nz == self.relief.nz
+                    && (d.revisions.relief == r.relief || relief_touche.is_some())
+            });
+            self.derive = Some(match reprise {
+                Some(d) => self.derive_partiel(d, relief_touche),
+                None => self.derive_complet(),
             });
         }
         let d = self.derive.get_or_insert_with(Derive::default);
         d.revisions = r;
         d
+    }
+
+    fn derive_complet(&self) -> Derive {
+        let profils = &self.manifeste.profils;
+        let geo = geometrie::calculer(&self.reseau, profils);
+        let altitudes = relief::altitudes_reseau(&self.reseau, &geo, &self.relief, profils);
+        let terrain = relief::terrain_final(&self.relief, &geo, &altitudes, profils);
+        let ilots = ilots::calculer(&self.reseau, &geo, profils);
+        let version = self.derive.as_ref().map_or(0, |d| d.maj_terrain.a) + 1;
+        Derive {
+            geo,
+            altitudes,
+            ilots,
+            terrain,
+            revisions: self.revisions,
+            maj_terrain: MajTerrain {
+                de: version - 1,
+                a: version,
+                blocs: None,
+            },
+        }
+    }
+
+    /// Reprend les dérivés `d` : profils inchangés gardés, blocs de terrain refaits autour de ce qui a bougé.
+    fn derive_partiel(&self, d: Derive, relief_touche: Option<Zone>) -> Derive {
+        let profils = &self.manifeste.profils;
+        let reseau_change = d.revisions.reseau != self.revisions.reseau;
+        let geo = if reseau_change {
+            geometrie::calculer(&self.reseau, profils)
+        } else {
+            d.geo.clone()
+        };
+        let rect_relief = relief_touche
+            .filter(|z| !z.vide())
+            .map(|z| self.relief.rectangle_zone(z));
+        let altitudes = relief::altitudes_reseau_depuis(
+            &self.reseau,
+            &geo,
+            &self.relief,
+            profils,
+            Some(&relief::Reprise {
+                geo: &d.geo,
+                altitudes: &d.altitudes,
+                relief_touche: rect_relief,
+            }),
+        );
+        // Blocs à refaire : autour de chaque tronçon ou carrefour dont la géométrie ou les altitudes ont changé (dans
+        // son ancien et son nouvel état), et sous le relief retouché.
+        let mut blocs = BTreeSet::new();
+        let terrain_src = &self.relief;
+        let autour_troncon = |g: &geometrie::GeoTroncon, blocs: &mut BTreeSet<(usize, usize)>| {
+            let portee = relief::portee_terrassement(profils, g.classe);
+            for s in g.axe.windows(2) {
+                let [a, b] = relief::englobant(s);
+                blocs.extend(
+                    terrain_src
+                        .blocs_rectangle([a[0] - portee, a[1] - portee], [b[0] + portee, b[1] + portee]),
+                );
+            }
+        };
+        let ids: BTreeSet<Id> = d
+            .geo
+            .troncons
+            .keys()
+            .chain(geo.troncons.keys())
+            .copied()
+            .collect();
+        for id in ids {
+            let (avant, apres) = (d.geo.troncons.get(&id), geo.troncons.get(&id));
+            let meme = avant == apres && d.altitudes.troncons.get(&id) == altitudes.troncons.get(&id);
+            if meme {
+                continue;
+            }
+            for g in [avant, apres].into_iter().flatten() {
+                autour_troncon(g, &mut blocs);
+            }
+        }
+        let ids: BTreeSet<Id> = d.geo.noeuds.keys().chain(geo.noeuds.keys()).copied().collect();
+        for id in ids {
+            let (avant, apres) = (d.geo.noeuds.get(&id), geo.noeuds.get(&id));
+            if avant == apres && d.altitudes.noeuds.get(&id) == altitudes.noeuds.get(&id) {
+                continue;
+            }
+            for n in [avant, apres].into_iter().flatten() {
+                if !n.carrefour.emprise.is_empty() {
+                    let [a, b] = relief::englobant(&n.carrefour.emprise);
+                    blocs.extend(terrain_src.blocs_rectangle(a, b));
+                }
+            }
+        }
+        if let Some([a, b]) = rect_relief {
+            blocs.extend(terrain_src.blocs_rectangle(a, b));
+        }
+        let mut terrain = d.terrain;
+        relief::terrain_final_partiel(&self.relief, &geo, &altitudes, profils, &mut terrain, &blocs);
+        let ilots = if reseau_change {
+            ilots::calculer(&self.reseau, &geo, profils)
+        } else {
+            d.ilots
+        };
+        let version = d.maj_terrain.a;
+        let maj_terrain = if blocs.is_empty() {
+            MajTerrain {
+                de: version,
+                a: version,
+                blocs: Some(blocs),
+            }
+        } else {
+            MajTerrain {
+                de: version,
+                a: version + 1,
+                blocs: Some(blocs),
+            }
+        };
+        Derive {
+            geo,
+            altitudes,
+            ilots,
+            terrain,
+            revisions: self.revisions,
+            maj_terrain,
+        }
     }
 
     // ---------------------------------------------------------------- commandes
@@ -1441,6 +1619,77 @@ mod tests {
             .tracer_route(ClasseRoute::Route, &releve::borner(trace, &c.manifeste), 4.0)
             .expect("route acceptée");
         assert!(!ids.is_empty());
+    }
+
+    /// Les dérivés repris après une retouche (réseau, relief, annulation) sont exactement ceux d'un calcul complet,
+    /// et seule une partie du terrain est refaite.
+    #[test]
+    fn derives_incrementaux_identiques() {
+        let mut c = quartier();
+        c.pinceau(Pinceau::Naturel, [0.0, 0.0], 500.0, 25.0, 0.0);
+        c.pinceau(Pinceau::Lever, [60.0, 40.0], 90.0, 18.0, 0.0);
+        c.fin_trait();
+        c.derive();
+        let total = {
+            let t = &c.derive().terrain;
+            t.nx.div_ceil(relief::BLOC_TERRAIN) * t.nz.div_ceil(relief::BLOC_TERRAIN)
+        };
+        let verifier = |c: &mut Carte, quoi: &str, partiel_attendu: bool| {
+            let partiel = c.derive().clone();
+            let complet = c.derive_complet();
+            assert_eq!(partiel.geo, complet.geo, "{quoi} : géométrie");
+            assert_eq!(partiel.altitudes, complet.altitudes, "{quoi} : altitudes");
+            assert_eq!(partiel.ilots, complet.ilots, "{quoi} : îlots");
+            let ecart = partiel
+                .terrain
+                .h
+                .iter()
+                .zip(&complet.terrain.h)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            assert_eq!(
+                ecart, 0,
+                "{quoi} : {ecart} échantillon(s) de terrain différent(s)"
+            );
+            if partiel_attendu {
+                let n = partiel.maj_terrain.blocs.as_ref().map(|b| b.len());
+                assert!(
+                    n.is_some_and(|n| n > 0 && n < total),
+                    "{quoi} : {n:?} bloc(s) refait(s) sur {total}"
+                );
+            }
+        };
+        let (id, p) = c
+            .reseau
+            .noeuds
+            .iter()
+            .map(|(i, n)| (*i, n.position))
+            .next()
+            .expect("nœud");
+        c.modifier("déplacer", |tx| {
+            let (r, m) = tx.reseau_et_manifeste();
+            r.deplacer_noeud(id, [p[0] + 7.0, p[1] - 3.0], m);
+            Ok(())
+        })
+        .expect("déplacement");
+        verifier(&mut c, "nœud déplacé", true);
+        c.pinceau(Pinceau::Lever, [0.0, 0.0], 30.0, 6.0, 0.0);
+        verifier(&mut c, "coup de pinceau sur un carrefour", true);
+        c.pinceau(Pinceau::Abaisser, [300.0, 300.0], 20.0, 4.0, 0.0);
+        verifier(&mut c, "coup de pinceau loin des routes", true);
+        c.fin_trait();
+        verifier(&mut c, "fin du trait", false);
+        c.annuler();
+        verifier(&mut c, "trait annulé", true);
+        c.annuler();
+        verifier(&mut c, "déplacement annulé", true);
+        c.refaire();
+        verifier(&mut c, "déplacement refait", true);
+        c.tracer_route(ClasseRoute::Route, &[[-300.0, 250.0], [250.0, 180.0]], 2.0)
+            .expect("route");
+        verifier(&mut c, "route tracée", true);
+        c.annuler();
+        verifier(&mut c, "route annulée", true);
     }
 
     #[test]

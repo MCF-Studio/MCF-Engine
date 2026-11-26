@@ -46,6 +46,10 @@ pub struct Affiche {
     dernier_terrain: Option<Instant>,
     /// Matériaux partagés.
     materiaux: Option<Materiaux>,
+    /// Version du terrain final affichée (`mcf_carte::MajTerrain`).
+    terrain_vu: Option<u64>,
+    /// Bâtiments affichés par case.
+    bati: HashMap<Case, Vec<mcf_carte::Batiment>>,
 }
 
 #[derive(Clone)]
@@ -196,6 +200,50 @@ fn materiaux(materials: &mut Assets<StandardMaterial>) -> Materiaux {
     }
 }
 
+/// Case du découpage des routes et du bâti (`MORCEAU_BATI_M`), pour ne refaire que ce qui a changé.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Case(i64, i64);
+
+/// Morceau de terrain grossier : premier échantillon `(x0, z0)` (même découpage que les tuiles fines).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Morceau(usize, usize);
+
+fn case_de(p: P2) -> Case {
+    Case(
+        (p[0] / MORCEAU_BATI_M).floor() as i64,
+        (p[1] / MORCEAU_BATI_M).floor() as i64,
+    )
+}
+
+/// Rectangle `(min, max)` d'une case.
+fn rect_case(c: Case) -> [P2; 2] {
+    let (x, z) = (c.0 as f64 * MORCEAU_BATI_M, c.1 as f64 * MORCEAU_BATI_M);
+    [[x, z], [x + MORCEAU_BATI_M, z + MORCEAU_BATI_M]]
+}
+
+fn se_touchent(a: &[P2; 2], b: &[P2; 2]) -> bool {
+    a[0][0] <= b[1][0] && b[0][0] <= a[1][0] && a[0][1] <= b[1][1] && b[0][1] <= a[1][1]
+}
+
+/// Ce qu'il faut refaire : tout, ou seulement ce qui touche ces rectangles.
+enum ARefaire {
+    Tout,
+    Zones(Vec<[P2; 2]>),
+}
+
+impl ARefaire {
+    fn touche(&self, r: &[P2; 2]) -> bool {
+        match self {
+            Self::Tout => true,
+            Self::Zones(z) => z.iter().any(|z| se_touchent(z, r)),
+        }
+    }
+
+    fn rien(&self) -> bool {
+        matches!(self, Self::Zones(z) if z.is_empty())
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn reconstruire(
     mut commands: Commands,
@@ -207,7 +255,7 @@ fn reconstruire(
     mut materials: ResMut<Assets<StandardMaterial>>,
     surfaces: Res<Surfaces>,
     catalogue: Res<super::modeles::Catalogue>,
-    parties: Query<(Entity, &Partie)>,
+    parties: Query<(Entity, &Partie, Option<&Case>, Option<&Morceau>)>,
 ) {
     let r = projet.carte.revisions;
     if affiche.vu == Some(r) {
@@ -221,7 +269,7 @@ fn reconstruire(
     let change = |f: fn(&Revisions) -> u64| avant.is_none_or(|a| f(&a) != f(&r));
     let geometrie = change(|x| x.reseau) || change(|x| x.manifeste);
     let terrain = geometrie || change(|x| x.relief);
-    // Pendant un coup de pinceau, le terrain est reconstruit au plus 12 fois par seconde.
+    // Pendant un coup de pinceau sur une grande zone, le terrain est reconstruit au plus 12 fois par seconde.
     if terrain
         && !geometrie
         && boutons.pressed(MouseButton::Left)
@@ -232,27 +280,92 @@ fn reconstruire(
         return;
     }
     let debut = Instant::now();
-    let a_refaire = [
-        (Partie::Terrain, terrain),
-        (Partie::Eau, change(|x| x.manifeste)),
-        (Partie::Routes, terrain),
-        (Partie::Bati, terrain || change(|x| x.batiments)),
-        (Partie::Quartiers, geometrie || change(|x| x.quartiers)),
-    ];
-    for (e, p) in &parties {
-        if a_refaire.iter().any(|(q, oui)| q == p && *oui) {
-            commands.entity(e).despawn();
-        }
-    }
     let eau = projet.carte.manifeste.niveau_eau_m;
     let (coin, fin) = projet.carte.manifeste.bornes();
     let profils = projet.carte.manifeste.profils;
-    let batiments: Vec<_> = projet.carte.batiments.values().cloned().collect();
-    let quartiers = projet.carte.quartiers.clone();
-    let reseau = projet.carte.reseau.clone();
     let alt_max = projet.carte.manifeste.altitude_max_m as f32;
     let projet_alt_min = projet.carte.manifeste.altitude_min_m as f32;
+    let manifeste_change = change(|x| x.manifeste);
+    let rang = |c: mcf_geo::ClasseRoute| {
+        mcf_geo::ClasseRoute::TOUTES
+            .iter()
+            .position(|x| *x == c)
+            .unwrap_or(0)
+    };
+    // Classe la plus haute qui arrive à chaque nœud (couleur du carrefour), en un passage sur les tronçons.
+    let mut classe_noeud: HashMap<mcf_carte::Id, mcf_geo::ClasseRoute> = HashMap::new();
+    if terrain {
+        for t in projet.carte.reseau.troncons.values() {
+            for n in [t.de, t.vers] {
+                let c = classe_noeud.entry(n).or_insert(t.classe);
+                if rang(t.classe) > rang(*c) {
+                    *c = t.classe;
+                }
+            }
+        }
+    }
+    let quartiers = (geometrie || change(|x| x.quartiers)).then(|| projet.carte.quartiers.clone());
+    // Terrain, routes et bâti : seulement autour de ce que la carte a recalculé (blocs de terrain), sauf première
+    // construction ou changement du manifeste.
     let d = projet.carte.derive();
+    let sol = if !terrain {
+        ARefaire::Zones(Vec::new())
+    } else if manifeste_change {
+        ARefaire::Tout
+    } else {
+        // Les normales du terrain lisent les échantillons voisins : marge d'un échantillon et demi.
+        let m = d.terrain.resolution * 1.5;
+        match d.maj_terrain.rectangles(affiche.terrain_vu, &d.terrain) {
+            Some(z) => ARefaire::Zones(
+                z.into_iter()
+                    .map(|[a, b]| [[a[0] - m, a[1] - m], [b[0] + m, b[1] + m]])
+                    .collect(),
+            ),
+            None => ARefaire::Tout,
+        }
+    };
+    // Bâti : cases dont le terrain ou les bâtiments ont changé (la liste affichée de chaque case est gardée).
+    let mut cases_bati: HashMap<Case, Vec<mcf_carte::Batiment>> = HashMap::new();
+    let bati_change = change(|x| x.batiments);
+    if bati_change || !sol.rien() {
+        for b in projet.carte.batiments.values() {
+            cases_bati.entry(case_de(b.centre())).or_default().push(b.clone());
+        }
+    }
+    let mut bati_a_refaire: std::collections::HashSet<Case> = std::collections::HashSet::new();
+    if bati_change || !sol.rien() {
+        let connues: std::collections::HashSet<Case> =
+            cases_bati.keys().chain(affiche.bati.keys()).copied().collect();
+        for c in connues {
+            let nouveau = cases_bati.get(&c);
+            let differe = bati_change && nouveau != affiche.bati.get(&c);
+            if differe || sol.touche(&rect_case(c)) {
+                bati_a_refaire.insert(c);
+            }
+        }
+    }
+    let d = projet.carte.derive();
+    for (e, p, case, morceau) in &parties {
+        let refaire = match p {
+            Partie::Terrain => match (morceau, &sol) {
+                (_, ARefaire::Tout) => true,
+                (Some(m), z) => z.touche(&rect_morceau(&d.terrain, *m)),
+                // Courbes de niveau sans morceau (n'arrive pas) : refaites avec le terrain.
+                (None, z) => !z.rien(),
+            },
+            Partie::Eau => manifeste_change,
+            Partie::Routes => match (case, &sol) {
+                (_, ARefaire::Tout) => true,
+                (Some(c), z) => z.touche(&rect_case(*c)),
+                (None, z) => !z.rien(),
+            },
+            Partie::Bati => case.is_none_or(|c| bati_a_refaire.contains(c)) && !bati_a_refaire.is_empty(),
+            Partie::Quartiers => geometrie || change(|x| x.quartiers),
+        };
+        if refaire {
+            commands.entity(e).despawn();
+        }
+    }
     let mut ajouter = |commands: &mut Commands,
                        partie: Partie,
                        mesh: Mesh,
@@ -278,15 +391,23 @@ fn reconstruire(
             .id()
     };
 
-    if terrain {
-        for (plan, trois_d) in maillages_terrain(&d.terrain, eau) {
-            ajouter(
+    if !sol.rien() {
+        // Courbes de niveau du Plan : un maillage de lignes par morceau, construit avec lui (elles étaient
+        // redessinées une à une à chaque image, des centaines de milliers de segments sur une grande carte).
+        let pas_courbes = d.terrain.nx.max(d.terrain.nz).div_ceil(400).max(1);
+        for (m, xs, zs) in morceaux_terrain(&d.terrain) {
+            if !sol.touche(&rect_morceau(&d.terrain, m)) {
+                continue;
+            }
+            let (plan, trois_d) = maillage_morceau(&d.terrain, &xs, &zs, eau);
+            let e = ajouter(
                 &mut commands,
                 Partie::Terrain,
                 plan,
                 mats.plan.clone(),
                 COUCHE_PLAN,
             );
+            commands.entity(e).insert(m);
             let (mesh, transform) = recentrer(trois_d);
             let e = ajouter(
                 &mut commands,
@@ -297,40 +418,44 @@ fn reconstruire(
             );
             commands
                 .entity(e)
-                .insert((transform, super::terrain_fin::portee_grossier()));
-        }
-        // Courbes de niveau du Plan : un maillage de lignes construit ici, une fois (elles étaient redessinées une à
-        // une à chaque image, des centaines de milliers de segments sur une grande carte).
-        let pas = d.terrain.nx.max(d.terrain.nz).div_ceil(400).max(1);
-        let (mut positions, mut couleurs) = (Vec::new(), Vec::new());
-        for (a, b, h) in relief::courbes_de_niveau(&d.terrain, 5.0, pas) {
-            let y = h as f32 + 0.3;
-            let alpha = if (h / 25.0).fract().abs() < 1e-6 {
-                0.6
-            } else {
-                0.28
+                .insert((m, transform, super::terrain_fin::portee_grossier()));
+            let zone = relief::Zone {
+                x0: m.0,
+                z0: m.1,
+                x1: *xs.last().unwrap_or(&m.0),
+                z1: *zs.last().unwrap_or(&m.1),
             };
-            let c = Color::srgba(0.45, 0.32, 0.2, alpha).to_linear().to_f32_array();
-            positions.push([a[0] as f32, y, a[1] as f32]);
-            positions.push([b[0] as f32, y, b[1] as f32]);
-            couleurs.extend([c, c]);
-        }
-        if !positions.is_empty() {
-            let mut lignes = Mesh::new(PrimitiveTopology::LineList, RenderAssetUsages::RENDER_WORLD);
-            lignes.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-            lignes.insert_attribute(Mesh::ATTRIBUTE_COLOR, couleurs);
-            ajouter(
-                &mut commands,
-                Partie::Terrain,
-                lignes,
-                mats.voile_plan.clone(),
-                COUCHE_PLAN,
-            );
+            let (mut positions, mut couleurs) = (Vec::new(), Vec::new());
+            for (a, b, h) in relief::courbes_de_niveau_zone(&d.terrain, 5.0, pas_courbes, zone) {
+                let y = h as f32 + 0.3;
+                let alpha = if (h / 25.0).fract().abs() < 1e-6 {
+                    0.6
+                } else {
+                    0.28
+                };
+                let c = Color::srgba(0.45, 0.32, 0.2, alpha).to_linear().to_f32_array();
+                positions.push([a[0] as f32, y, a[1] as f32]);
+                positions.push([b[0] as f32, y, b[1] as f32]);
+                couleurs.extend([c, c]);
+            }
+            if !positions.is_empty() {
+                let mut lignes = Mesh::new(PrimitiveTopology::LineList, RenderAssetUsages::RENDER_WORLD);
+                lignes.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+                lignes.insert_attribute(Mesh::ATTRIBUTE_COLOR, couleurs);
+                let e = ajouter(
+                    &mut commands,
+                    Partie::Terrain,
+                    lignes,
+                    mats.voile_plan.clone(),
+                    COUCHE_PLAN,
+                );
+                commands.entity(e).insert(m);
+            }
         }
         affiche.dernier_terrain = Some(Instant::now());
     }
 
-    if change(|x| x.manifeste) {
+    if manifeste_change {
         // Fond du Plan (hors carte) : un aplat sous tout, pour que le Plan n'ait jamais à effacer l'image (mini-carte,
         // vue partagée).
         let (w, h) = ((fin[0] - coin[0]) as f32, (fin[1] - coin[1]) as f32);
@@ -356,9 +481,7 @@ fn reconstruire(
             COUCHE_PLAN,
         );
     }
-    if change(|x| x.manifeste)
-        && let Some(niveau) = eau
-    {
+    if manifeste_change && let Some(niveau) = eau {
         let (w, h) = ((fin[0] - coin[0]) as f32, (fin[1] - coin[1]) as f32);
         let c = Vec3::new(
             ((coin[0] + fin[0]) * 0.5) as f32,
@@ -374,21 +497,23 @@ fn reconstruire(
         );
     }
 
-    if terrain {
-        let (mut plan, mut voirie) = (Tampon::default(), Voirie::default());
+    if !sol.rien() {
+        // Routes par case : chaque tronçon va dans la case du centre de son axe, chaque carrefour dans celle de son
+        // nœud. Une case est refaite entière dès qu'elle touche une zone recalculée.
+        let mut cases: HashMap<Case, (Tampon, Voirie)> = HashMap::new();
         let blanc = [1.0, 1.0, 1.0, 1.0];
-        let rang = |c: mcf_geo::ClasseRoute| {
-            mcf_geo::ClasseRoute::TOUTES
-                .iter()
-                .position(|x| *x == c)
-                .unwrap_or(0)
-        };
         let trottoir_plan = lin([226, 222, 214], 1.0);
         for (id, g) in &d.geo.troncons {
+            let [a, b] = relief::englobant(&g.axe);
+            let case = case_de([(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]);
+            if !sol.touche(&rect_case(case)) {
+                continue;
+            }
             let profil = profils.get(g.classe);
             let Some(long) = d.altitudes.troncons.get(id) else {
                 continue;
             };
+            let (plan, voirie) = cases.entry(case).or_default();
             let altitudes: Vec<f64> = g.abscisses_rognees().iter().map(|s| long.altitude(*s)).collect();
             for b in &g.bandes {
                 // Le terre-plein central est un muret béton posé sur la chaussée : plus haut que les autres bandes.
@@ -415,17 +540,16 @@ fn reconstruire(
             }
         }
         for (id, n) in &d.geo.noeuds {
+            let case = case_de(n.position);
+            if !sol.touche(&rect_case(case)) {
+                continue;
+            }
             let Some(&h) = d.altitudes.noeuds.get(id) else {
                 continue;
             };
-            let classe = reseau
-                .troncons
-                .values()
-                .filter(|t| t.de == *id || t.vers == *id)
-                .map(|t| t.classe)
-                .max_by_key(|c| rang(*c))
-                .unwrap_or(mcf_geo::ClasseRoute::Rue);
+            let classe = classe_noeud.get(id).copied().unwrap_or(mcf_geo::ClasseRoute::Rue);
             let profil = profils.get(classe);
+            let (plan, voirie) = cases.entry(case).or_default();
             if !n.carrefour.emprise.is_empty() {
                 let m = mcf_geo::maillage_polygone(&n.carrefour.emprise, |_| h + 0.10);
                 plan.ajouter(&m, trottoir_plan);
@@ -445,50 +569,36 @@ fn reconstruire(
                 voirie.herbe.ajouter(&m, blanc);
             }
         }
-        if !plan.vide() {
-            ajouter(
-                &mut commands,
-                Partie::Routes,
-                plan.maillage(),
-                mats.plan.clone(),
-                COUCHE_PLAN,
-            );
-        }
-        for (lot, mat) in [
-            (voirie.asphalte, &surfaces.asphalte),
-            (voirie.terre, &surfaces.terre),
-            (voirie.trottoir, &surfaces.trottoir),
-            (voirie.herbe, &surfaces.herbe),
-        ] {
-            if !lot.vide() {
-                ajouter(
+        for (case, (plan, voirie)) in cases {
+            if !plan.vide() {
+                let e = ajouter(
                     &mut commands,
                     Partie::Routes,
-                    lot.maillage(),
-                    mat.clone(),
-                    COUCHE_3D,
+                    plan.maillage(),
+                    mats.plan.clone(),
+                    COUCHE_PLAN,
                 );
+                commands.entity(e).insert(case);
+            }
+            for (lot, mat) in [
+                (voirie.asphalte, &surfaces.asphalte),
+                (voirie.terre, &surfaces.terre),
+                (voirie.trottoir, &surfaces.trottoir),
+                (voirie.herbe, &surfaces.herbe),
+            ] {
+                if !lot.vide() {
+                    let (mesh, transform) = recentrer(lot.maillage());
+                    let e = ajouter(&mut commands, Partie::Routes, mesh, mat.clone(), COUCHE_3D);
+                    commands.entity(e).insert((case, transform));
+                }
             }
         }
     }
 
-    if terrain || change(|x| x.batiments) {
-        // Bâti découpé en morceaux de `MORCEAU_BATI_M` : le moteur écarte ceux hors du champ, et la 3D ne dessine pas
-        // ceux au-delà de `PORTEE_BATI_M` (un seul maillage pour toute la carte était dessiné entier à chaque image,
-        // ombres comprises).
+    if !bati_a_refaire.is_empty() {
+        // Bâti découpé en cases de `MORCEAU_BATI_M` : le moteur écarte celles hors du champ, la 3D ne dessine pas
+        // celles au-delà de `PORTEE_BATI_M`, et seules les cases touchées sont refaites.
         // Bâtiment modélisé : de près le modèle (`modeles`), de loin son bloc (niveau de détail, fondu entre les deux).
-        let mut morceaux: HashMap<(i64, i64, bool), (Tampon, Tampon, Tampon)> = HashMap::new();
-        for b in &batiments {
-            let modele = catalogue.modele_affiche(b);
-            let c = b.centre();
-            let cle = (
-                (c[0] / MORCEAU_BATI_M).floor() as i64,
-                (c[1] / MORCEAU_BATI_M).floor() as i64,
-                modele,
-            );
-            let (plan, toits, murs) = morceaux.entry(cle).or_default();
-            bloc(plan, toits, murs, b, &d.terrain, true);
-        }
         let portee = VisibilityRange {
             start_margin: 0.0..0.0,
             end_margin: (PORTEE_BATI_M - 400.0)..PORTEE_BATI_M,
@@ -498,32 +608,54 @@ fn reconstruire(
             start_margin: (super::modeles::PORTEE_MODELE_M - 200.0)..super::modeles::PORTEE_MODELE_M,
             ..portee.clone()
         };
-        for ((_, _, modele), (plan, toits, murs)) in morceaux {
-            if !plan.vide() {
-                ajouter(
-                    &mut commands,
-                    Partie::Bati,
-                    plan.maillage(),
-                    mats.plan.clone(),
-                    COUCHE_PLAN,
-                );
+        for case in &bati_a_refaire {
+            let Some(liste) = cases_bati.get(case) else {
+                continue;
+            };
+            let mut lots: [(Tampon, Tampon, Tampon); 2] = Default::default();
+            for b in liste {
+                let modele = catalogue.modele_affiche(b);
+                let (plan, toits, murs) = &mut lots[usize::from(modele)];
+                bloc(plan, toits, murs, b, &d.terrain, true);
             }
-            for (lot, mat) in [(toits, &surfaces.toit), (murs, &surfaces.facade)] {
-                if !lot.vide() {
-                    let (mesh, transform) = recentrer(lot.maillage());
-                    let e = ajouter(&mut commands, Partie::Bati, mesh, mat.clone(), COUCHE_3D);
-                    let portee = if modele {
-                        portee_lod.clone()
-                    } else {
-                        portee.clone()
-                    };
-                    commands.entity(e).insert((transform, portee));
+            for (modele, (plan, toits, murs)) in lots.into_iter().enumerate() {
+                if !plan.vide() {
+                    let e = ajouter(
+                        &mut commands,
+                        Partie::Bati,
+                        plan.maillage(),
+                        mats.plan.clone(),
+                        COUCHE_PLAN,
+                    );
+                    commands.entity(e).insert(*case);
+                }
+                for (lot, mat) in [(toits, &surfaces.toit), (murs, &surfaces.facade)] {
+                    if !lot.vide() {
+                        let (mesh, transform) = recentrer(lot.maillage());
+                        let e = ajouter(&mut commands, Partie::Bati, mesh, mat.clone(), COUCHE_3D);
+                        let portee = if modele == 1 {
+                            portee_lod.clone()
+                        } else {
+                            portee.clone()
+                        };
+                        commands.entity(e).insert((*case, transform, portee));
+                    }
+                }
+            }
+        }
+        for c in &bati_a_refaire {
+            match cases_bati.remove(c) {
+                Some(l) => {
+                    affiche.bati.insert(*c, l);
+                }
+                None => {
+                    affiche.bati.remove(c);
                 }
             }
         }
     }
 
-    if geometrie || change(|x| x.quartiers) {
+    if let Some(quartiers) = quartiers {
         let mut voile = Tampon::default();
         // Au-dessus de tout relief : en vue verticale, l'altitude ne déplace rien.
         let y = f64::from(alt_max) + 20.0;
@@ -553,15 +685,56 @@ fn reconstruire(
         }
     }
 
+    let version_terrain = d.maj_terrain.a;
     if geometrie || change(|x| x.batiments) {
         edition.conflits = projet.carte.conflits();
     }
+    affiche.terrain_vu = Some(version_terrain);
     affiche.vu = Some(r);
     edition.duree_scene_ms = debut.elapsed().as_secs_f64() * 1000.0;
 }
 
-/// Maillages du terrain par morceaux (plan, 3D). Au plus ~1024 échantillons par côté sont affichés : au-delà, la
-/// grille est sous-échantillonnée (le relief source et le terrain final restent à pleine résolution).
+/// Rectangle `(min, max)` (m) d'un morceau de terrain grossier.
+fn rect_morceau(t: &Relief, m: Morceau) -> [P2; 2] {
+    let tuile = super::terrain_fin::TUILE;
+    let x1 = (m.0 + tuile).min(t.nx.saturating_sub(1));
+    let z1 = (m.1 + tuile).min(t.nz.saturating_sub(1));
+    [t.position(m.0, m.1), t.position(x1, z1)]
+}
+
+/// Morceaux du terrain grossier : `TUILE` échantillons de côté (même découpage que les tuiles fines, pour que chaque
+/// tuile fine remplace exactement son morceau grossier), avec les échantillons affichés. Au plus ~1024 échantillons
+/// par côté de carte sont affichés : au-delà, la grille est sous-échantillonnée (le relief source et le terrain final
+/// restent à pleine résolution, et la 3D proche est à pleine résolution, `terrain_fin`).
+fn morceaux_terrain(t: &Relief) -> Vec<(Morceau, Vec<usize>, Vec<usize>)> {
+    let mut v = Vec::new();
+    if t.nx < 2 || t.nz < 2 {
+        return v;
+    }
+    let pas = t.nx.max(t.nz).div_ceil(1024).max(1);
+    let tuile = super::terrain_fin::TUILE;
+    let mut z0 = 0;
+    while z0 + 1 < t.nz {
+        let z1 = (z0 + tuile).min(t.nz - 1);
+        let mut x0 = 0;
+        while x0 + 1 < t.nx {
+            let x1 = (x0 + tuile).min(t.nx - 1);
+            let xs: Vec<usize> = echantillons(x1 - x0 + 1, pas)
+                .into_iter()
+                .map(|i| x0 + i)
+                .collect();
+            let zs: Vec<usize> = echantillons(z1 - z0 + 1, pas)
+                .into_iter()
+                .map(|i| z0 + i)
+                .collect();
+            v.push((Morceau(x0, z0), xs, zs));
+            x0 = x1;
+        }
+        z0 = z1;
+    }
+    v
+}
+
 /// Ramène les sommets d'un maillage autour de son centre et rend le `Transform` qui le replace. Indispensable avec
 /// `VisibilityRange` : le fondu calculé par la carte graphique mesure la distance à l'**origine** de l'objet, pas à sa
 /// boîte ; un morceau aux sommets en coordonnées du monde (origine au centre de la carte) serait jugé à des kilomètres.
@@ -637,39 +810,6 @@ pub fn maillage_morceau(t: &Relief, xs: &[usize], zs: &[usize], eau: Option<f64>
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
         .with_inserted_attribute(Mesh::ATTRIBUTE_TANGENT, tan);
     (fabriquer(col_plan), trois_d)
-}
-
-/// Maillages du terrain grossier par morceaux de `super::terrain_fin::TUILE` échantillons (même découpage que les
-/// tuiles fines, pour que chaque tuile fine remplace exactement son morceau grossier). Au plus ~1024 échantillons par
-/// côté sont affichés : au-delà, la grille est sous-échantillonnée (le relief source et le terrain final restent à
-/// pleine résolution, et la 3D proche est à pleine résolution, `terrain_fin`).
-fn maillages_terrain(t: &Relief, eau: Option<f64>) -> Vec<(Mesh, Mesh)> {
-    let mut v = Vec::new();
-    if t.nx < 2 || t.nz < 2 {
-        return v;
-    }
-    let pas = t.nx.max(t.nz).div_ceil(1024).max(1);
-    let tuile = super::terrain_fin::TUILE;
-    let mut z0 = 0;
-    while z0 + 1 < t.nz {
-        let z1 = (z0 + tuile).min(t.nz - 1);
-        let mut x0 = 0;
-        while x0 + 1 < t.nx {
-            let x1 = (x0 + tuile).min(t.nx - 1);
-            let xs: Vec<usize> = echantillons(x1 - x0 + 1, pas)
-                .into_iter()
-                .map(|i| x0 + i)
-                .collect();
-            let zs: Vec<usize> = echantillons(z1 - z0 + 1, pas)
-                .into_iter()
-                .map(|i| z0 + i)
-                .collect();
-            v.push(maillage_morceau(t, &xs, &zs, eau));
-            x0 = x1;
-        }
-        z0 = z1;
-    }
-    v
 }
 
 /// Teinte 3D du terrain (multiplie la texture d'herbe) : plus sèche en altitude, minérale dans les pentes fortes,
