@@ -27,7 +27,10 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
 ## État
 
 - ✅ Étape 1 : `EtatMeteo`, `PresetMeteo`, `TransitionMeteo`, message `ChangerMeteo`, 10 tests (`cargo test -p mcf_meteo`).
-- ⬜ Étapes 2 à 9.
+- ✅ Étape 2 (partie CPU) : `ChampVent` (profil de couche limite, rafales, turbulence à divergence nulle), bruit
+  de Perlin identique à SkyForge, transport bouclé sur 2 500 m pour rester précis sur des heures de jeu, 9 tests.
+  Le volume 3D sur GPU viendra avec la pluie (étape 3), qui est la première à en avoir besoin.
+- ⬜ Étapes 3 à 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
