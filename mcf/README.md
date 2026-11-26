@@ -9,6 +9,7 @@ mcf/
 ├── crates/
 │   ├── mcf_map      format .mcfmap : lecture, écriture atomique, validation stricte (sans Bevy)
 │   ├── mcf_core     briques communes jeu / éditeur / serveur, passage .mcfmap ↔ Transform
+│   ├── mcf_meteo    météo et eau (hors feuille de route, voir docs/meteo.md)
 │   ├── mcf_bench    mesures : temps par image, 1 % low, parcours caméra rejouable, CSV
 │   ├── mcf_editor   éditeur (squelette ; interface en phase 3)
 │   ├── mcf_client   jeu (squelette)
@@ -17,7 +18,8 @@ mcf/
 ├── lang/            🅿️ lecture du langage .mcf / .uimcf (garé)
 └── docs/
     ├── rendu-lod-objets.md   comment Bevy gère objets / culling / LOD, budgets mid poly
-    └── bancs-essai.md        les deux tests qui décident de la migration
+    ├── bancs-essai.md        les deux tests qui décident de la migration
+    └── meteo.md              portage de la météo et de l'eau (SkyForge), état des étapes
 ```
 
 ## Travailler

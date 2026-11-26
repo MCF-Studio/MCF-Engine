@@ -1,0 +1,16 @@
+[package]
+name = "mcf_meteo"
+description = "Météo et eau MCF : état météo, transitions (puis vent, pluie, neige, humidité, océan, nuages)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Étape 1 : uniquement de la logique (pas de rendu), utilisable aussi par le serveur dédié pour
+# synchroniser la météo entre les joueurs.
+bevy = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
