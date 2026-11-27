@@ -13,7 +13,7 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
 | 4 | Humidité et neige au sol | Carte RGBA16F (mouillé, flaques, neige), extension de matériau Bevy pour les surfaces mouillées | `wetness.hlsl`, `WetSurface.hlsli` |
 | 5 | Océan FFT | Spectre JONSWAP 3 cascades, FFT Stockham en compute, mousse par jacobien, LOD Gerstner | `ocean_*.hlsl`, `Ocean.cpp` |
 | 6 | Vagues de bord | Shoaling, déferlement McCowan, run-up, mousse Worley | `ShoreWaves.hlsli` |
-| 7 | Nuages volumétriques | Bruit Perlin-Worley 3D, carte météo, ray-march + reprojection temporelle, intégration avec l'atmosphère Bevy | `cloud_*.hlsl`, `Clouds.cpp` |
+| 7 | Nuages volumétriques | Bruit Perlin-Worley 3D, carte météo, ray-march (reprojection temporelle plus tard), intégration avec l'atmosphère Bevy | `cloud_*.hlsl`, `Clouds.cpp` |
 | 8 | Son d'ambiance | Mer, ressac, vent, pluie, tonnerre via `bevy_audio` (ou crate validé par `cargo deny`) | `Audio.cpp` |
 | 9 | Banc d'essai | Scène dans `mcf_bench` pour mesurer le coût GPU de chaque passe | profileur GPU |
 
@@ -64,7 +64,24 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites : `Ocean::hauteur` n'inclut pas la FFT (la bouée de la démo s'enfonce dans les grosses vagues de
   tempête ; il faudra une relecture GPU asynchrone), coût GPU non mesuré, mémoire partagée à 16 Kio (limite par
   défaut de wgpu).
-- ⬜ Étapes 6 à 9.
+- ✅ Étape 7 (faite avant la 6) : nuages volumétriques (`McfNuagesPlugin`, composant `NuagesVolumetriques` sur la
+  caméra). Bruits cuits une fois sur le GPU (forme 128³ Perlin-Worley, détail 32³, carte météo 512²), marche en
+  demi résolution dans la couche 1 500 – 4 200 m (pas fins près de la caméra : on vole dedans), arrêt devant la
+  géométrie (profondeur), éclairage en unités physiques par le soleil de la scène (Henyey-Greenstein double lobe,
+  diffusion multiple, effet « powder ») et une ambiance du ciel. Composition au début de la passe transparente :
+  les nuages couvrent le ciel de l'atmosphère, la pluie reste devant. Dérive avec le vent bouclée sur 90 km
+  (multiple commun des motifs : pas de saut). Démo `demo_ocean` (flèches haut / bas pour monter dans les nuages,
+  `MCF_CAMERA=ciel|nuages|dessus`). 5 tests CPU, rendu vérifié par captures.
+  Écart assumé avec SkyForge : la forme de base ne variait qu'entre 0,77 et 0,89 (mesuré sur 1 500 points), si
+  bien que la couverture 0,6 du préréglage Nuageux donnait un ciel entièrement couvert ; elle est étalée sur
+  [0, 1] pour que la couverture soit la fraction du ciel couverte. L'ambiance est calée à l'œil (pas de référence
+  mesurée).
+  Limites : pas de reprojection temporelle (décalage fixe par pixel + filtre en tente, l'image ne scintille pas
+  mais les bords sont un peu flous), les reflets de l'océan et l'éclairage d'ambiance de la scène ne voient pas
+  les nuages (la carte d'environnement vient de l'atmosphère seule), pas d'ombre des nuages au sol, MSAA coupé
+  sur la caméra des nuages, coût GPU non mesuré (llvmpipe seulement : à mesurer en priorité, c'est la passe la
+  plus lourde du module).
+- ⬜ Étapes 6, 8 et 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -1,8 +1,12 @@
-//! Démo de l'océan : la houle selon la météo, avec l'atmosphère de Bevy pour le ciel et les reflets.
+//! Démo de l'océan et du ciel : la houle selon la météo, les nuages volumétriques, avec l'atmosphère de Bevy pour
+//! le ciel et les reflets.
 //!
 //! `cargo run -p mcf_meteo --example demo_ocean`
-//! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
+//! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s) ; flèches haut / bas : monter
+//! ou descendre (400 m/s, pour traverser la couche de nuages).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair` (nuageux par défaut).
+//! `MCF_CAMERA=ciel` (regard vers le haut), `MCF_CAMERA=nuages` (dans la couche, à 2 500 m),
+//! `MCF_CAMERA=dessus` (au-dessus, à 5 000 m).
 
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -12,7 +16,10 @@ use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight};
 use bevy::pbr::AtmosphereSettings;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use mcf_meteo::{ChangerMeteo, McfMeteoPlugin, McfOceanPlugin, McfPrecipitationsPlugin, Ocean, PresetMeteo};
+use mcf_meteo::{
+    ChangerMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin, McfPrecipitationsPlugin,
+    NuagesVolumetriques, Ocean, PresetMeteo,
+};
 
 fn main() {
     App::new()
@@ -21,9 +28,10 @@ fn main() {
             McfMeteoPlugin,
             McfPrecipitationsPlugin,
             McfOceanPlugin,
+            McfNuagesPlugin,
         ))
         .add_systems(Startup, scene)
-        .add_systems(Update, (touches, bouee, capture))
+        .add_systems(Update, (touches, voler, bouee, capture))
         .run();
 }
 
@@ -46,9 +54,20 @@ fn scene(
         },
         Transform::from_xyz(1.0, 0.35, -0.6).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+    let transformation = match std::env::var("MCF_CAMERA").as_deref() {
+        Ok("ciel") => Transform::from_xyz(0.0, 6.0, 20.0).looking_at(Vec3::new(0.0, 40.0, -60.0), Vec3::Y),
+        Ok("nuages") => {
+            Transform::from_xyz(0.0, 2500.0, 0.0).looking_at(Vec3::new(200.0, 2450.0, -1000.0), Vec3::Y)
+        }
+        Ok("dessus") => {
+            Transform::from_xyz(0.0, 5000.0, 0.0).looking_at(Vec3::new(500.0, 4300.0, -3000.0), Vec3::Y)
+        }
+        _ => Transform::from_xyz(0.0, 6.0, 20.0).looking_at(Vec3::new(0.0, 2.0, -60.0), Vec3::Y),
+    };
     commandes.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 6.0, 20.0).looking_at(Vec3::new(0.0, 2.0, -60.0), Vec3::Y),
+        transformation,
+        NuagesVolumetriques::default(),
         AtmosphereSettings::default(),
         Exposure { ev100: 13.0 },
         Tonemapping::AcesFitted,
@@ -75,6 +94,17 @@ fn scene(
 fn bouee(ocean: Res<Ocean>, mut bouees: Query<&mut Transform, With<Bouee>>) {
     for mut t in &mut bouees {
         t.translation.y = ocean.hauteur(t.translation.x, t.translation.z);
+    }
+}
+
+fn voler(
+    clavier: Res<ButtonInput<KeyCode>>,
+    temps: Res<Time>,
+    mut cameras: Query<&mut Transform, With<Camera3d>>,
+) {
+    let sens = clavier.pressed(KeyCode::ArrowUp) as i32 - clavier.pressed(KeyCode::ArrowDown) as i32;
+    for mut t in &mut cameras {
+        t.translation.y = (t.translation.y + sens as f32 * 400.0 * temps.delta_secs()).max(2.0);
     }
 }
 
