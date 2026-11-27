@@ -56,12 +56,18 @@ impl Default for ReglagesFft {
     }
 }
 
+/// Anneaux de la grille de la première cascade sautés au minimum : près de k = 0, la grille n'a que quelques
+/// modes, chacun portant une large part de l'étalement directionnel ; avec un pic de tempête proche de la maille,
+/// la variance de la mer du vent sortait 1,9 fois trop forte en amplitude (2,48 m RMS pour 1,81 m attendus).
+/// Avec 3 anneaux : 0,68 m pour 0,62 m.
+pub const ANNEAUX_MIN: f32 = 3.0;
+
 /// Bandes de nombres d'onde des cascades : la cascade c couvre [6·2π/Lc, 6·2π/Lc+1), la première commence après
-/// le pic de la houle de Gerstner.
+/// le pic de la houle de Gerstner (et au moins [`ANNEAUX_MIN`] mailles de sa grille).
 pub fn bandes(tailles: [f32; 3], k_pic: f32, debut_apres_pic: f32) -> (Vec4, Vec4) {
     let k = |l: f32| 6.0 * TAU / l.max(0.01);
     let k_min = Vec4::new(
-        (k_pic * debut_apres_pic).max(0.0),
+        (k_pic * debut_apres_pic).max(ANNEAUX_MIN * TAU / tailles[0].max(0.01)),
         k(tailles[1]),
         k(tailles[2]),
         0.0,
@@ -191,7 +197,10 @@ fn amplitude(p: &ParamsSpectre, k: Vec2, cascade: usize) -> f32 {
     let mut s = jonswap(p, w) * etalement(p, theta) * dwdk / kl;
     s *= ops::exp(-kl * kl * 1e-4);
     let dk = TAU / p.tailles[cascade];
-    (2.0 * s * dk * dk).sqrt()
+    // Variance d'un mode : |h0(k)|² + |h0(−k)|² en moyenne, comptée deux fois (k et −k donnent la même partie
+    // réelle). Pour que la variance de la surface soit ∫ S dk, il faut |h0|² = S dk² / 2. SkyForge prenait
+    // 2 S dk² : vagues deux fois trop hautes (mesuré : 4,8 m RMS au lieu de 1,8 m en tempête).
+    (0.5 * s * dk * dk).sqrt()
 }
 
 fn vecteur_onde(id: UVec2, taille: f32) -> Vec2 {
@@ -223,6 +232,8 @@ pub struct Mode {
     pub h0: Vec2,
     /// conj(h0(−k)), déphasé de même.
     pub h0c: Vec2,
+    /// Variance attendue de la hauteur due à ce mode et à son conjugué (m²), moyenne sur les tirages.
+    pub variance_attendue: f32,
 }
 
 impl Mode {
@@ -245,6 +256,8 @@ pub struct Spectre {
     pub modes: Vec<Mode>,
     /// Énergie totale (somme de |h0|² + |h0c|² sur tous les modes).
     pub energie_totale: f32,
+    /// Variance attendue de la hauteur (m²) : ∫ S dk discrétisé sur les grilles.
+    pub variance_attendue: f32,
 }
 
 impl Spectre {
@@ -269,9 +282,11 @@ impl Spectre {
     fn depuis_modes(mut modes: Vec<Mode>) -> Self {
         modes.sort_by(|a, b| b.energie().total_cmp(&a.energie()));
         let energie_totale = modes.iter().map(Mode::energie).sum();
+        let variance_attendue = modes.iter().map(|m| m.variance_attendue).sum();
         Self {
             modes,
             energie_totale,
+            variance_attendue,
         }
     }
 
@@ -320,6 +335,7 @@ impl Spectre {
                     omega: pulsation(k.length()),
                     h0,
                     h0c,
+                    variance_attendue: 2.0 * (a * a + an * an),
                 });
             }
         }
@@ -401,6 +417,11 @@ impl MerDuVent {
         self.actifs.len()
     }
 
+    /// Variance attendue de la hauteur de la mer du vent (m²), pour caler la houle de Gerstner.
+    pub fn variance_attendue(&self) -> f32 {
+        self.spectre.variance_attendue
+    }
+
     /// Génération du spectre (augmente à chaque recalcul).
     pub fn generation(&self) -> u32 {
         self.suivi.generation
@@ -409,9 +430,11 @@ impl MerDuVent {
 
 pub(crate) fn avancer_mer(
     etat: Res<EtatMeteo>,
-    ocean: Res<Ocean>,
+    mut ocean: ResMut<Ocean>,
     reglages: Res<ReglagesFft>,
     mut mer: ResMut<MerDuVent>,
 ) {
     mer.avancer(&etat, &ocean, &reglages);
+    // La houle de Gerstner garde la variance que la mer du vent n'a pas (prise en compte à l'image suivante).
+    ocean.variance_mer_du_vent = mer.variance_attendue();
 }

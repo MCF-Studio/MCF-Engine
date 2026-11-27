@@ -4,7 +4,7 @@
 //  * Dispersion en eau profonde : ω(k) = sqrt(g |k|).
 //  * JONSWAP : S(ω) = α g² / ω⁵ · exp(-5/4 (ωp/ω)⁴) · γ^r.
 //  * Étalement directionnel : D(θ) = N(s) |cos(θ/2)|^(2s).
-//  * h0(k) = ξ / √2 · sqrt(2 S(k) dk²), ξ gaussienne complexe.
+//  * h0(k) = ξ / √2 · sqrt(S(k) dk² / 2), ξ gaussienne complexe (variance de la surface = ∫ S dk).
 //  * h(k, t) = h0(k) e^{iωt} + conj(h0(-k)) e^{-iωt} (symétrie hermitienne : transformée inverse réelle).
 
 import package::ocean_commun::{N, PI, G, ParamsFft, cmul, conj, empaqueter, hachage3, hachage_f};
@@ -44,7 +44,9 @@ fn amplitude(k: vec2<f32>, cascade: u32) -> f32 {
     var s = jonswap(w) * etalement(theta) * dwdk / kl;
     s *= exp(-kl * kl * 1e-4); // amortit les ondes capillaires (< ~6 cm)
     let dk = 2.0 * PI / p.tailles[cascade];
-    return sqrt(2.0 * s * dk * dk);
+    // |h0|² = S dk² / 2 : variance de la surface = ∫ S dk (SkyForge prenait 2 S dk², vagues deux fois trop
+    // hautes). Même formule que `mer_du_vent.rs`.
+    return sqrt(0.5 * s * dk * dk);
 }
 
 fn gaussienne(id: vec2<u32>, cascade: u32) -> vec2<f32> {
