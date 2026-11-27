@@ -261,6 +261,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 5b : océan FFT sur le GPU (3 cascades JONSWAP, écume).
 - ✅ Étape 6 : vagues de bord (levée, déferlement, jet de rive, écume), démo `demo_plage`.
 - ✅ Étape 7 : nuages volumétriques traversables (coût GPU pas encore mesuré).
+- ✅ Étape 8 : ambiance sonore synthétisée (mer, ressac, vent, pluie, tonnerre) et éclairs.
 
 ---
 

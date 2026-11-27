@@ -6,9 +6,10 @@
 //! `McfMateriauMeteoPlugin`), puis l'océan : houle de Gerstner calée sur JONSWAP ([`Ocean`], aussi pour la
 //! flottaison) et son rendu (étape 5a, `McfOceanPlugin`), avec les cascades FFT de la mer du vent (étape 5b) et
 //! les vagues de bord ([`rivage`], étape 6), et enfin les nuages volumétriques traversables (étape 7,
-//! `McfNuagesPlugin`).
+//! `McfNuagesPlugin`). Ambiance sonore synthétisée (mer, ressac, vent, pluie, tonnerre) et éclairs (étape 8,
+//! [`son`], [`Orage`], `McfSonPlugin` avec la feature `son`).
 //! Sans la feature `rendu`, aucune dépendance au rendu : le serveur dédié peut piloter la météo et la diffuser.
-//! Les étapes suivantes (son, banc d'essai) sont décrites dans `mcf/docs/meteo.md`.
+//! L'étape suivante (banc d'essai) est décrite dans `mcf/docs/meteo.md`.
 //!
 //! Utilisation :
 //! ```no_run
@@ -29,6 +30,8 @@ use bevy::prelude::*;
 
 #[cfg(feature = "rendu")]
 pub mod abris;
+#[cfg(feature = "son")]
+pub mod audio;
 pub mod bruit;
 pub mod etat;
 pub mod houle;
@@ -40,15 +43,19 @@ pub mod nuages;
 pub mod ocean;
 #[cfg(feature = "rendu")]
 pub mod ocean_fft;
+pub mod orage;
 #[cfg(feature = "rendu")]
 pub mod precipitations;
 pub mod rivage;
+pub mod son;
 pub mod surfaces;
 pub mod transition;
 pub mod vent;
 
 #[cfg(feature = "rendu")]
 pub use abris::{AbriPrecipitations, CarteAbris};
+#[cfg(feature = "son")]
+pub use audio::{AuditeurMeteo, McfSonPlugin};
 pub use etat::{EtatMeteo, PresetMeteo};
 pub use houle::Ocean;
 #[cfg(feature = "rendu")]
@@ -59,9 +66,11 @@ pub use nuages::{McfNuagesPlugin, NuagesVolumetriques, ReglagesNuages};
 pub use ocean::{McfOceanPlugin, ReglagesOcean};
 #[cfg(feature = "rendu")]
 pub use ocean_fft::ReglagesFft;
+pub use orage::{Eclair, Orage};
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};
 pub use rivage::{CarteRivage, ParametresRivage, SourceFond};
+pub use son::ReglagesSon;
 pub use surfaces::{ParametresSurfaces, SurfacesMeteo};
 pub use transition::{ChangerMeteo, TransitionMeteo};
 pub use vent::{ChampVent, EchantillonVent, ParametresVent};
@@ -96,6 +105,9 @@ impl Plugin for McfMeteoPlugin {
             .register_type::<Ocean>()
             .register_type::<ParametresSurfaces>()
             .register_type::<ParametresRivage>()
+            .register_type::<Orage>()
+            .init_resource::<Orage>()
+            .add_message::<Eclair>()
             .init_resource::<ParametresRivage>()
             .init_resource::<CarteRivage>()
             .init_resource::<EtatMeteo>()
@@ -111,6 +123,7 @@ impl Plugin for McfMeteoPlugin {
                     vent::avancer_vent,
                     surfaces::avancer_surfaces,
                     houle::avancer_ocean,
+                    orage::avancer_orage,
                 )
                     .chain()
                     .in_set(MiseAJourMeteo),
