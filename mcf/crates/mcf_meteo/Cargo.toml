@@ -42,3 +42,7 @@ required-features = ["rendu"]
 [[example]]
 name = "bench_meteo"
 required-features = ["rendu", "son"]
+
+[[example]]
+name = "verifier_fft"
+required-features = ["rendu"]

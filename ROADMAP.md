@@ -263,6 +263,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 7 : nuages volumétriques traversables (coût GPU pas encore mesuré).
 - ✅ Étape 8 : ambiance sonore synthétisée (mer, ressac, vent, pluie, tonnerre) et éclairs.
 - ✅ Étape 9 : banc d'essai GPU `bench_meteo` + temps GPU par passe (`passes.csv`). Mesure sur vrai GPU à faire.
+- ✅ Étape 10 : flottaison sur la mer du vent (réplique CPU des cascades FFT, vérifiée contre le GPU).
 
 ---
 

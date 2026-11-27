@@ -23,8 +23,8 @@ use mcf_meteo::bruit::perlin3;
 use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
     AuditeurMeteo, CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
-    McfPrecipitationsPlugin, McfSonPlugin, NuagesVolumetriques, Ocean, Orage, ParametresRivage, PresetMeteo,
-    SourceFond,
+    McfPrecipitationsPlugin, McfSonPlugin, MerDuVent, NuagesVolumetriques, Ocean, Orage, ParametresRivage,
+    PresetMeteo, SourceFond,
 };
 
 fn main() {
@@ -157,9 +157,10 @@ fn scene(
     });
 }
 
-/// La bouée flotte avec la houle atténuée et les vagues de bord.
+/// La bouée flotte avec la houle (Gerstner et mer du vent) atténuée et les vagues de bord.
 fn bouee(
     ocean: Res<Ocean>,
+    mer: Res<MerDuVent>,
     carte: Res<CarteRivage>,
     etat: Res<EtatMeteo>,
     parametres: Res<ParametresRivage>,
@@ -167,7 +168,7 @@ fn bouee(
 ) {
     let b = params_bord(&etat, &parametres);
     for mut t in &mut bouees {
-        t.translation.y = hauteur_eau(&ocean, &carte, &b, t.translation.x, t.translation.z);
+        t.translation.y = hauteur_eau(&ocean, Some(&mer), &carte, &b, t.translation.x, t.translation.z);
     }
 }
 

@@ -201,7 +201,7 @@ fn hauteur_de_l_eau() {
     let b = params_bord(&PresetMeteo::Tempete.etat(), &ParametresRivage::default());
     // Sans grille : la houle seule, comme `Ocean::hauteur`.
     let vide = CarteRivage::default();
-    let h = hauteur_eau(&ocean, &vide, &b, 10.0, -20.0);
+    let h = hauteur_eau(&ocean, None, &vide, &b, 10.0, -20.0);
     assert!((h - ocean.hauteur(10.0, -20.0)).abs() < 0.05, "{h}");
     // Près de la plage : l'eau ne descend pas plus bas que la houle limitée le permet.
     let mut carte = CarteRivage::default();
@@ -213,7 +213,7 @@ fn hauteur_de_l_eau() {
         false,
     );
     let profondeur = 1.0; // z = -20
-    let h = hauteur_eau(&ocean, &carte, &b, 0.0, -20.0);
+    let h = hauteur_eau(&ocean, None, &carte, &b, 0.0, -20.0);
     let borne = amplitude_houle(&ocean) * attenuation_houle(profondeur, amplitude_houle(&ocean))
         + 0.39 * profondeur
         + 0.03
