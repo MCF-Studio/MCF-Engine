@@ -23,6 +23,25 @@ import package::nuages_commun::{ParamsNuages, PI, remapper};
 @group(0) @binding(5) var carte: texture_2d<f32>;
 @group(0) @binding(6) var echantillonneur: sampler;
 @group(0) @binding(7) var sortie: texture_storage_2d<rgba16float, write>; // rgb = lumière, a = transmittance
+@group(0) @binding(8) var<uniform> r: ParamsReprojection;
+@group(0) @binding(9) var sortie_distance: texture_storage_2d<r32float, write>; // distance moyenne des nuages (m)
+
+// Reprojection temporelle : chaque image ne marche qu'un pixel par bloc `pas` × `pas` de la cible (pixel
+// `bloc × pas + decalage`) ; la passe de reconstruction complète les autres depuis l'image précédente.
+struct ParamsReprojection {
+    precedente: mat4x4<f32>,  // clip_from_world de l'image précédente
+    taille_cible: vec2<u32>,  // texture complète (demi résolution de l'écran)
+    decalage: vec2<u32>,      // pixel marché dans chaque bloc à cette image
+    pas: u32,                 // 2 avec reprojection, 1 sans
+    valide: u32,              // 0 : pas d'historique utilisable
+    r0: u32,
+    r1: u32,
+};
+
+fn ecrire(bloc: vec2<u32>, couleur: vec4<f32>, distance: f32) {
+    textureStore(sortie, bloc, couleur);
+    textureStore(sortie_distance, bloc, vec4(distance, 0.0, 0.0, 0.0));
+}
 
 fn hg(c: f32, g: f32) -> f32 {
     let g2 = g * g;
@@ -96,11 +115,12 @@ fn monde_depuis_ndc(ndc: vec3<f32>) -> vec3<f32> {
 
 @compute @workgroup_size(8, 8, 1)
 fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
-    let taille = textureDimensions(sortie);
-    if any(id.xy >= taille) {
+    if any(id.xy >= textureDimensions(sortie)) {
         return;
     }
-    let uv = (vec2<f32>(id.xy) + 0.5) / vec2<f32>(taille);
+    let taille = r.taille_cible;
+    let pixel = min(id.xy * r.pas + r.decalage, taille - 1u);
+    let uv = (vec2<f32>(pixel) + 0.5) / vec2<f32>(taille);
     let ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     let camera = view.world_position;
     let dir = normalize(monde_depuis_ndc(vec3(ndc, 1.0)) - camera);
@@ -135,14 +155,14 @@ fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     t_sortie = min(min(t_sortie, p.distance_max), distance_scene);
     if t_sortie <= t_entree || p.couverture <= 0.0 {
-        textureStore(sortie, id.xy, vec4(0.0, 0.0, 0.0, 1.0));
+        ecrire(id.xy, vec4(0.0, 0.0, 0.0, 1.0), select(p.distance_max, t_entree, t_entree > 0.0));
         return;
     }
 
-    // Pas qui grandit avec la distance. Décalage stable par pixel (pas encore de reprojection temporelle).
+    // Pas qui grandit avec la distance. Décalage stable par pixel de la cible.
     let longueur = t_sortie - t_entree;
     let pas_loin = clamp(longueur / f32(p.pas), 40.0, 600.0);
-    let gigue = fract(52.9829189 * fract(dot(vec2<f32>(id.xy), vec2(0.06711056, 0.00583715))));
+    let gigue = fract(52.9829189 * fract(dot(vec2<f32>(pixel), vec2(0.06711056, 0.00583715))));
     var t = t_entree + gigue * min(p.pas_proche + t_entree * 0.02, pas_loin);
 
     let cos_theta = dot(dir, p.soleil_direction);
@@ -225,5 +245,5 @@ fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
     diffusion *= 1.0 - f;
     tr = mix(tr, 1.0, f);
 
-    textureStore(sortie, id.xy, vec4(diffusion * view.exposure, tr));
+    ecrire(id.xy, vec4(diffusion * view.exposure, tr), loin);
 }

@@ -178,6 +178,16 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   `MCF_DUREE` choisit l'instant) : 0,10 / 0,68 / 1,32 / 14,4 % pour 0,09 / 0,69 / 1,37 / 14,5 % visés
   (5 / 9 / 11 / 22 m/s), écart entre instants ±0,04 point à 9 m/s, ±0,14 à 11 m/s, ±0,45 à 22 m/s. La table a été réglée
   sur ces mêmes instants (3 réglages, le dernier par interpolation) : à revérifier sur un vrai GPU.
+- ✅ Étape 14 : reprojection temporelle des nuages. La marche ne calcule plus qu'un pixel sur 4 (bloc 2 × 2,
+  ordre de Bayer) ; une passe `nuages_reconstruction` reprend les 3 autres dans l'image précédente (position
+  monde = rayon × distance moyenne du nuage, ancienne `clip_from_world`), bornée au min / max des 3 × 3 blocs
+  frais voisins. Hors écran ou sans historique : valeur fraîche. Désactivable (`reprojection: false`,
+  `MCF_REPROJECTION=0` dans `demo_ocean`). Mesure (`cargo bench-meteo` variante nuages, 640 × 360, llvmpipe,
+  2 passages) : `nuages_marche` 32,0 / 29,6 ms → 9,5 / 10,0 ms en moyenne (p50 18,4 → 8,2–8,7 ms, p99 120–140 →
+  37–45 ms), + 1,2 ms de reconstruction ; image 222–224 → 188–195 ms, GPU total 168–170 → 144–149 ms.
+  Captures fixes (ciel, dans les nuages, dessus) identiques à l'œil ; caméra qui tourne de 0,5° par image
+  (`MCF_MOUVEMENT=1`) : pas de traînée visible, écart moyen 1,4 / 255 (ciel) et 0,6 / 255 (dans la couche).
+  Non mesuré : vol rapide à travers la couche et vrai GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

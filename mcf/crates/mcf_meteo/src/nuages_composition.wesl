@@ -9,7 +9,7 @@ import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // 4 lectures bilinéaires décalées d'un demi-texel de la marche : filtre en tente sur 3 × 3 texels, qui
-    // efface le motif du décalage par pixel (pas encore de reprojection temporelle).
+    // efface le motif du décalage par pixel et adoucit les bords de la reconstruction temporelle.
     let d = 0.5 / vec2<f32>(textureDimensions(nuages));
     let c = 0.25 * (textureSampleLevel(nuages, echantillonneur, in.uv + vec2(-d.x, -d.y), 0.0)
         + textureSampleLevel(nuages, echantillonneur, in.uv + vec2(d.x, -d.y), 0.0)

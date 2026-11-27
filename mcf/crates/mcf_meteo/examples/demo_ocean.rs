@@ -7,6 +7,8 @@
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair` (nuageux par défaut).
 //! `MCF_CAMERA=ciel` (regard vers le haut), `MCF_CAMERA=nuages` (dans la couche, à 2 500 m),
 //! `MCF_CAMERA=dessus` (au-dessus, à 5 000 m).
+//! `MCF_REPROJECTION=0` : nuages marchés en pleine résolution chaque image (sans reprojection temporelle).
+//! `MCF_MOUVEMENT=1` : la caméra tourne de 0,5° par image (30°/s à 60 i/s), pour juger les traînées.
 
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -68,7 +70,11 @@ fn scene(
     commandes.spawn((
         Camera3d::default(),
         transformation,
-        NuagesVolumetriques::default(),
+        NuagesVolumetriques {
+            // `MCF_REPROJECTION=0` : chaque pixel marché à chaque image (comparaison).
+            reprojection: std::env::var("MCF_REPROJECTION").as_deref() != Ok("0"),
+            ..default()
+        },
         AtmosphereSettings::default(),
         Exposure { ev100: 13.0 },
         Tonemapping::AcesFitted,
@@ -113,7 +119,13 @@ fn voler(
     mut cameras: Query<&mut Transform, With<Camera3d>>,
 ) {
     let sens = clavier.pressed(KeyCode::ArrowUp) as i32 - clavier.pressed(KeyCode::ArrowDown) as i32;
+    // Pas fixe par image (et non par seconde) : le rendu logiciel est lent, on veut le même mouvement d'une
+    // image à l'autre que sur un vrai GPU à 60 i/s.
+    let mouvement = std::env::var("MCF_MOUVEMENT").is_ok_and(|v| v == "1");
     for mut t in &mut cameras {
+        if mouvement {
+            t.rotate_y(0.5_f32.to_radians());
+        }
         t.translation.y = (t.translation.y + sens as f32 * 400.0 * temps.delta_secs()).max(2.0);
     }
 }
