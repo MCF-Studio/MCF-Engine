@@ -24,5 +24,9 @@ bevy = { workspace = true, features = ["3d"] }
 name = "demo_meteo"
 required-features = ["rendu"]
 
+[[example]]
+name = "demo_ocean"
+required-features = ["rendu"]
+
 [lints]
 workspace = true
