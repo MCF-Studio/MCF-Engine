@@ -66,6 +66,13 @@ fn initialiser(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     let c = id.z;
+    // Ligne et colonne de Nyquist (k = -N/2) : leur conjugué (k = +N/2) n'est pas dans la grille, la symétrie
+    // hermitienne serait rompue et les champs empaquetés deux à deux déborderaient l'un sur l'autre (mesuré : 6 %
+    // d'erreur sur le déplacement en z de la petite cascade, venu de la pente). On les annule.
+    if (id.x == 0u || id.y == 0u) {
+        textureStore(sortie_h0, id.xy, c, vec4<f32>(0.0));
+        return;
+    }
     let id_neg = (vec2<u32>(N) - id.xy) % vec2<u32>(N);
     let h0 = gaussienne(id.xy, c) * amplitude(vecteur_onde(id.xy, c), c) * 0.70710678;
     let h0n = gaussienne(id_neg, c) * amplitude(-vecteur_onde(id.xy, c), c) * 0.70710678;
