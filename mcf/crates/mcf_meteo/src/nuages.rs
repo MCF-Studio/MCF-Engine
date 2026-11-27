@@ -43,7 +43,8 @@ use bevy::render::render_phase::{
     SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
 };
 use bevy::render::render_resource::binding_types::{
-    sampler, texture_2d, texture_3d, texture_depth_2d, texture_storage_2d, texture_storage_3d, uniform_buffer,
+    sampler, texture_2d, texture_3d, texture_depth_2d, texture_storage_2d, texture_storage_2d_array,
+    texture_storage_3d, uniform_buffer,
 };
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{RenderContext, RenderDevice, RenderGraph, RenderQueue, ViewQuery};
@@ -84,6 +85,9 @@ pub struct NuagesVolumetriques {
     /// Reprojection temporelle : un pixel sur 4 est marché à chaque image, les autres sont repris de l'image
     /// précédente (voir `nuages_reconstruction.wesl`).
     pub reprojection: bool,
+    /// Nuages dans les reflets et la lumière ambiante (carte d'environnement de l'atmosphère, voir
+    /// `ciel_nuages`).
+    pub ciel: bool,
 }
 
 impl Default for NuagesVolumetriques {
@@ -91,6 +95,7 @@ impl Default for NuagesVolumetriques {
         Self {
             echelle_resolution: 0.5,
             reprojection: true,
+            ciel: true,
         }
     }
 }
@@ -120,7 +125,8 @@ pub struct ParamsReprojection {
     pub pas: u32,
     /// 0 si l'image précédente n'est pas utilisable (première image, taille changée).
     pub valide: u32,
-    r0: u32,
+    /// Face du cube de ciel marchée à cette image (0 à 5).
+    pub face_ciel: u32,
     r1: u32,
 }
 
@@ -377,10 +383,12 @@ impl Plugin for McfNuagesPlugin {
                 (preparer_cameras, mettre_a_jour_params).after(MiseAJourMeteo),
             );
         crate::ombre_nuages::construire(app);
+        crate::ciel_nuages::construire(app);
     }
 
     fn finish(&self, app: &mut App) {
         crate::ombre_nuages::finir(app);
+        crate::ciel_nuages::finir(app);
         let Some(rendu) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
@@ -450,6 +458,7 @@ pub(crate) struct RessourcesNuages {
     cuire_detail: CachedComputePipelineId,
     cuire_carte: CachedComputePipelineId,
     marche: CachedComputePipelineId,
+    marche_ciel: CachedComputePipelineId,
     composition: CachedRenderPipelineId,
     pub(crate) forme: TextureView,
     detail: TextureView,
@@ -473,11 +482,15 @@ pub(crate) struct TexturesNuages {
     historique: TextureView,
     /// Image reconstruite à cette image (écrite, puis composée).
     sortie: TextureView,
+    /// Nuages du cube de ciel (tableau de 6 couches), gardés d'une image à l'autre.
+    pub(crate) ciel: TextureView,
+    /// Le cube de ciel est à marcher et composer à cette image.
+    pub(crate) ciel_actif: bool,
     params: ParamsReprojection,
 }
 
 #[derive(Component)]
-struct GroupesNuages {
+pub(crate) struct GroupesNuages {
     marche: BindGroup,
     reconstruction: BindGroup,
     composition: BindGroup,
@@ -492,6 +505,7 @@ struct Historique {
     courante: usize,
     image: u32,
     precedente: Option<Mat4>,
+    ciel: TextureView,
 }
 
 #[derive(Resource, Default)]
@@ -551,6 +565,7 @@ fn creer_ressources(
                 texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
                 uniform_buffer::<ParamsReprojection>(false),
                 texture_storage_2d(TextureFormat::R32Float, StorageTextureAccess::WriteOnly),
+                texture_storage_2d_array(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
             ),
         ),
     );
@@ -663,6 +678,7 @@ fn creer_ressources(
         cuire_detail: calcul(&disposition_bruit, &bruit, "cuire_detail"),
         cuire_carte: calcul(&disposition_bruit, &bruit, "cuire_carte"),
         marche: calcul(&disposition_marche, &marche, "marcher"),
+        marche_ciel: calcul(&disposition_marche, &marche, "marcher_ciel"),
         reconstruction: calcul(&disposition_reconstruction, &reconstruction, "reconstruire"),
         disposition_reconstruction,
         composition: pipeline_composition,
@@ -729,6 +745,8 @@ fn preparer_textures(
     mut cache_textures: ResMut<TextureCache>,
     mut historiques: ResMut<HistoriquesNuages>,
     peripherique: Res<RenderDevice>,
+    file: Res<RenderQueue>,
+    ciel_atmosphere: Option<Res<crate::ciel_nuages::CielAtmosphere>>,
     vues: Query<(
         Entity,
         &MainEntity,
@@ -766,6 +784,7 @@ fn preparer_textures(
             courante: 0,
             image: 0,
             precedente: None,
+            ciel: creer_ciel(&peripherique, &file),
         });
         if historique.taille != cible {
             historique.textures = [0, 1].map(|_| creer_historique(&peripherique, cible));
@@ -783,6 +802,7 @@ fn preparer_textures(
             },
             pas,
             valide: u32::from(historique.precedente.is_some()),
+            face_ciel: historique.image % 6,
             ..default()
         };
         let lecture = historique.courante;
@@ -792,6 +812,8 @@ fn preparer_textures(
             distance,
             historique: historique.textures[lecture].clone(),
             sortie: historique.textures[ecriture].clone(),
+            ciel: historique.ciel.clone(),
+            ciel_actif: nuages.ciel && ciel_atmosphere.is_some(),
             params,
         });
         historique.courante = ecriture;
@@ -800,6 +822,43 @@ fn preparer_textures(
     }
     // Caméras disparues : on libère leur historique.
     historiques.0.retain(|e, _| vues_vues.contains(e));
+}
+
+/// Côté d'une face du cube de ciel des nuages.
+pub const TAILLE_CIEL: u32 = 32;
+
+/// Cube de ciel des nuages, initialisé à « pas de nuage » (transmittance 1) : les faces pas encore marchées
+/// laissent passer le ciel.
+fn creer_ciel(peripherique: &RenderDevice, file: &RenderQueue) -> TextureView {
+    let texels = (TAILLE_CIEL * TAILLE_CIEL * 6) as usize;
+    // Rgba16Float (0, 0, 0, 1) : 1,0 en demi-flottant vaut 0x3C00.
+    let donnees: Vec<u8> = std::iter::repeat_n([0u8, 0, 0, 0, 0, 0, 0x00, 0x3C], texels)
+        .flatten()
+        .collect();
+    peripherique
+        .create_texture_with_data(
+            file,
+            &TextureDescriptor {
+                label: Some("nuages_ciel"),
+                size: Extent3d {
+                    width: TAILLE_CIEL,
+                    height: TAILLE_CIEL,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba16Float,
+                usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            TextureDataOrder::LayerMajor,
+            &donnees,
+        )
+        .create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D2Array),
+            ..default()
+        })
 }
 
 fn creer_historique(peripherique: &RenderDevice, taille: UVec2) -> TextureView {
@@ -876,6 +935,7 @@ pub(crate) fn preparer_groupes(
                 &textures.frais.default_view,
                 liaison_reprojection.clone(),
                 &textures.distance.default_view,
+                &textures.ciel,
             )),
         );
         let reconstruction = peripherique.create_bind_group(
@@ -1010,8 +1070,8 @@ pub(crate) fn cuire_bruit(
     ressources.cuit.store(true, Ordering::Relaxed);
 }
 
-fn marcher(
-    vue: ViewQuery<(&ViewUniformOffset, &GroupesNuages)>,
+pub(crate) fn marcher(
+    vue: ViewQuery<(&ViewUniformOffset, &GroupesNuages, &TexturesNuages)>,
     ressources: Option<Res<RessourcesNuages>>,
     cache: Res<PipelineCache>,
     mut contexte: RenderContext,
@@ -1028,7 +1088,7 @@ fn marcher(
     ) else {
         return;
     };
-    let (decalage_vue, groupes) = vue.into_inner();
+    let (decalage_vue, groupes, textures) = vue.into_inner();
     let diagnostics = contexte.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let mut passe = contexte
@@ -1055,4 +1115,13 @@ fn marcher(
         1,
     );
     span.end(&mut passe);
+    if textures.ciel_actif
+        && let Some(pipeline_ciel) = cache.get_compute_pipeline(ressources.marche_ciel)
+    {
+        let span = diagnostics.pass_span(&mut passe, "nuages_ciel");
+        passe.set_pipeline(pipeline_ciel);
+        passe.set_bind_group(0, &groupes.marche, &[decalage_vue.offset]);
+        passe.dispatch_workgroups(TAILLE_CIEL / 8, TAILLE_CIEL / 8, 1);
+        span.end(&mut passe);
+    }
 }

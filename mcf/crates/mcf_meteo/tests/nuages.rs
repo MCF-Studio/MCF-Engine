@@ -200,3 +200,12 @@ fn ombre_posee_sur_le_soleil() {
     app.update();
     assert!(app.world().get::<DirectionalLightTexture>(soleil).is_none());
 }
+
+#[test]
+fn nuages_dans_le_ciel_par_defaut() {
+    use mcf_meteo::NuagesVolumetriques;
+    use mcf_meteo::nuages::TAILLE_CIEL;
+    // Actif par défaut, et une face entière en groupes de 8 × 8.
+    assert!(NuagesVolumetriques::default().ciel);
+    assert_eq!(TAILLE_CIEL % 8, 0);
+}

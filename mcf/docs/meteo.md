@@ -206,6 +206,21 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   soleil bas (16°) : les rayons rasants traversent ~10 km de couche. C'est physiquement cohérent, mais plus
   sombre que la part de ciel bleu visible (la densité grossière, sans érosion, gonfle un peu les nuages). À juger
   en jeu ; sinon baisser `EtatMeteo::couverture_nuageuse` ou ajouter une force d'ombre réglable.
+- ✅ Étape 16 : nuages dans les reflets et la lumière ambiante (`ciel_nuages`). La carte d'environnement de
+  l'atmosphère de Bevy ne voyait que le ciel : sous la tempête, la mer reflétait un ciel bleu. La marche des
+  nuages calcule maintenant aussi, depuis la caméra, un cube de nuages 32 × 32 par face, une face par image
+  (`marcher_ciel`, même code que la marche de l'écran) ; après la passe opaque, la carte de l'atmosphère est
+  copiée puis réécrite en nuages + transmittance × ciel, et Bevy la filtre à l'image suivante (une image de
+  retard). Sans modification de Bevy. Actif quand la caméra porte `NuagesVolumetriques { ciel: true }` (par
+  défaut) et `AtmosphereEnvironmentMapLight`. `demo_ocean` et `bench_meteo` : `MCF_CIEL=0` pour comparer.
+  Effet mesuré sur la moitié basse de l'image (la mer), RVB moyen 0–255, avec / sans : tempête 42 / 45 / 46
+  contre 76 / 96 / 116 (mer grise au lieu de bleue) ; nuageux 60 / 66 / 75 contre 63 / 83 / 102.
+  Coût (`cargo bench-meteo` nuages, nuageux, 640 × 360, llvmpipe, 2 passages) : `nuages_ciel` 1,31 / 1,36 ms,
+  `nuages_ciel_composition` 0,83 / 0,89 ms. Avec 64 × 64 par face : 3,7 / 3,8 ms pour une image identique à
+  l'œil, d'où 32. Temps d'image trop bruité sur llvmpipe pour conclure (187 à 204 ms avec ou sans).
+  À noter : le filtrage de la carte d'environnement par Bevy coûte ~50 ms sur llvmpipe
+  (`lightprobe_irradiance_map` ~30 ms, `lightprobe_radiance_map` ~20 ms), avec ou sans nuages : à surveiller
+  sur un vrai GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

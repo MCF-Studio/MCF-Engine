@@ -10,6 +10,7 @@
 //! `MCF_REPROJECTION=0` : nuages marchés en pleine résolution chaque image (sans reprojection temporelle).
 //! `MCF_MOUVEMENT=1` : la caméra tourne de 0,5° par image (30°/s à 60 i/s), pour juger les traînées.
 //! `MCF_SOLEIL=haut` : soleil haut (~55°) au lieu du soleil bas de fin d'après-midi.
+//! `MCF_CIEL=0` : reflets et lumière ambiante sans les nuages (comparaison).
 //! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
 use bevy::camera::Exposure;
@@ -92,6 +93,8 @@ fn scene(
         NuagesVolumetriques {
             // `MCF_REPROJECTION=0` : chaque pixel marché à chaque image (comparaison).
             reprojection: std::env::var("MCF_REPROJECTION").as_deref() != Ok("0"),
+            // `MCF_CIEL=0` : reflets et lumière ambiante sans les nuages (comparaison).
+            ciel: std::env::var("MCF_CIEL").as_deref() != Ok("0"),
             ..default()
         },
         AtmosphereSettings::default(),

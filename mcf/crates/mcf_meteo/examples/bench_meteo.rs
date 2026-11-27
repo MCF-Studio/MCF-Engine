@@ -12,6 +12,7 @@
 //! - `complet` : + pluie / neige et son d'ambiance.
 //!
 //! Résultats dans `mcf/bench/results/<date>_meteo_<variante>/` (`summary.txt`, `frames.csv`, `passes.csv`).
+//! `MCF_CIEL=0` : coupe les nuages dans les reflets et la lumière ambiante (pour mesurer leur coût).
 //! `MCF_OMBRE=0` : coupe l'ombre des nuages au sol (pour mesurer son coût).
 //! Ne mesurer que sur un vrai GPU : un rendu logiciel (llvmpipe) ne donne que la preuve que l'outil fonctionne.
 
@@ -292,7 +293,11 @@ fn scene(
         AtmosphereEnvironmentMapLight::default(),
     ));
     if args.variante >= Variante::Nuages {
-        camera.insert(NuagesVolumetriques::default());
+        // `MCF_CIEL=0` : reflets sans les nuages, pour mesurer leur coût.
+        camera.insert(NuagesVolumetriques {
+            ciel: std::env::var("MCF_CIEL").as_deref() != Ok("0"),
+            ..default()
+        });
     }
     demandes.write(ChangerMeteo {
         cible: args.preset.etat(),

@@ -12,7 +12,7 @@ struct ParamsReprojection {
     decalage: vec2<u32>,
     pas: u32,
     valide: u32,
-    r0: u32,
+    face_ciel: u32,
     r1: u32,
 };
 
