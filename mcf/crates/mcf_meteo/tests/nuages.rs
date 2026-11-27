@@ -190,7 +190,10 @@ fn ombre_posee_sur_le_soleil() {
         .expect("texture posée");
     assert_eq!(texture.image, image);
     assert!(!texture.tiled);
-    let t = app.world().get::<Transform>(soleil).expect("transformation du soleil");
+    let t = app
+        .world()
+        .get::<Transform>(soleil)
+        .expect("transformation du soleil");
     assert_eq!(t.scale, Vec3::splat(ReglagesOmbreNuages::default().demi_taille));
     // Coupée : la texture est retirée.
     app.world_mut().resource_mut::<ReglagesOmbreNuages>().active = false;
