@@ -3649,6 +3649,7 @@ name = "mcf_meteo"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "mcf_bench",
 ]
 
 [[package]]

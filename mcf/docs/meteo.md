@@ -107,7 +107,30 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites : pas encore d'enregistrements (SkyForge pouvait lire des WAV à la place de la synthèse), pas de son
   spatialisé par source (un seul mixage stéréo autour de l'auditeur), écoute réelle non vérifiée ici (pas de
   carte son sur la machine de test : vérifié par mesures et fichiers WAV).
-- ⬜ Étape 9 : banc d'essai GPU.
+- ✅ Étape 9 : banc d'essai GPU (outil prêt, **mesure sur vrai GPU à faire**). `mcf_bench` écrit maintenant
+  `passes.csv` : temps GPU de chaque passe de rendu (moyenne, p50, p99, pic), seulement quand une nouvelle
+  mesure est arrivée (une passe qui ne tourne qu'une fois, comme la cuisson du bruit des nuages, n'est plus
+  recomptée à chaque image). Passes météo nommées : `ocean_fft`, `nuages_bruit`, `nuages_marche` (la
+  composition des nuages et la pluie sont dans `main_transparent_pass_3d`, l'océan dans `main_opaque_pass_3d`).
+  Exemple `bench_meteo`, 4 variantes cumulatives pour isoler chaque brique : `base` (atmosphère, plage, ombres),
+  `ocean`, `nuages`, `complet` (+ pluie / neige et son). Parcours caméra rejouable de 40 s : plage → ras de
+  l'eau → montée dans la couche nuageuse → au-dessus → retour.
+
+  ```text
+  cargo bench-meteo -- --variante base    --preset tempete
+  cargo bench-meteo -- --variante ocean   --preset tempete
+  cargo bench-meteo -- --variante nuages  --preset tempete
+  cargo bench-meteo -- --variante complet --preset tempete
+  ```
+
+  Options : `--preset clair|nuageux|pluie|tempete|neige`, `--duree <s>`, `--largeur`, `--hauteur` (1920×1080
+  par défaut). Résultats dans `mcf/bench/results/<date>_meteo_<variante>/`.
+
+  Seule mesure faite ici : GPU **logiciel** (llvmpipe, 640×360, profil dev, tempête). Elle prouve que l'outil
+  fonctionne, elle ne dit rien du coût réel. À titre brut : 7,7 / 5,2 / 4,4 / 4,2 images/s pour base / ocean
+  / nuages / complet ; passes les plus lourdes en variante complet (moyenne GPU) : `nuages_marche` 32,8 ms,
+  `atmosphere_luts` 32,2 ms, `ocean_fft` 31,3 ms, `lightprobe_irradiance_map` 31,2 ms. La cuisson du bruit des
+  nuages (unique, au démarrage) a pris 613 ms sur llvmpipe.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
