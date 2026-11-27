@@ -33,6 +33,8 @@ pub mod abris;
 #[cfg(feature = "son")]
 pub mod audio;
 pub mod bruit;
+#[cfg(feature = "rendu")]
+pub mod ciel_nuages;
 pub mod etat;
 pub mod houle;
 #[cfg(feature = "rendu")]

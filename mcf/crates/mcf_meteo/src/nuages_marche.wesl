@@ -14,6 +14,7 @@
 
 import bevy_render::view::View;
 import package::nuages_commun::{ParamsNuages, PI, remapper, gradient_hauteur};
+import bevy_pbr::render::utils::sample_cube_dir;
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> p: ParamsNuages;
@@ -25,6 +26,9 @@ import package::nuages_commun::{ParamsNuages, PI, remapper, gradient_hauteur};
 @group(0) @binding(7) var sortie: texture_storage_2d<rgba16float, write>; // rgb = lumière, a = transmittance
 @group(0) @binding(8) var<uniform> r: ParamsReprojection;
 @group(0) @binding(9) var sortie_distance: texture_storage_2d<r32float, write>; // distance moyenne des nuages (m)
+// Nuages vus depuis la caméra dans les 6 directions du cube (rgb = lumière non exposée, a = transmittance), pour
+// les reflets et la lumière ambiante (voir `ciel_nuages.rs`). Une face par image.
+@group(0) @binding(10) var sortie_ciel: texture_storage_2d_array<rgba16float, write>;
 
 // Reprojection temporelle : chaque image ne marche qu'un pixel par bloc `pas` × `pas` de la cible (pixel
 // `bloc × pas + decalage`) ; la passe de reconstruction complète les autres depuis l'image précédente.
@@ -34,7 +38,7 @@ struct ParamsReprojection {
     decalage: vec2<u32>,      // pixel marché dans chaque bloc à cette image
     pas: u32,                 // 2 avec reprojection, 1 sans
     valide: u32,              // 0 : pas d'historique utilisable
-    r0: u32,
+    face_ciel: u32,           // face du cube de ciel marchée à cette image
     r1: u32,
 };
 
@@ -132,6 +136,16 @@ fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
     if prof > 0.0 {
         distance_scene = length(monde_depuis_ndc(vec3(ndc, prof)) - camera);
     }
+    let gigue = fract(52.9829189 * fract(dot(vec2<f32>(pixel), vec2(0.06711056, 0.00583715))));
+    var loin = 0.0;
+    let nuages = marcher_rayon(camera, dir, distance_scene, gigue, &loin);
+    ecrire(id.xy, vec4(nuages.rgb * view.exposure, nuages.a), loin);
+}
+
+// Marche le long d'un rayon : renvoie la lumière diffusée (non exposée) et la transmittance ; `loin` reçoit la
+// distance moyenne des nuages (pour la reprojection).
+fn marcher_rayon(camera: vec3<f32>, dir: vec3<f32>, distance_scene: f32, gigue: f32, loin_sortie: ptr<function, f32>)
+    -> vec4<f32> {
 
     // Intersection avec la couche (Terre plate, suffisant à cette échelle).
     var t_entree = 0.0;
@@ -147,14 +161,13 @@ fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     t_sortie = min(min(t_sortie, p.distance_max), distance_scene);
     if t_sortie <= t_entree || p.couverture <= 0.0 {
-        ecrire(id.xy, vec4(0.0, 0.0, 0.0, 1.0), select(p.distance_max, t_entree, t_entree > 0.0));
-        return;
+        *loin_sortie = select(p.distance_max, t_entree, t_entree > 0.0);
+        return vec4(0.0, 0.0, 0.0, 1.0);
     }
 
     // Pas qui grandit avec la distance. Décalage stable par pixel de la cible.
     let longueur = t_sortie - t_entree;
     let pas_loin = clamp(longueur / f32(p.pas), 40.0, 600.0);
-    let gigue = fract(52.9829189 * fract(dot(vec2<f32>(pixel), vec2(0.06711056, 0.00583715))));
     var t = t_entree + gigue * min(p.pas_proche + t_entree * 0.02, pas_loin);
 
     let cos_theta = dot(dir, p.soleil_direction);
@@ -237,5 +250,24 @@ fn marcher(@builtin(global_invocation_id) id: vec3<u32>) {
     diffusion *= 1.0 - f;
     tr = mix(tr, 1.0, f);
 
-    ecrire(id.xy, vec4(diffusion * view.exposure, tr), loin);
+    *loin_sortie = loin;
+    return vec4(diffusion, tr);
+}
+
+// Nuages du cube de ciel, une face par image, depuis la position de la caméra. Même convention de directions
+// que `environment.wesl` de l'atmosphère de Bevy (cube main gauche : z inversé).
+@compute @workgroup_size(8, 8, 1)
+fn marcher_ciel(@builtin(global_invocation_id) id: vec3<u32>) {
+    let taille = textureDimensions(sortie_ciel);
+    if any(id.xy >= taille) {
+        return;
+    }
+    let uv = (vec2<f32>(id.xy) + 0.5) / vec2<f32>(taille);
+    var dir = sample_cube_dir(uv, r.face_ciel);
+    dir.z = -dir.z;
+    dir = normalize(dir);
+    let gigue = fract(52.9829189 * fract(dot(vec2<f32>(id.xy), vec2(0.06711056, 0.00583715))));
+    var loin = 0.0;
+    let nuages = marcher_rayon(view.world_position, dir, 1e9, gigue, &loin);
+    textureStore(sortie_ciel, id.xy, r.face_ciel, nuages);
 }
