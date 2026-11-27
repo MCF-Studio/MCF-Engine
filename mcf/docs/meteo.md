@@ -86,8 +86,7 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   de 2 m échantillonne le fond et calcule la distance signée au rivage (transformée de distance euclidienne
   exacte, Felzenszwalb) et la normale du rivage ; reconstruite quand la caméra a bougé d'un quart de grille
   (128 m) : 3,5 ms en profil dev, 2,8 ms en release sur la machine de test pour un fond simple (pic ponctuel,
-  à surveiller avec un vrai
-  terrain). Modèle de SkyForge : levée de la houle (loi de Green), déferlement de McCowan, crête penchée vers la
+  à surveiller avec un vrai terrain). Modèle de SkyForge : levée de la houle (loi de Green), déferlement de McCowan, crête penchée vers la
   plage, jet de rive, écume de déferlement et traînée, liseré qui respire, fond visible à travers l'eau peu
   profonde. `rivage::hauteur_eau` pour la flottaison près des côtes. Démo `demo_plage`. 9 tests.
   Ajout par rapport à SkyForge : la houle du large est aussi limitée à 0,35 × la profondeur (sans cela, les creux
