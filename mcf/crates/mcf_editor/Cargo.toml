@@ -29,6 +29,7 @@ getrandom = { version = "0.3", optional = true }
 mcf_carte.workspace = true
 mcf_core.workspace = true
 mcf_geo.workspace = true
+mcf_meteo = { version = "0.1.0", path = "../mcf_meteo" }
 # Captures du pilotage, même version que mcf_carte.
 png = { version = "0.18", optional = true }
 rfd.workspace = true

@@ -36,7 +36,7 @@ use bevy::{
 use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
 use mcf_carte::{Carte, Densite, Famille, Id, relief::Pinceau};
 use mcf_geo::{ClasseRoute, P2};
-
+use mcf_meteo::{ McfMeteoPlugin, McfPrecipitationsPlugin, ChangerMeteo, PresetMeteo};
 /// Couche de rendu vue seulement par la caméra Plan.
 pub const COUCHE_PLAN: usize = 1;
 /// Couche de rendu vue seulement par la caméra 3D.
@@ -454,6 +454,11 @@ pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppE
         ..default()
     }))
     .add_plugins((EguiPlugin::default(), crate::icone::IconePlugin))
+    .add_plugins((
+        McfMeteoPlugin,
+        McfPrecipitationsPlugin,
+    ))
+    .add_systems(Update, touches_meteo)
     .insert_resource(Projet {
         carte,
         message,
@@ -581,5 +586,27 @@ mod tests {
         assert!(eclaire.z < 0.0 && eclaire.x > 0.0, "{eclaire}");
         let hauteur = ops::asin(-eclaire.y).to_degrees();
         assert!((hauteur - 38.0).abs() < 1e-3, "{hauteur}");
+    }
+}
+
+fn touches_meteo(
+    clavier: Res<ButtonInput<KeyCode>>,
+    mut demandes: MessageWriter<ChangerMeteo>,
+) {
+    let choix = [
+        (KeyCode::F5, PresetMeteo::Clair),
+        (KeyCode::F6, PresetMeteo::Nuageux),
+        (KeyCode::F7, PresetMeteo::Pluie),
+        (KeyCode::F8, PresetMeteo::Tempete),
+        (KeyCode::F9, PresetMeteo::Neige),
+    ];
+
+    for (touche, preset) in choix {
+        if clavier.just_pressed(touche) {
+            demandes.write(ChangerMeteo {
+                cible: preset.etat(),
+                duree_s: 5.0,
+            });
+        }
     }
 }
