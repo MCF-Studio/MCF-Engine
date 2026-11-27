@@ -166,6 +166,17 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Effet visible : la tempête est beaucoup plus calme qu'avant au premier plan (longue houle de 400 m, peu de
   clapot) et l'écume des crêtes a presque disparu (elle dépend du repliement de la mer du vent). Réglage de
   l'écume et du clapot de tempête à faire au goût.
+- ✅ Étape 12 : pluie et neige éclairées par la scène. Leur luminance était fixe (2 500 cd/m²) : sous un soleil
+  physique (130 000 lux, exposition EV100 13), gouttes et flocons sortaient presque noirs. Elle suit maintenant
+  la `DirectionalLight` la plus forte : albedo × éclairement × (0,2 + 0,8 × soleil) / π.
+- ✅ Étape 13 : écume calée sur la loi de Monahan (part de mer couverte de moutons selon le vent,
+  W = 3,84·10⁻⁶ U^3,41). Après le calibrage de l'étape 11, l'écume avait disparu (0 % mesuré). Le seuil du
+  jacobien est maintenant calculé depuis le spectre (écart type de la divergence de chaque cascade, loi
+  normale) pour viser W, corrigé par une table mesurée (`persistance_ecume`) ; l'écume naît plus franchement
+  (`(seuil − J) × 6` au lieu de × 1,5). Mesure (exemple `mesurer_ecume` : relecture de l'écume du GPU et
+  formule du matériau sur 250 m × 250 m, intensité ≥ 0,5, llvmpipe, un tirage par météo) :
+  0,12 / 0,52 / 1,03 / 13,2 % pour 0,09 / 0,69 / 1,37 / 14,5 % visés (5 / 9 / 11 / 22 m/s). La table a été
+  réglée sur ces mêmes tirages : à revérifier sur d'autres instants et sur un vrai GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

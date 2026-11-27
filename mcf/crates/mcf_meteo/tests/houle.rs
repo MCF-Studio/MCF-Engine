@@ -117,8 +117,10 @@ mod fft {
             0.016,
         );
         let tempete = calculer_params(&PresetMeteo::Tempete.etat(), &o, &r, 0.016);
-        assert_eq!(calme.seuil_ecume, 0.0);
-        assert!(tempete.seuil_ecume > 0.7);
+        // Seuil calé sur la loi de Monahan (le jacobien varie peu par brise légère : même un seuil proche de 0,7
+        // ne donne presque pas d'écume).
+        assert!(calme.seuil_ecume < tempete.seuil_ecume, "{}", calme.seuil_ecume);
+        assert!(tempete.seuil_ecume > 0.7, "{}", tempete.seuil_ecume);
         assert!(calculer_params(&PresetMeteo::Clair.etat(), &o, &r, f32::NAN).dt == 0.0);
     }
 
