@@ -209,3 +209,31 @@ fn nuages_dans_le_ciel_par_defaut() {
     assert!(NuagesVolumetriques::default().ciel);
     assert_eq!(TAILLE_CIEL % 8, 0);
 }
+
+#[test]
+fn msaa_garde_sur_la_camera_des_nuages() {
+    use bevy::render::view::Msaa;
+    use mcf_meteo::NuagesVolumetriques;
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        AssetPlugin::default(),
+        bevy::image::ImagePlugin::default(),
+    ))
+    .init_asset::<bevy::shader::Shader>()
+    .add_plugins((mcf_meteo::McfMeteoPlugin, mcf_meteo::McfNuagesPlugin));
+    let camera = app
+        .world_mut()
+        .spawn((Camera3d::default(), Msaa::Sample4, NuagesVolumetriques::default()))
+        .id();
+    app.update();
+    // Le MSAA de la caméra n'est plus coupé ; la profondeur devient lisible par la marche.
+    assert_eq!(app.world().get::<Msaa>(camera), Some(&Msaa::Sample4));
+    let usages = bevy::render::render_resource::TextureUsages::from(
+        app.world()
+            .get::<Camera3d>(camera)
+            .expect("caméra")
+            .depth_texture_usages,
+    );
+    assert!(usages.contains(bevy::render::render_resource::TextureUsages::TEXTURE_BINDING));
+}

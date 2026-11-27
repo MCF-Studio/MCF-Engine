@@ -43,8 +43,8 @@ use bevy::render::render_phase::{
     SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
 };
 use bevy::render::render_resource::binding_types::{
-    sampler, texture_2d, texture_3d, texture_depth_2d, texture_storage_2d, texture_storage_2d_array,
-    texture_storage_3d, uniform_buffer,
+    sampler, texture_2d, texture_3d, texture_depth_2d, texture_depth_2d_multisampled, texture_storage_2d,
+    texture_storage_2d_array, texture_storage_3d, uniform_buffer,
 };
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{RenderContext, RenderDevice, RenderGraph, RenderQueue, ViewQuery};
@@ -73,8 +73,8 @@ pub const BOUCLE_DECALAGE_M: f32 = 90_000.0;
 /// retombe exactement sur lui-même : 2 m/s × 1,3 × 4500 s = 13 périodes de 900 m.
 pub const BOUCLE_TEMPS_S: f32 = 4500.0;
 
-/// À poser sur une `Camera3d` pour y dessiner les nuages volumétriques. Impose le rendu HDR ; le MSAA est coupé
-/// sur cette caméra (la passe lit le tampon de profondeur non multi-échantillonné).
+/// À poser sur une `Camera3d` pour y dessiner les nuages volumétriques. Impose le rendu HDR ; le MSAA de la caméra
+/// est respecté (la marche lit la profondeur multi-échantillonnée si besoin).
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, ExtractComponent)]
 #[extract_app(RenderApp)]
 #[reflect(Component, Default)]
@@ -415,15 +415,13 @@ impl Plugin for McfNuagesPlugin {
     }
 }
 
-/// La marche lit le tampon de profondeur : il doit être échantillonnable et non multi-échantillonné.
-fn preparer_cameras(mut cameras: Query<(&mut Camera3d, &mut Msaa), With<NuagesVolumetriques>>) {
-    for (mut camera, mut msaa) in &mut cameras {
+/// La marche lit le tampon de profondeur : il doit être échantillonnable (multi-échantillonné ou non : les
+/// pipelines existent pour chaque niveau de MSAA, voir `VarianteNuages`).
+fn preparer_cameras(mut cameras: Query<&mut Camera3d, With<NuagesVolumetriques>>) {
+    for mut camera in &mut cameras {
         let usages = TextureUsages::from(camera.depth_texture_usages);
         if !usages.contains(TextureUsages::TEXTURE_BINDING) {
             camera.depth_texture_usages = (usages | TextureUsages::TEXTURE_BINDING).into();
-        }
-        if *msaa != Msaa::Off {
-            *msaa = Msaa::Off;
         }
     }
 }
@@ -450,16 +448,17 @@ fn mettre_a_jour_params(
 #[derive(Resource)]
 pub(crate) struct RessourcesNuages {
     disposition_bruit: BindGroupLayoutDescriptor,
-    disposition_marche: BindGroupLayoutDescriptor,
     disposition_composition: BindGroupLayoutDescriptor,
     disposition_reconstruction: BindGroupLayoutDescriptor,
     reconstruction: CachedComputePipelineId,
     cuire_forme: CachedComputePipelineId,
     cuire_detail: CachedComputePipelineId,
     cuire_carte: CachedComputePipelineId,
-    marche: CachedComputePipelineId,
-    marche_ciel: CachedComputePipelineId,
-    composition: CachedRenderPipelineId,
+    /// Marche et composition pour chaque nombre d'échantillons MSAA rencontré (créées à la demande).
+    variantes: bevy::platform::collections::HashMap<u32, VarianteNuages>,
+    shader_marche: Handle<Shader>,
+    shader_composition: Handle<Shader>,
+    sommet_plein_ecran: VertexState,
     pub(crate) forme: TextureView,
     detail: TextureView,
     pub(crate) carte: TextureView,
@@ -467,6 +466,146 @@ pub(crate) struct RessourcesNuages {
     echantillonneur_nuages: Sampler,
     groupe_bruit: Option<BindGroup>,
     pub(crate) cuit: AtomicBool,
+}
+
+/// Pipelines qui dépendent du MSAA de la vue : la marche lit la profondeur (multi-échantillonnée ou non) et la
+/// composition dessine dans la cible de la passe transparente (même nombre d'échantillons).
+#[derive(Clone)]
+struct VarianteNuages {
+    disposition_marche: BindGroupLayoutDescriptor,
+    marche: CachedComputePipelineId,
+    marche_ciel: CachedComputePipelineId,
+    composition: CachedRenderPipelineId,
+}
+
+impl RessourcesNuages {
+    fn variante(&mut self, cache: &PipelineCache, echantillons: u32) -> &VarianteNuages {
+        let disposition_composition = self.disposition_composition.clone();
+        let (shader_marche, shader_composition, sommet) = (
+            self.shader_marche.clone(),
+            self.shader_composition.clone(),
+            self.sommet_plein_ecran.clone(),
+        );
+        self.variantes.entry(echantillons).or_insert_with(|| {
+            creer_variante(
+                cache,
+                echantillons,
+                shader_marche,
+                shader_composition,
+                sommet,
+                disposition_composition,
+            )
+        })
+    }
+}
+
+fn creer_variante(
+    cache: &PipelineCache,
+    echantillons: u32,
+    shader_marche: Handle<Shader>,
+    shader_composition: Handle<Shader>,
+    sommet: VertexState,
+    disposition_composition: BindGroupLayoutDescriptor,
+) -> VarianteNuages {
+    let filtrable = TextureSampleType::Float { filterable: true };
+    let multi = echantillons > 1;
+    let profondeur = if multi {
+        texture_depth_2d_multisampled()
+    } else {
+        texture_depth_2d()
+    };
+    let disposition_marche = BindGroupLayoutDescriptor::new(
+        if multi {
+            "nuages_marche_msaa"
+        } else {
+            "nuages_marche"
+        },
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                uniform_buffer::<ViewUniform>(true),
+                uniform_buffer::<ParamsNuages>(false),
+                profondeur,
+                texture_3d(filtrable),
+                texture_3d(filtrable),
+                texture_2d(filtrable),
+                sampler(SamplerBindingType::Filtering),
+                texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
+                uniform_buffer::<ParamsReprojection>(false),
+                texture_storage_2d(TextureFormat::R32Float, StorageTextureAccess::WriteOnly),
+                texture_storage_2d_array(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
+            ),
+        ),
+    );
+    let definitions: Vec<bevy::shader::ShaderDefVal> = if multi {
+        vec!["MULTISAMPLED".into()]
+    } else {
+        Vec::new()
+    };
+    let calcul = |entree: &'static str| {
+        cache.queue_compute_pipeline(ComputePipelineDescriptor {
+            label: Some(Cow::Borrowed(entree)),
+            layout: vec![disposition_marche.clone()],
+            shader: shader_marche.clone(),
+            shader_defs: definitions.clone(),
+            entry_point: Some(Cow::Borrowed(entree)),
+            ..default()
+        })
+    };
+    let marche = calcul("marcher");
+    let marche_ciel = calcul("marcher_ciel");
+    // Composition : couleur = nuages + transmittance × image (prémultiplié, la transmittance est dans alpha) ;
+    // l'alpha de l'image est conservé.
+    let melange = BlendState {
+        color: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::SrcAlpha,
+            operation: BlendOperation::Add,
+        },
+        alpha: BlendComponent {
+            src_factor: BlendFactor::Zero,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+    };
+    let composition = cache.queue_render_pipeline(RenderPipelineDescriptor {
+        label: Some("nuages_composition".into()),
+        layout: vec![disposition_composition],
+        vertex: sommet,
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..default()
+        },
+        // La passe transparente a un tampon de profondeur : on le déclare sans le tester ni l'écrire
+        // (la marche s'est déjà arrêtée devant la géométrie).
+        depth_stencil: Some(DepthStencilState {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(CompareFunction::Always),
+            stencil: default(),
+            bias: default(),
+        }),
+        multisample: MultisampleState {
+            count: echantillons,
+            ..default()
+        },
+        fragment: Some(FragmentState {
+            shader: shader_composition,
+            targets: vec![Some(ColorTargetState {
+                format: TextureFormat::Rgba16Float,
+                blend: Some(melange),
+                write_mask: ColorWrites::ALL,
+            })],
+            ..default()
+        }),
+        ..default()
+    });
+    VarianteNuages {
+        disposition_marche,
+        marche,
+        marche_ciel,
+        composition,
+    }
 }
 
 #[derive(Resource, Default)]
@@ -496,6 +635,7 @@ pub(crate) struct GroupesNuages {
     composition: BindGroup,
     taille_frais: UVec2,
     taille_cible: UVec2,
+    echantillons: u32,
 }
 
 /// Images reconstruites gardées d'une image à l'autre, par caméra.
@@ -550,25 +690,6 @@ fn creer_ressources(
         ),
     );
     let filtrable = TextureSampleType::Float { filterable: true };
-    let disposition_marche = BindGroupLayoutDescriptor::new(
-        "nuages_marche",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::COMPUTE,
-            (
-                uniform_buffer::<ViewUniform>(true),
-                uniform_buffer::<ParamsNuages>(false),
-                texture_depth_2d(),
-                texture_3d(filtrable),
-                texture_3d(filtrable),
-                texture_2d(filtrable),
-                sampler(SamplerBindingType::Filtering),
-                texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
-                uniform_buffer::<ParamsReprojection>(false),
-                texture_storage_2d(TextureFormat::R32Float, StorageTextureAccess::WriteOnly),
-                texture_storage_2d_array(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
-            ),
-        ),
-    );
     let disposition_reconstruction = BindGroupLayoutDescriptor::new(
         "nuages_reconstruction",
         &BindGroupLayoutEntries::sequential(
@@ -605,50 +726,6 @@ fn creer_ressources(
             ..default()
         })
     };
-    // Composition : couleur = nuages + transmittance × image (prémultiplié, la transmittance est dans alpha) ;
-    // l'alpha de l'image est conservé.
-    let melange = BlendState {
-        color: BlendComponent {
-            src_factor: BlendFactor::One,
-            dst_factor: BlendFactor::SrcAlpha,
-            operation: BlendOperation::Add,
-        },
-        alpha: BlendComponent {
-            src_factor: BlendFactor::Zero,
-            dst_factor: BlendFactor::One,
-            operation: BlendOperation::Add,
-        },
-    };
-    let pipeline_composition = cache.queue_render_pipeline(RenderPipelineDescriptor {
-        label: Some("nuages_composition".into()),
-        layout: vec![disposition_composition.clone()],
-        vertex: plein_ecran.to_vertex_state(),
-        primitive: PrimitiveState {
-            cull_mode: None,
-            ..default()
-        },
-        // La passe transparente a un tampon de profondeur : on le déclare sans le tester ni l'écrire
-        // (la marche s'est déjà arrêtée devant la géométrie).
-        depth_stencil: Some(DepthStencilState {
-            format: TextureFormat::Depth32Float,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(CompareFunction::Always),
-            stencil: default(),
-            bias: default(),
-        }),
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            shader: composition,
-            targets: vec![Some(ColorTargetState {
-                format: TextureFormat::Rgba16Float,
-                blend: Some(melange),
-                write_mask: ColorWrites::ALL,
-            })],
-            ..default()
-        }),
-        ..default()
-    });
-
     let cube = |n| Extent3d {
         width: n,
         height: n,
@@ -677,11 +754,12 @@ fn creer_ressources(
         cuire_forme: calcul(&disposition_bruit, &bruit, "cuire_forme"),
         cuire_detail: calcul(&disposition_bruit, &bruit, "cuire_detail"),
         cuire_carte: calcul(&disposition_bruit, &bruit, "cuire_carte"),
-        marche: calcul(&disposition_marche, &marche, "marcher"),
-        marche_ciel: calcul(&disposition_marche, &marche, "marcher_ciel"),
+        variantes: default(),
+        shader_marche: marche,
+        shader_composition: composition,
+        sommet_plein_ecran: plein_ecran.to_vertex_state(),
         reconstruction: calcul(&disposition_reconstruction, &reconstruction, "reconstruire"),
         disposition_reconstruction,
-        composition: pipeline_composition,
         forme: texture_bruit(
             &peripherique,
             "nuages_forme",
@@ -707,7 +785,6 @@ fn creer_ressources(
         echantillonneur_bruit: repetition(FilterMode::Linear),
         echantillonneur_nuages: bords,
         disposition_bruit,
-        disposition_marche,
         disposition_composition,
         groupe_bruit: None,
         cuit: AtomicBool::new(false),
@@ -890,7 +967,7 @@ pub(crate) fn preparer_groupes(
     uniformes_vues: Res<ViewUniforms>,
     params: Option<Res<ParamsNuages>>,
     mut tampon: ResMut<TamponParamsNuages>,
-    vues: Query<(Entity, &TexturesNuages, &ViewDepthStencilTexture)>,
+    vues: Query<(Entity, &TexturesNuages, &ViewDepthStencilTexture, &Msaa)>,
 ) {
     if ressources.groupe_bruit.is_none() {
         let groupe = peripherique.create_bind_group(
@@ -909,10 +986,13 @@ pub(crate) fn preparer_groupes(
     else {
         return;
     };
-    let disposition_marche = cache.get_bind_group_layout(&ressources.disposition_marche);
     let disposition_composition = cache.get_bind_group_layout(&ressources.disposition_composition);
     let disposition_reconstruction = cache.get_bind_group_layout(&ressources.disposition_reconstruction);
-    for (entite, textures, profondeur) in &vues {
+    for (entite, textures, profondeur, msaa) in &vues {
+        let Some(variante) = ressources.variantes.get(&msaa.samples()) else {
+            continue;
+        };
+        let disposition_marche = cache.get_bind_group_layout(&variante.disposition_marche);
         let mut tampon_reprojection = UniformBuffer::from(textures.params);
         tampon_reprojection.write_buffer(&peripherique, &file);
         let Some(liaison_reprojection) = tampon_reprojection.binding() else {
@@ -963,16 +1043,17 @@ pub(crate) fn preparer_groupes(
             composition,
             taille_frais: UVec2::new(taille.width, taille.height),
             taille_cible: textures.params.taille_cible,
+            echantillons: msaa.samples(),
         });
     }
 }
 
 fn mettre_en_file(
     fonctions: Res<DrawFunctions<Transparent3d>>,
-    ressources: Res<RessourcesNuages>,
+    mut ressources: ResMut<RessourcesNuages>,
     cache: Res<PipelineCache>,
     mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
-    vues: Query<(Entity, &MainEntity, &ExtractedView), With<NuagesVolumetriques>>,
+    vues: Query<(Entity, &MainEntity, &ExtractedView, &Msaa), With<NuagesVolumetriques>>,
 ) {
     let Some(fonction) = fonctions.read().get_id::<DessinerNuages>() else {
         return;
@@ -980,12 +1061,19 @@ fn mettre_en_file(
     // Rien à composer tant que le bruit n'est pas cuit et que la marche ne peut pas tourner (la texture de
     // marche serait vide, donc noire et opaque).
     if !ressources.cuit.load(Ordering::Relaxed)
-        || cache.get_compute_pipeline(ressources.marche).is_none()
         || cache.get_compute_pipeline(ressources.reconstruction).is_none()
     {
+        // Les variantes sont quand même créées, pour que leurs pipelines compilent pendant la cuisson.
+        for (_, _, _, msaa) in &vues {
+            ressources.variante(&cache, msaa.samples());
+        }
         return;
     }
-    for (entite, entite_principale, vue) in &vues {
+    for (entite, entite_principale, vue, msaa) in &vues {
+        let variante = ressources.variante(&cache, msaa.samples()).clone();
+        if cache.get_compute_pipeline(variante.marche).is_none() {
+            continue;
+        }
         let Some(phase) = phases.get_mut(&vue.retained_view_entity) else {
             continue;
         };
@@ -994,7 +1082,7 @@ fn mettre_en_file(
         }
         // Dessiné en premier dans la passe transparente : derrière la pluie et les objets transparents.
         phase.add_transient(Transparent3d {
-            pipeline: ressources.composition,
+            pipeline: variante.composition,
             entity: (entite, *entite_principale),
             draw_function: fonction,
             distance: f32::NEG_INFINITY,
@@ -1082,13 +1170,16 @@ pub(crate) fn marcher(
     if !ressources.cuit.load(Ordering::Relaxed) {
         return;
     }
+    let (decalage_vue, groupes, textures) = vue.into_inner();
+    let Some(variante) = ressources.variantes.get(&groupes.echantillons) else {
+        return;
+    };
     let (Some(pipeline), Some(pipeline_reconstruction)) = (
-        cache.get_compute_pipeline(ressources.marche),
+        cache.get_compute_pipeline(variante.marche),
         cache.get_compute_pipeline(ressources.reconstruction),
     ) else {
         return;
     };
-    let (decalage_vue, groupes, textures) = vue.into_inner();
     let diagnostics = contexte.diagnostic_recorder();
     let diagnostics = diagnostics.as_deref();
     let mut passe = contexte
@@ -1116,7 +1207,7 @@ pub(crate) fn marcher(
     );
     span.end(&mut passe);
     if textures.ciel_actif
-        && let Some(pipeline_ciel) = cache.get_compute_pipeline(ressources.marche_ciel)
+        && let Some(pipeline_ciel) = cache.get_compute_pipeline(variante.marche_ciel)
     {
         let span = diagnostics.pass_span(&mut passe, "nuages_ciel");
         passe.set_pipeline(pipeline_ciel);

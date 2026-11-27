@@ -12,6 +12,8 @@
 //! - `complet` : + pluie / neige et son d'ambiance.
 //!
 //! Résultats dans `mcf/bench/results/<date>_meteo_<variante>/` (`summary.txt`, `frames.csv`, `passes.csv`).
+//! `MCF_MSAA=0` : sans anticrénelage MSAA (×4 par défaut ; avant l'étape 18, les nuages le coupaient d'office
+//! dans les variantes `nuages` et `complet`).
 //! `MCF_CIEL=0` : coupe les nuages dans les reflets et la lumière ambiante (pour mesurer leur coût).
 //! `MCF_OMBRE=0` : coupe l'ombre des nuages au sol (pour mesurer son coût).
 //! Ne mesurer que sur un vrai GPU : un rendu logiciel (llvmpipe) ne donne que la preuve que l'outil fonctionne.
@@ -291,6 +293,12 @@ fn scene(
         Exposure { ev100: 13.0 },
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
+        // `MCF_MSAA=0` : sans anticrénelage (MSAA ×4 par défaut, dans toutes les variantes).
+        if std::env::var("MCF_MSAA").as_deref() == Ok("0") {
+            Msaa::Off
+        } else {
+            Msaa::Sample4
+        },
     ));
     if args.variante >= Variante::Nuages {
         // `MCF_CIEL=0` : reflets sans les nuages, pour mesurer leur coût.

@@ -79,7 +79,7 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites : pas de reprojection temporelle (décalage fixe par pixel + filtre en tente, l'image ne scintille pas
   mais les bords sont un peu flous), les reflets de l'océan et l'éclairage d'ambiance de la scène ne voient pas
   les nuages (la carte d'environnement vient de l'atmosphère seule), pas d'ombre des nuages au sol, MSAA coupé
-  sur la caméra des nuages, coût GPU non mesuré (llvmpipe seulement : à mesurer en priorité, c'est la passe la
+  sur la caméra des nuages (rétabli à l'étape 18), coût GPU non mesuré (llvmpipe seulement : à mesurer en priorité, c'est la passe la
   plus lourde du module).
 - ✅ Étape 6 : vagues de bord (`rivage`, sans rendu pour la partie calcul). Le jeu donne la hauteur du sol par une
   `SourceFond` (une fonction ; plus tard le terrain de la carte). Autour de la caméra, une grille 256 × 256 cases
@@ -234,6 +234,17 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Coût non mesuré (une lecture de texture et un bruit de plus par pixel du sol). 2 tests.
   Limites : pas de mémoire de l'humidité (le sable ne sèche pas après une grosse vague), pas de flaques
   laissées par la mer.
+- ✅ Étape 18 : nuages compatibles avec le MSAA. Les nuages coupaient d'office le MSAA de leur caméra (la marche
+  lisait une profondeur non multi-échantillonnée) : dans le jeu, les bords des objets crénelaient. La marche et
+  la composition ont maintenant une variante par nombre d'échantillons, créée à la demande : profondeur
+  `texture_depth_multisampled_2d` (échantillon 0, définition `MULTISAMPLED`) et composition dessinée avec le
+  même nombre d'échantillons que la passe transparente. Le MSAA de la caméra est laissé tel quel (×4 par défaut
+  dans Bevy). `demo_ocean` et `bench_meteo` : `MCF_MSAA=0` pour comparer.
+  Mesure (`cargo bench-meteo` nuages, nuageux, 640 × 360, llvmpipe, 2 passages) : `nuages_marche` 12,9 / 12,2 ms
+  avec MSAA ×4 contre 12,1 / 11,6 ms sans ; passe opaque 20,8 / 20,5 contre 15,8 / 16,7 ms (coût du MSAA lui-même) ;
+  image 210 / 208 contre 197 / 202 ms. Captures : bords de la bouée lissés, nuages identiques à l'œil.
+  Attention pour comparer avec les mesures précédentes : avant cette étape, les variantes `nuages` et `complet`
+  du banc tournaient sans MSAA (coupé par les nuages), `base` et `ocean` avec.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

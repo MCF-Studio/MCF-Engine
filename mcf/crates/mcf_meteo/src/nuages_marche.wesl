@@ -18,6 +18,10 @@ import bevy_pbr::render::utils::sample_cube_dir;
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> p: ParamsNuages;
+// Profondeur de la vue : multi-échantillonnée si la caméra a du MSAA (on lit l'échantillon 0).
+@if(MULTISAMPLED)
+@group(0) @binding(2) var profondeur: texture_depth_multisampled_2d;
+@else
 @group(0) @binding(2) var profondeur: texture_depth_2d;
 @group(0) @binding(3) var forme: texture_3d<f32>;
 @group(0) @binding(4) var detail: texture_3d<f32>;
