@@ -16,9 +16,10 @@ use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight};
 use bevy::pbr::AtmosphereSettings;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
-    ChangerMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin, McfPrecipitationsPlugin,
-    NuagesVolumetriques, Ocean, PresetMeteo,
+    CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
+    McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, ParametresRivage, PresetMeteo,
 };
 
 fn main() {
@@ -91,9 +92,18 @@ fn scene(
     });
 }
 
-fn bouee(ocean: Res<Ocean>, mut bouees: Query<&mut Transform, With<Bouee>>) {
+/// La bouée flotte sur la houle et la mer du vent (réplique CPU des cascades FFT).
+fn bouee(
+    ocean: Res<Ocean>,
+    mer: Res<MerDuVent>,
+    carte: Res<CarteRivage>,
+    etat: Res<EtatMeteo>,
+    parametres: Res<ParametresRivage>,
+    mut bouees: Query<&mut Transform, With<Bouee>>,
+) {
+    let b = params_bord(&etat, &parametres);
     for mut t in &mut bouees {
-        t.translation.y = ocean.hauteur(t.translation.x, t.translation.z);
+        t.translation.y = hauteur_eau(&ocean, Some(&mer), &carte, &b, t.translation.x, t.translation.z);
     }
 }
 

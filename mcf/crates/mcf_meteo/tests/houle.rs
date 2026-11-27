@@ -17,13 +17,13 @@ fn pic_jonswap_plausible() {
 
 #[test]
 fn pulsations_bouclent_sur_la_periode() {
-    for v in vagues(&PresetMeteo::Tempete.etat(), 1.0) {
+    for v in vagues(&PresetMeteo::Tempete.etat(), 1.0, 0.0) {
         let cycles = v.omega * PERIODE_HOULE_S / std::f32::consts::TAU;
         assert!((cycles - cycles.round()).abs() < 1e-3, "{cycles}");
     }
     assert!(quantifier_pulsation(1e-6) > 0.0, "au moins un cycle");
     // La surface est identique à t et t + période.
-    let v = vagues(&PresetMeteo::Pluie.etat(), 1.0);
+    let v = vagues(&PresetMeteo::Pluie.etat(), 1.0, 0.0);
     let p = Vec2::new(12.3, -45.6);
     let a = deplacement(&v, p, 3.0);
     let b = deplacement(&v, p, 3.0 + PERIODE_HOULE_S);
@@ -36,7 +36,7 @@ fn vagues_dans_le_sens_du_vent() {
         vent_angle_deg: 90.0,
         ..PresetMeteo::Nuageux.etat()
     };
-    let v = vagues(&etat, 1.0);
+    let v = vagues(&etat, 1.0, 0.0);
     // La vague principale va vers +X.
     assert!(v[0].direction.abs_diff_eq(Vec2::X, 1e-4), "{}", v[0].direction);
 }
@@ -44,7 +44,7 @@ fn vagues_dans_le_sens_du_vent() {
 #[test]
 fn raideur_bornee_pas_de_boucles() {
     for p in PresetMeteo::TOUS {
-        for v in vagues(&p.etat(), 1.0) {
+        for v in vagues(&p.etat(), 1.0, 0.0) {
             // Q k A ≤ 0,15 par vague : la surface ne se recoupe pas.
             assert!(v.raideur * v.k * v.amplitude <= 0.15 + 1e-4);
         }
@@ -92,8 +92,11 @@ mod fft {
 
     #[test]
     fn bandes_contigues_et_apres_le_pic() {
-        let (k_min, k_max) = bandes([250.0, 47.0, 9.0], 0.02, 1.5);
-        assert!((k_min.x - 0.03).abs() < 1e-6);
+        let (k_min, k_max) = bandes([250.0, 47.0, 9.0], 0.1, 1.5);
+        assert!((k_min.x - 0.15).abs() < 1e-6);
+        // Pic de tempête tout près de k = 0 : la première cascade saute au moins 3 mailles de sa grille.
+        let (k_min_tempete, _) = bandes([250.0, 47.0, 9.0], 0.015, 1.5);
+        assert!((k_min_tempete.x - 3.0 * std::f32::consts::TAU / 250.0).abs() < 1e-6);
         // La fin d'une cascade est le début de la suivante : pas de trou ni de double comptage.
         assert_eq!(k_max.x, k_min.y);
         assert_eq!(k_max.y, k_min.z);

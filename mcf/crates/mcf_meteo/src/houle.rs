@@ -48,10 +48,25 @@ pub fn pic_jonswap(vent_vitesse: f32, fetch_km: f32) -> (f32, f32) {
     (longueur, hs_fetch.min(hs_plein))
 }
 
-/// Les 4 vagues pour un état météo. `raideur` globale dans `[0, 1]`.
-pub fn vagues(etat: &EtatMeteo, raideur: f32) -> [VagueGerstner; 4] {
+/// Part de l'amplitude portée par la houle de Gerstner quand la mer du vent (cascades FFT,
+/// [`crate::mer_du_vent`]) a déjà une variance `variance_mer_du_vent` (m²) : la houle garde le reste, pour que
+/// l'ensemble ait la hauteur significative de [`pic_jonswap`]. 0 : la houle porte toute la mer.
+pub fn part_houle(etat: &EtatMeteo, variance_mer_du_vent: f32) -> f32 {
+    let (_, hs) = pic_jonswap(etat.vent_vitesse, etat.fetch_km);
+    let variance_totale = (hs / 4.0) * (hs / 4.0);
+    if variance_totale <= 0.0 || !variance_mer_du_vent.is_finite() {
+        return 1.0;
+    }
+    (1.0 - variance_mer_du_vent.max(0.0) / variance_totale)
+        .max(0.0)
+        .sqrt()
+}
+
+/// Les 4 vagues pour un état météo. `raideur` globale dans `[0, 1]`. `variance_mer_du_vent` : voir
+/// [`part_houle`].
+pub fn vagues(etat: &EtatMeteo, raideur: f32, variance_mer_du_vent: f32) -> [VagueGerstner; 4] {
     let (longueur_pic, hs) = pic_jonswap(etat.vent_vitesse, etat.fetch_km);
-    let amplitude = 0.3 * hs;
+    let amplitude = 0.3 * hs * part_houle(etat, variance_mer_du_vent);
     let vent = etat.direction_vent();
     let dv = Vec2::new(vent.x, vent.z).normalize_or(Vec2::NEG_Y);
     std::array::from_fn(|i| {
@@ -100,6 +115,9 @@ pub struct Ocean {
     pub niveau: f32,
     /// Raideur des vagues, `[0, 1]`.
     pub raideur: f32,
+    /// Variance de la hauteur déjà portée par la mer du vent (m², voir [`part_houle`]). Mise à jour à chaque
+    /// image depuis la [`crate::MerDuVent`] par `McfMeteoPlugin` ; 0 : la houle porte toute la mer.
+    pub variance_mer_du_vent: f32,
     /// Temps bouclé sur [`PERIODE_HOULE_S`].
     temps: f32,
     /// Vagues actuelles (recalculées depuis la météo).
@@ -111,8 +129,9 @@ impl Default for Ocean {
         Self {
             niveau: 0.0,
             raideur: 1.0,
+            variance_mer_du_vent: 0.0,
             temps: 0.0,
-            vagues: vagues(&EtatMeteo::default(), 1.0),
+            vagues: vagues(&EtatMeteo::default(), 1.0, 0.0),
         }
     }
 }
@@ -122,7 +141,7 @@ impl Ocean {
     pub fn avancer(&mut self, etat: &EtatMeteo, dt: f32) {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.temps = (self.temps + dt).rem_euclid(PERIODE_HOULE_S);
-        self.vagues = vagues(etat, self.raideur);
+        self.vagues = vagues(etat, self.raideur, self.variance_mer_du_vent);
     }
 
     /// Temps bouclé (s).
@@ -135,7 +154,8 @@ impl Ocean {
         &self.vagues
     }
 
-    /// Hauteur de l'eau à la verticale de (x, z) : on inverse le déplacement horizontal des vagues de Gerstner par
+    /// Hauteur de la houle seule à la verticale de (x, z), sans la mer du vent (pour la surface complète :
+    /// [`crate::rivage::hauteur_eau`] avec la [`crate::MerDuVent`]). On inverse le déplacement horizontal des vagues de Gerstner par
     /// itérations de point fixe (3 suffisent, la raideur étant bornée).
     pub fn hauteur(&self, x: f32, z: f32) -> f32 {
         let cible = Vec2::new(x, z);

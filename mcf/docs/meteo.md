@@ -146,9 +146,26 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   (nuageux), 13 cm sur 93 cm (pluie), 12 cm sur 4,8 m (tempête) ; il manque surtout des rides de quelques cm.
   Coût (release, tempête) : 6 µs par image pour la mise à jour, 38 µs par objet pour `hauteur_eau`
   (29 µs avec 384 modes, 79 µs avec 1024). Recalcul du spectre quand le vent change : 1,1 à 1,3 ms.
-  Constat à traiter à part : en tempête, la mer du vent seule a un déplacement vertical RMS de 4,8 m (Hs ≈
-  19 m), plus que ce que donne le vent (Hs ≈ 10 m pour une mer pleinement levée à 22 m/s). C'est le comportement
-  actuel du GPU (la réplique le reproduit) ; normalisation du spectre à revoir.
+  (Erreur et coût mesurés avant le calibrage de l'étape 11 ; après : voir étape 11.)
+- ✅ Étape 11 : calibrage de la hauteur des vagues. Mesures avant correction (variance moyenne exacte,
+  Hs = 4 × écart type de la hauteur) : la mer du vent seule dépassait la hauteur visée et la houle de Gerstner
+  portait déjà toute la mer. Hs total : 21,6 m en tempête pour 10,0 m visés (vent 22 m/s, fetch 800 km), 2,9 m
+  par temps nuageux pour 1,7 m. Trois causes :
+  1. amplitude des modes de SkyForge `sqrt(2 S dk²)` au lieu de `sqrt(S dk² / 2)` (le mode et son conjugué
+     comptent deux fois, et ξ a une variance 2) : mer du vent deux fois trop haute (corrigé dans le shader et
+     la réplique CPU) ;
+  2. en tempête, le pic (k ≈ 0,015) est plus près de 0 que la maille de la première cascade (0,025) : quelques
+     modes portent tout l'étalement directionnel et la variance sortait 1,9 fois trop forte en amplitude. La
+     première cascade saute maintenant au moins 3 mailles (`ANNEAUX_MIN`) ;
+  3. la houle de Gerstner portait Hs entier : elle ne garde plus que la variance que la mer du vent n'a pas
+     (`houle::part_houle`, `Ocean::variance_mer_du_vent`, mis à jour depuis la `MerDuVent`).
+  Après (test `hauteur_significative_respectee`) : Hs 0,52 / 1,67 / 2,57 / 9,62 / 0,33 m pour 0,54 / 1,73 /
+  2,59 / 10,05 / 0,34 m visés (clair / nuageux / pluie / tempête / neige). Vérification GPU toujours à 0,04 %.
+  Flottaison avec 512 modes : erreur verticale RMS 3,5 / 6,1 / 6,4 / 5,7 cm ; `hauteur_eau` 33 µs par objet en
+  tempête (release).
+  Effet visible : la tempête est beaucoup plus calme qu'avant au premier plan (longue houle de 400 m, peu de
+  clapot) et l'écume des crêtes a presque disparu (elle dépend du repliement de la mer du vent). Réglage de
+  l'écume et du clapot de tempête à faire au goût.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
