@@ -37,6 +37,7 @@ pub mod etat;
 pub mod houle;
 #[cfg(feature = "rendu")]
 pub mod materiau_meteo;
+pub mod mer_du_vent;
 #[cfg(feature = "rendu")]
 pub mod nuages;
 #[cfg(feature = "rendu")]
@@ -60,12 +61,11 @@ pub use etat::{EtatMeteo, PresetMeteo};
 pub use houle::Ocean;
 #[cfg(feature = "rendu")]
 pub use materiau_meteo::{MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo};
+pub use mer_du_vent::{MerDuVent, ReglagesFft};
 #[cfg(feature = "rendu")]
 pub use nuages::{McfNuagesPlugin, NuagesVolumetriques, ReglagesNuages};
 #[cfg(feature = "rendu")]
 pub use ocean::{McfOceanPlugin, ReglagesOcean};
-#[cfg(feature = "rendu")]
-pub use ocean_fft::ReglagesFft;
 pub use orage::{Eclair, Orage};
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};
@@ -106,6 +106,9 @@ impl Plugin for McfMeteoPlugin {
             .register_type::<ParametresSurfaces>()
             .register_type::<ParametresRivage>()
             .register_type::<Orage>()
+            .register_type::<ReglagesFft>()
+            .init_resource::<ReglagesFft>()
+            .init_resource::<MerDuVent>()
             .init_resource::<Orage>()
             .add_message::<Eclair>()
             .init_resource::<ParametresRivage>()
@@ -123,6 +126,7 @@ impl Plugin for McfMeteoPlugin {
                     vent::avancer_vent,
                     surfaces::avancer_surfaces,
                     houle::avancer_ocean,
+                    mer_du_vent::avancer_mer,
                     orage::avancer_orage,
                 )
                     .chain()

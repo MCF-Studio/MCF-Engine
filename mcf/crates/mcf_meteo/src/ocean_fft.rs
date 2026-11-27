@@ -34,37 +34,10 @@ use bevy::shader::load_shader_library;
 
 use crate::MiseAJourMeteo;
 use crate::etat::EtatMeteo;
-use crate::houle::{Ocean, pic_jonswap};
+use crate::houle::Ocean;
+use crate::mer_du_vent::{ParamsSpectre, SuiviSpectre};
 
-/// Résolution d'une cascade (fixée par les shaders).
-pub const N_FFT: u32 = 256;
-/// Nombre de cascades.
-pub const CASCADES: u32 = 3;
-
-/// Réglages de la simulation FFT.
-#[derive(Resource, Reflect, Debug, Clone, PartialEq)]
-#[reflect(Resource, Default)]
-pub struct ReglagesFft {
-    /// Taille du motif de chaque cascade (m), de la plus grande à la plus petite.
-    pub tailles: [f32; 3],
-    /// Déplacement horizontal (vagues pointues).
-    pub choppiness: f32,
-    /// Décroissance de l'écume (1/s).
-    pub decroissance_ecume: f32,
-    /// Les cascades FFT commencent à `debut_apres_pic × k_pic` (la houle de Gerstner porte le pic).
-    pub debut_apres_pic: f32,
-}
-
-impl Default for ReglagesFft {
-    fn default() -> Self {
-        Self {
-            tailles: [250.0, 47.0, 9.0],
-            choppiness: 1.2,
-            decroissance_ecume: 0.8,
-            debut_apres_pic: 1.5,
-        }
-    }
-}
+pub use crate::mer_du_vent::{CASCADES, N_FFT, ReglagesFft, bandes};
 
 /// Paramètres envoyés aux shaders (même ordre que `ParamsFft` dans `ocean_commun.wesl`).
 #[derive(Resource, ShaderType, Clone, Copy, Debug, Default, PartialEq, ExtractResource)]
@@ -105,9 +78,7 @@ pub struct EtatFft {
     pub generation_spectre: u32,
     /// Numéro d'image (parité = sens du ping-pong de l'écume).
     pub image: u64,
-    dernier_u10: f32,
-    dernier_angle: f32,
-    dernier_fetch: f32,
+    suivi: SuiviSpectre,
 }
 
 /// Textures de la simulation (tableaux 2D de 3 couches, une par cascade).
@@ -139,8 +110,10 @@ fn texture_tableau(format: TextureFormat, echantillonnage: bool) -> Image {
         format,
         RenderAssetUsages::RENDER_WORLD,
     );
-    img.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
+    img.texture_descriptor.usage = TextureUsages::COPY_DST
+        | TextureUsages::COPY_SRC
+        | TextureUsages::STORAGE_BINDING
+        | TextureUsages::TEXTURE_BINDING;
     img.texture_view_descriptor = Some(TextureViewDescriptor {
         dimension: Some(TextureViewDimension::D2Array),
         ..default()
@@ -176,33 +149,16 @@ impl TexturesOcean {
     }
 }
 
-/// Bandes de nombres d'onde des cascades : la cascade c couvre [6·2π/Lc, 6·2π/Lc+1), la première commence après
-/// le pic de la houle de Gerstner.
-pub fn bandes(tailles: [f32; 3], k_pic: f32, debut_apres_pic: f32) -> (Vec4, Vec4) {
-    let k = |l: f32| 6.0 * std::f32::consts::TAU / l.max(0.01);
-    let k_min = Vec4::new(
-        (k_pic * debut_apres_pic).max(0.0),
-        k(tailles[1]),
-        k(tailles[2]),
-        0.0,
-    );
-    let k_max = Vec4::new(k(tailles[1]), k(tailles[2]), 1e9, 0.0);
-    (k_min, k_max)
-}
-
 /// Paramètres de l'image (fonction pure).
 pub fn calculer_params(etat: &EtatMeteo, ocean: &Ocean, reglages: &ReglagesFft, dt: f32) -> ParamsFft {
-    let (longueur_pic, _) = pic_jonswap(etat.vent_vitesse, etat.fetch_km);
-    let k_pic = std::f32::consts::TAU / longueur_pic.max(0.01);
-    let (k_min, k_max) = bandes(reglages.tailles, k_pic, reglages.debut_apres_pic);
-    let d = etat.direction_vent();
+    let s = ParamsSpectre::depuis(etat, reglages);
     ParamsFft {
-        tailles: Vec4::new(reglages.tailles[0], reglages.tailles[1], reglages.tailles[2], 0.0),
-        k_min,
-        k_max,
-        vent: Vec2::new(d.x, d.z).normalize_or(Vec2::NEG_Y),
-        u10: etat.vent_vitesse.max(0.5),
-        fetch: (etat.fetch_km * 1000.0).max(1000.0),
+        tailles: Vec4::new(s.tailles[0], s.tailles[1], s.tailles[2], 0.0),
+        k_min: Vec4::new(s.k_min[0], s.k_min[1], s.k_min[2], 0.0),
+        k_max: Vec4::new(s.k_max[0], s.k_max[1], s.k_max[2], 0.0),
+        vent: s.vent,
+        u10: s.u10,
+        fetch: s.fetch,
         choppiness: reglages.choppiness,
         decroissance_ecume: reglages.decroissance_ecume,
         seuil_ecume: 0.75 * ((etat.vent_vitesse - 3.0) / 15.0).clamp(0.0, 1.0),
@@ -213,20 +169,12 @@ pub fn calculer_params(etat: &EtatMeteo, ocean: &Ocean, reglages: &ReglagesFft, 
 }
 
 impl EtatFft {
-    /// Avance d'une image ; renvoie vrai si le spectre initial doit être recalculé.
+    /// Avance d'une image ; renvoie vrai si le spectre initial doit être recalculé (même règle que la réplique
+    /// CPU, [`crate::mer_du_vent::MerDuVent`]).
     pub fn avancer(&mut self, params: &ParamsFft) -> bool {
         self.image = self.image.wrapping_add(1);
-        let angle = bevy::math::ops::atan2(params.vent.y, params.vent.x);
-        let change = self.generation_spectre == 0
-            || (params.u10 - self.dernier_u10).abs() > 0.25
-            || (angle - self.dernier_angle).abs() > 0.035
-            || (params.fetch - self.dernier_fetch).abs() > self.dernier_fetch * 0.01;
-        if change {
-            self.generation_spectre = self.generation_spectre.wrapping_add(1).max(1);
-            self.dernier_u10 = params.u10;
-            self.dernier_angle = angle;
-            self.dernier_fetch = params.fetch;
-        }
+        let change = self.suivi.avancer(params.u10, params.vent, params.fetch);
+        self.generation_spectre = self.suivi.generation;
         change
     }
 }

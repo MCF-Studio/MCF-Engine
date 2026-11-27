@@ -131,6 +131,24 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   / nuages / complet ; passes les plus lourdes en variante complet (moyenne GPU) : `nuages_marche` 32,8 ms,
   `atmosphere_luts` 32,2 ms, `ocean_fft` 31,3 ms, `lightprobe_irradiance_map` 31,2 ms. La cuisson du bruit des
   nuages (unique, au démarrage) a pris 613 ms sur llvmpipe.
+- ✅ Étape 10 : flottaison sur la mer du vent. `mer_du_vent` (sans dépendance au rendu, donc aussi sur le
+  serveur) reconstruit sur le CPU les cascades FFT du GPU à l'identique (mêmes graines, même spectre, mêmes
+  fréquences quantifiées, même règle de recalcul quand le vent change) et garde les `modes_flottaison` modes les
+  plus énergétiques (512 par défaut), sommés directement au point voulu. `rivage::hauteur_eau` prend la mer en
+  option ; l'inversion du déplacement horizontal est amortie (le point fixe simple divergeait en tempête : 2 m
+  d'écart horizontal après 4 itérations).
+  Vérification contre le GPU (exemple `verifier_fft`, relecture de la texture, clair / nuageux / tempête) :
+  écart RMS de 0,04 % sur les 3 cascades, soit la précision de la texture en demi-flottants. Cette
+  vérification a trouvé un défaut du shader : la ligne et la colonne de Nyquist rompaient la symétrie
+  hermitienne et faisaient déborder la pente sur le déplacement en z de la petite cascade (6 % d'erreur). Elles
+  sont maintenant annulées.
+  Erreur due aux modes gardés (vertical, RMS, 200 points, 512 modes) : 7 cm sur 18 cm (clair), 12 cm sur 59 cm
+  (nuageux), 13 cm sur 93 cm (pluie), 12 cm sur 4,8 m (tempête) ; il manque surtout des rides de quelques cm.
+  Coût (release, tempête) : 6 µs par image pour la mise à jour, 38 µs par objet pour `hauteur_eau`
+  (29 µs avec 384 modes, 79 µs avec 1024). Recalcul du spectre quand le vent change : 1,1 à 1,3 ms.
+  Constat à traiter à part : en tempête, la mer du vent seule a un déplacement vertical RMS de 4,8 m (Hs ≈
+  19 m), plus que ce que donne le vent (Hs ≈ 10 m pour une mer pleinement levée à 22 m/s). C'est le comportement
+  actuel du GPU (la réplique le reproduit) ; normalisation du spectre à revoir.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

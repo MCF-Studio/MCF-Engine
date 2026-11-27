@@ -17,6 +17,7 @@ use bevy::prelude::*;
 use crate::bruit::perlin3;
 use crate::etat::EtatMeteo;
 use crate::houle::{G, Ocean, deplacement, quantifier_pulsation};
+use crate::mer_du_vent::MerDuVent;
 
 /// Distance signée renvoyée quand aucun rivage n'est dans la grille (m).
 pub const LOIN_DU_RIVAGE: f32 = 10_000.0;
@@ -467,10 +468,19 @@ pub fn amplitude_houle(ocean: &Ocean) -> f32 {
     ocean.vagues().iter().map(|v| v.amplitude).sum::<f32>() * 1.5
 }
 
-/// Déplacement total de la surface au repos `p` : houle atténuée par la profondeur + vagues de bord. Sans grille
-/// (ou hors grille), c'est la houle seule.
-pub fn deplacement_total(ocean: &Ocean, carte: &CarteRivage, b: &ParamsBord, p: Vec2) -> Vec3 {
-    let houle = deplacement(ocean.vagues(), p, ocean.temps());
+/// Déplacement total de la surface au repos `p` : houle (Gerstner + mer du vent, si `mer` est donnée) atténuée par
+/// la profondeur, plus les vagues de bord. Sans grille (ou hors grille), c'est la houle seule.
+pub fn deplacement_total(
+    ocean: &Ocean,
+    mer: Option<&MerDuVent>,
+    carte: &CarteRivage,
+    b: &ParamsBord,
+    p: Vec2,
+) -> Vec3 {
+    let mut houle = deplacement(ocean.vagues(), p, ocean.temps());
+    if let Some(mer) = mer {
+        houle += mer.deplacement(p);
+    }
     let Some(e) = carte.echantillonner(p) else {
         return houle;
     };
@@ -479,14 +489,40 @@ pub fn deplacement_total(ocean: &Ocean, carte: &CarteRivage, b: &ParamsBord, p: 
         + vagues_bord(p, &e, profondeur, b, ocean.temps()).deplacement
 }
 
-/// Hauteur de l'eau à la verticale de (x, z), vagues de bord comprises (pour la flottaison près des côtes). Comme
-/// [`Ocean::hauteur`], le déplacement horizontal est inversé par point fixe. Les cascades FFT ne sont pas incluses.
-pub fn hauteur_eau(ocean: &Ocean, carte: &CarteRivage, b: &ParamsBord, x: f32, z: f32) -> f32 {
-    let cible = Vec2::new(x, z);
+/// Point de la surface au repos qui, une fois déplacé, arrive à la verticale de `cible` ; renvoie ce point et son
+/// déplacement. Point fixe amorti (×0,7), arrêté dès que l'écart passe sous 1 cm, au plus 12 itérations : en
+/// tempête, les vagues pointues de la mer du vent faisaient diverger le point fixe simple (mesuré : jusqu'à 2 m
+/// d'écart horizontal après 4 itérations, 1,2 cm au pire avec l'amortissement).
+pub fn repos_sous(
+    ocean: &Ocean,
+    mer: Option<&MerDuVent>,
+    carte: &CarteRivage,
+    b: &ParamsBord,
+    cible: Vec2,
+) -> (Vec2, Vec3) {
     let mut repos = cible;
-    for _ in 0..4 {
-        let d = deplacement_total(ocean, carte, b, repos);
-        repos = cible - Vec2::new(d.x, d.z);
+    let mut d = deplacement_total(ocean, mer, carte, b, repos);
+    for _ in 0..12 {
+        let residu = repos + Vec2::new(d.x, d.z) - cible;
+        if residu.length_squared() < 1e-4 {
+            break;
+        }
+        repos -= residu * 0.7;
+        d = deplacement_total(ocean, mer, carte, b, repos);
     }
-    ocean.niveau + deplacement_total(ocean, carte, b, repos).y
+    (repos, d)
+}
+
+/// Hauteur de l'eau à la verticale de (x, z), vagues de bord comprises (pour la flottaison). Le déplacement
+/// horizontal est inversé par [`repos_sous`]. Avec `mer`, les cascades FFT de la mer du vent sont incluses
+/// (réplique CPU du GPU, voir [`crate::mer_du_vent`]).
+pub fn hauteur_eau(
+    ocean: &Ocean,
+    mer: Option<&MerDuVent>,
+    carte: &CarteRivage,
+    b: &ParamsBord,
+    x: f32,
+    z: f32,
+) -> f32 {
+    ocean.niveau + repos_sous(ocean, mer, carte, b, Vec2::new(x, z)).1.y
 }
