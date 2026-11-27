@@ -43,6 +43,7 @@ rue la plus dense à pied, entrée dans un intérieur, conduite rapide (streamin
 | Mémoire vidéo et RAM | pic et moyenne |
 | Temps de chargement initial | lancement → contrôle du joueur |
 | Appels de dessin, triangles affichés | diagnostics de Bevy |
+| Temps GPU par passe | `passes.csv` (`mcf_bench`), pour savoir quelle passe coûte |
 | Effet de chaque option | occlusion culling on/off, LOD on/off, HLOD on/off |
 
 Seuil de réussite proposé : ≥ 60 FPS en 1 % low sur la config « joueur moyen » au palier de départ, aucune
