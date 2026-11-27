@@ -41,8 +41,14 @@ pub struct ReglagesPrecipitations {
     pub trainee: f32,
     /// Multiplicateur d'opacité.
     pub luminosite: f32,
-    /// Luminance des gouttes par ciel dégagé (cd/m², multipliée par l'exposition de la caméra).
+    /// Luminance des gouttes par ciel dégagé (cd/m², multipliée par l'exposition de la caméra), utilisée
+    /// seulement s'il n'y a aucune `DirectionalLight` dans la scène.
     pub luminance: f32,
+    /// Part de la lumière renvoyée par les gouttes et les flocons. Avec une `DirectionalLight`, la luminance vaut
+    /// `albedo × éclairement × (0,2 + 0,8 × intensité du soleil) / π` : elle suit l'éclairage de la scène et
+    /// l'exposition de la caméra (une luminance fixe rendait la pluie et la neige presque noires sous un soleil
+    /// physique de 130 000 lux, exposition EV100 13).
+    pub albedo: f32,
 }
 
 impl Default for ReglagesPrecipitations {
@@ -54,6 +60,7 @@ impl Default for ReglagesPrecipitations {
             trainee: 0.018,
             luminosite: 1.0,
             luminance: 2500.0,
+            albedo: 0.8,
         }
     }
 }
@@ -208,11 +215,27 @@ fn creer_precipitations(
     etat.entite = Some(entite);
 }
 
-/// Calcule les uniformes de l'image (fonction pure, testable sans GPU).
+/// Luminance (cd/m²) des gouttes et des flocons. `eclairement` : éclairement (lux) de la lumière directionnelle
+/// la plus forte de la scène, s'il y en a une.
+pub fn luminance_precipitations(
+    meteo: &EtatMeteo,
+    reglages: &ReglagesPrecipitations,
+    eclairement: Option<f32>,
+) -> f32 {
+    let soleil = meteo.intensite_soleil.clamp(0.0, 1.0);
+    match eclairement.filter(|e| e.is_finite()) {
+        Some(e) => reglages.albedo.max(0.0) * e.max(0.0) * (0.2 + 0.8 * soleil) / std::f32::consts::PI,
+        None => reglages.luminance * (0.35 + 0.65 * soleil),
+    }
+}
+
+/// Calcule les uniformes de l'image (fonction pure, testable sans GPU). `eclairement` : voir
+/// [`luminance_precipitations`].
 pub fn calculer_uniformes(
     meteo: &EtatMeteo,
     vent_local: Vec3,
     reglages: &ReglagesPrecipitations,
+    eclairement: Option<f32>,
     decalage_vent: Vec3,
     temps: f32,
 ) -> UniformesPrecipitations {
@@ -229,7 +252,7 @@ pub fn calculer_uniformes(
         actives,
         vent: vent_local,
         facteur_neige: meteo.facteur_neige(),
-        couleur: Vec3::splat(reglages.luminance * (0.35 + 0.65 * meteo.intensite_soleil)),
+        couleur: Vec3::splat(luminance_precipitations(meteo, reglages, eclairement)),
         trainee: reglages.trainee,
         luminosite: reglages.luminosite,
         quantum_vitesse: reglages.hauteur / PERIODE_S,
@@ -269,11 +292,13 @@ fn mettre_a_jour_precipitations(
     porteurs: Query<&MeshMaterial3d<MateriauPrecipitations>>,
     mut materiaux: ResMut<Assets<MateriauPrecipitations>>,
     carte: Option<Res<CarteAbris>>,
+    lumieres: Query<&DirectionalLight>,
 ) {
     // Vent mesuré à la première caméra 3D (la pluie l'entoure) ; à l'origine s'il n'y en a pas.
     let centre = cameras.iter().next().map_or(Vec3::ZERO, |c| c.translation());
     let vent_local = champ.echantillonner(&meteo, centre).vitesse;
-    let u0 = calculer_uniformes(&meteo, vent_local, &reglages, Vec3::ZERO, 0.0);
+    let eclairement = lumieres.iter().map(|l| l.illuminance).reduce(f32::max);
+    let u0 = calculer_uniformes(&meteo, vent_local, &reglages, eclairement, Vec3::ZERO, 0.0);
     etat.avancer(vent_local, u0.boite, temps.delta_secs());
 
     let Some(porteur) = etat.entite.and_then(|e| porteurs.get(e).ok()) else {

@@ -5,7 +5,7 @@
 //!
 //! `cargo run -p mcf_meteo --example demo_plage`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
-//! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair` (nuageux par défaut).
+//! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie|neige` (nuageux par défaut).
 //! `MCF_CAMERA=haut` : vue plongeante depuis 35 m.
 
 use bevy::asset::RenderAssetUsages;
@@ -149,6 +149,8 @@ fn scene(
     let preset = match std::env::var("MCF_PRESET").as_deref() {
         Ok("tempete") => PresetMeteo::Tempete,
         Ok("clair") => PresetMeteo::Clair,
+        Ok("pluie") => PresetMeteo::Pluie,
+        Ok("neige") => PresetMeteo::Neige,
         _ => PresetMeteo::Nuageux,
     };
     demandes.write(ChangerMeteo {
