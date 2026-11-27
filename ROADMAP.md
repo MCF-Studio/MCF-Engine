@@ -259,6 +259,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 4b : sol mouillé, flaques et neige au sol (`SurfacesMeteo`, `MateriauMeteo`).
 - ✅ Étape 5a : océan (houle de Gerstner, flottaison, rendu), démo `demo_ocean`.
 - ✅ Étape 5b : océan FFT sur le GPU (3 cascades JONSWAP, écume).
+- ✅ Étape 7 : nuages volumétriques traversables (coût GPU pas encore mesuré).
 
 ---
 
