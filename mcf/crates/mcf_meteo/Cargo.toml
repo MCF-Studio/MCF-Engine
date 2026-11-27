@@ -46,3 +46,7 @@ required-features = ["rendu", "son"]
 [[example]]
 name = "verifier_fft"
 required-features = ["rendu"]
+
+[[example]]
+name = "mesurer_ecume"
+required-features = ["rendu"]

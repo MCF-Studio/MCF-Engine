@@ -228,3 +228,30 @@ fn plugin_met_a_jour_la_mer() {
     assert_eq!(mer.modes_actifs(), 512);
     let _ = EtatMeteo::default();
 }
+
+#[test]
+fn seuil_d_ecume_suit_le_vent() {
+    use mcf_meteo::mer_du_vent::{monahan, persistance_ecume, seuil_ecume};
+    // Monahan : ≈ 0,7 % de moutons à 9 m/s, ≈ 14,5 % à 22 m/s.
+    assert!((monahan(9.0) - 0.0069).abs() < 5e-4);
+    assert!((monahan(22.0) - 0.1452).abs() < 2e-3);
+    assert!(persistance_ecume(0.0) > 0.0 && persistance_ecume(1.0) <= 1.0);
+    for preset in [
+        PresetMeteo::Clair,
+        PresetMeteo::Nuageux,
+        PresetMeteo::Pluie,
+        PresetMeteo::Tempete,
+    ] {
+        let etat = preset.etat();
+        let p = ParamsSpectre::depuis(&etat, &ReglagesFft::default());
+        let s = seuil_ecume(&p, 1.2, etat.vent_vitesse);
+        assert!((-1.0..=1.0).contains(&s), "{preset:?} : {s}");
+    }
+    // Sans vent : pas d'écume.
+    let calme = EtatMeteo {
+        vent_vitesse: 0.0,
+        ..PresetMeteo::Clair.etat()
+    };
+    let p = ParamsSpectre::depuis(&calme, &ReglagesFft::default());
+    assert_eq!(seuil_ecume(&p, 1.2, 0.0), -1.0);
+}

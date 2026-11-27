@@ -203,6 +203,118 @@ fn amplitude(p: &ParamsSpectre, k: Vec2, cascade: usize) -> f32 {
     (0.5 * s * dk * dk).sqrt()
 }
 
+// --- Écume ---------------------------------------------------------------------------------------------------
+
+/// Monahan & O'Muircheartaigh (1980) : part de la surface de la mer couverte de moutons, vent à 10 m en m/s.
+pub fn monahan(u10: f32) -> f32 {
+    (3.84e-6 * ops::powf(u10.max(0.0), 3.41)).min(1.0)
+}
+
+/// Rapport entre la couverture d'écume affichée et la part de surface visée sous le seuil (modèle gaussien du
+/// jacobien), selon la couverture de Monahan `w` visée. Le modèle gaussien se trompe loin dans la queue et
+/// l'écume persiste après le repliement : on corrige par une table mesurée avec l'exemple `mesurer_ecume`
+/// (llvmpipe, deux itérations de réglage, 5 / 9 / 11 / 22 m/s), interpolée linéairement.
+pub fn persistance_ecume(w: f32) -> f32 {
+    const TABLE: [(f32, f32); 4] = [
+        (0.000_93, 0.147),
+        (0.006_9, 0.33),
+        (0.013_7, 0.46),
+        (0.145_2, 0.885),
+    ];
+    let w = w.max(0.0);
+    if w <= TABLE[0].0 {
+        return TABLE[0].1;
+    }
+    for paire in TABLE.windows(2) {
+        let ((w0, c0), (w1, c1)) = (paire[0], paire[1]);
+        if w <= w1 {
+            return c0 + (c1 - c0) * (w - w0) / (w1 - w0);
+        }
+    }
+    TABLE[3].1
+}
+
+/// Écart type de la divergence horizontale λ (dDx/dx + dDz/dz) d'une cascade, d'après le spectre : le jacobien
+/// vaut environ 1 + cette divergence. Variance = λ² ∫ S(k) k² dk sur la bande de la cascade (jusqu'à la fréquence
+/// de Nyquist de sa grille), avec l'amortissement des ondes capillaires du shader.
+pub fn ecart_type_divergence(p: &ParamsSpectre, cascade: usize, choppiness: f32) -> f32 {
+    let Some(&taille) = p.tailles.get(cascade) else {
+        return 0.0;
+    };
+    let k_nyquist = PI * N_FFT as f32 / taille.max(0.01);
+    let k_debut = p.k_min[cascade].max(1e-4);
+    let k_fin = p.k_max[cascade].min(k_nyquist);
+    if k_fin.is_nan() || k_debut.is_nan() || k_fin <= k_debut {
+        return 0.0;
+    }
+    // Intégration en ω (pas logarithmique) : S(ω) dω, k = ω² / g.
+    const PAS: usize = 128;
+    let (w0, w1) = ((G * k_debut).sqrt(), (G * k_fin).sqrt());
+    let r = ops::ln(w1 / w0) / PAS as f32;
+    let variance: f32 = (0..PAS)
+        .map(|i| {
+            let w = w0 * ops::exp((i as f32 + 0.5) * r);
+            let k = w * w / G;
+            jonswap(p, w) * k * k * ops::exp(-k * k * 1e-4) * w * r
+        })
+        .sum();
+    choppiness * variance.max(0.0).sqrt()
+}
+
+/// Fonction de répartition de la loi normale centrée réduite (erf d'Abramowitz et Stegun 7.1.26, erreur < 1,5e-7).
+fn repartition_normale(x: f32) -> f32 {
+    let z = x.abs() / std::f32::consts::SQRT_2;
+    let t = 1.0 / (1.0 + 0.327_591_1 * z);
+    let poly =
+        t * (0.254_829_6 + t * (-0.284_496_7 + t * (1.421_413_8 + t * (-1.453_152 + t * 1.061_405_4))));
+    let erf = 1.0 - poly * ops::exp(-z * z);
+    if x >= 0.0 {
+        0.5 * (1.0 + erf)
+    } else {
+        0.5 * (1.0 - erf)
+    }
+}
+
+/// Seuil du jacobien sous lequel l'écume apparaît, choisi pour que la couverture d'écume suive la loi de Monahan
+/// (jacobien de chaque cascade supposé gaussien, de moyenne 1). Entre -1 (pas d'écume) et 1.
+pub fn seuil_ecume(p: &ParamsSpectre, choppiness: f32, u10: f32) -> f32 {
+    let w = monahan(u10);
+    let cible = (w / persistance_ecume(w)).min(0.5);
+    if cible < 1e-5 {
+        return -1.0;
+    }
+    let sigmas: Vec<f32> = (0..CASCADES as usize)
+        .map(|c| ecart_type_divergence(p, c, choppiness))
+        .filter(|s| *s > 1e-6)
+        .collect();
+    if sigmas.is_empty() {
+        return -1.0;
+    }
+    let part = |seuil: f32| -> f32 {
+        sigmas
+            .iter()
+            .map(|s| repartition_normale((seuil - 1.0) / s))
+            .sum()
+    };
+    // La part croît avec le seuil : dichotomie.
+    let (mut bas, mut haut) = (-1.0f32, 1.0f32);
+    if part(haut) < cible {
+        return haut;
+    }
+    if part(bas) > cible {
+        return bas;
+    }
+    for _ in 0..30 {
+        let milieu = 0.5 * (bas + haut);
+        if part(milieu) < cible {
+            bas = milieu;
+        } else {
+            haut = milieu;
+        }
+    }
+    0.5 * (bas + haut)
+}
+
 fn vecteur_onde(id: UVec2, taille: f32) -> Vec2 {
     TAU * (id.as_vec2() - (N_FFT / 2) as f32) / taille
 }

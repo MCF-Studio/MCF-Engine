@@ -35,7 +35,7 @@ use bevy::shader::load_shader_library;
 use crate::MiseAJourMeteo;
 use crate::etat::EtatMeteo;
 use crate::houle::Ocean;
-use crate::mer_du_vent::{ParamsSpectre, SuiviSpectre};
+use crate::mer_du_vent::{ParamsSpectre, SuiviSpectre, seuil_ecume};
 
 pub use crate::mer_du_vent::{CASCADES, N_FFT, ReglagesFft, bandes};
 
@@ -161,7 +161,7 @@ pub fn calculer_params(etat: &EtatMeteo, ocean: &Ocean, reglages: &ReglagesFft, 
         fetch: s.fetch,
         choppiness: reglages.choppiness,
         decroissance_ecume: reglages.decroissance_ecume,
-        seuil_ecume: 0.75 * ((etat.vent_vitesse - 3.0) / 15.0).clamp(0.0, 1.0),
+        seuil_ecume: seuil_ecume(&s, reglages.choppiness, etat.vent_vitesse),
         temps: ocean.temps(),
         dt: if dt.is_finite() { dt.max(0.0) } else { 0.0 },
         ..default()
