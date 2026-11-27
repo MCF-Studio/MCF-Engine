@@ -90,6 +90,16 @@ pub fn params_bord(etat: &EtatMeteo, p: &ParametresRivage) -> ParamsBord {
     }
 }
 
+/// Marge de sable humide au-dessus du plus haut jet de rive (m) : remontée capillaire, vagues irrégulières.
+pub const MARGE_SABLE_HUMIDE: f32 = 0.1;
+
+/// Hauteur au-dessus du niveau de la mer (m) jusqu'où l'eau des vagues de bord mouille le sable : hauteur du jet
+/// de rive plus une marge. Le matériau météo assombrit le sable en dessous, en fondu sur les 25 derniers
+/// centimètres (`materiau_meteo.wesl`).
+pub fn hauteur_mouillee(b: &ParamsBord) -> f32 {
+    b.jet.max(0.0) + MARGE_SABLE_HUMIDE
+}
+
 /// Ce que la grille sait d'un point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EchantillonRivage {

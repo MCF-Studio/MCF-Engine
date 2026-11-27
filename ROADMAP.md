@@ -270,6 +270,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 14 : reprojection temporelle des nuages (marche des nuages ÷ 3 sur llvmpipe : ~31 → ~10 ms + 1,2 ms de reconstruction).
 - ✅ Étape 15 : ombre des nuages au sol et sur la mer, sur tous les matériaux (1,8 ms sur llvmpipe ; feature Bevy `pbr_light_textures`).
 - ✅ Étape 16 : nuages dans les reflets et la lumière ambiante (mer de tempête grise au lieu de bleue, 2,2 ms sur llvmpipe).
+- ✅ Étape 17 : sable mouillé par les vagues de bord (bande sous la hauteur du jet de rive, matériau météo).
 
 ---
 

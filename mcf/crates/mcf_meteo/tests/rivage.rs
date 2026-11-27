@@ -221,3 +221,16 @@ fn hauteur_de_l_eau() {
         + 0.1;
     assert!(h.abs() <= borne, "{h} > {borne}");
 }
+
+#[test]
+fn sable_mouille_selon_le_jet_de_rive() {
+    use mcf_meteo::rivage::{MARGE_SABLE_HUMIDE, hauteur_mouillee, params_bord};
+    let p = ParametresRivage::default();
+    let calme = hauteur_mouillee(&params_bord(&PresetMeteo::Clair.etat(), &p));
+    let tempete = hauteur_mouillee(&params_bord(&PresetMeteo::Tempete.etat(), &p));
+    // Toujours au moins la marge, et plus haut quand le vent forcit.
+    assert!(calme >= MARGE_SABLE_HUMIDE);
+    assert!(tempete > calme, "calme {calme} m, tempête {tempete} m");
+    // Bornée par le jet de rive réglé : pas de plage entière mouillée.
+    assert!(tempete <= p.jet_de_rive + MARGE_SABLE_HUMIDE + 1e-6);
+}
