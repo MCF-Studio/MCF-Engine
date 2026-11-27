@@ -94,7 +94,20 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites : la grille ne suit qu'une caméra (la première `Camera3d`), le motif d'écume est en bruit de Worley
   calculé par pixel (coût à mesurer), pas de sable mouillé par le jet de rive (l'humidité reste globale), pas de
   réfraction réelle (le fond est une couleur réglable, `ReglagesOcean::couleur_fond`), coût GPU non mesuré.
-- ⬜ Étapes 8 et 9.
+- ✅ Étape 8 : ambiance sonore et éclairs. `son` (sans dépendance audio) : synthèse en temps réel portée de
+  SkyForge (mer en bruit brun filtré, ressac calé sur la phase des vagues de bord au rivage et panoramique vers
+  lui, vent qui suit vitesse et rafales avec sifflement, pluie en souffle + gouttes, étouffée sous un abri,
+  tonnerre avec claquement et roulement), filtres biquad RBJ, écrêtage doux. `Orage` : éclairs toutes les 7 à
+  29 s par temps d'orage, message `Eclair` (délai du tonnerre = distance / 343 m/s), `Orage::eclat()` pour le
+  flash. `McfSonPlugin` (feature `son`, dans les features par défaut) : source `bevy_audio` infinie, rendue par
+  blocs de 10 ms sur le fil audio ; l'auditeur est l'entité marquée `AuditeurMeteo`. Exemple `ecoute_meteo` :
+  écrit un WAV de 20 s par préréglage. Coût mesuré : 0,41 % d'un cœur en release (4,1 ms de calcul par seconde
+  de son), 0,52 % en dev. 8 tests (niveaux, aigus de la pluie, vent, ressac calé sur les vagues, délai du
+  tonnerre, éclairs, entrées).
+  Limites : pas encore d'enregistrements (SkyForge pouvait lire des WAV à la place de la synthèse), pas de son
+  spatialisé par source (un seul mixage stéréo autour de l'auditeur), écoute réelle non vérifiée ici (pas de
+  carte son sur la machine de test : vérifié par mesures et fichiers WAV).
+- ⬜ Étape 9 : banc d'essai GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -8,9 +8,11 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["rendu"]
+default = ["rendu", "son"]
 # Rendu (pluie, neige…). Le serveur dédié s'en passe : `default-features = false`.
 rendu = ["bevy/3d_bevy_render"]
+# Ambiance sonore sur `bevy_audio` (la synthèse elle-même, module `son`, est toujours compilée).
+son = ["bevy/bevy_audio", "bevy/bevy_asset"]
 
 [dependencies]
 # Sans la feature `rendu` : uniquement de la logique, utilisable par le serveur dédié pour synchroniser la météo.

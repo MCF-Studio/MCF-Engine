@@ -1,6 +1,7 @@
 //! Démo des vagues de bord : une plage (relief de SkyForge), la houle qui grandit, déferle et vient mourir sur le
 //! sable, l'écume du rivage. Le fond est donné au moteur par une `SourceFond` (ici une fonction ; dans le jeu, le
-//! terrain de la carte).
+//! terrain de la carte). Avec le son d'ambiance (mer, ressac calé sur les vagues, vent, pluie, tonnerre) et les
+//! éclairs en tempête (flash par l'exposition de la caméra).
 //!
 //! `cargo run -p mcf_meteo --example demo_plage`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
@@ -21,8 +22,9 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use mcf_meteo::bruit::perlin3;
 use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
-    CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
-    McfPrecipitationsPlugin, NuagesVolumetriques, Ocean, ParametresRivage, PresetMeteo, SourceFond,
+    AuditeurMeteo, CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
+    McfPrecipitationsPlugin, McfSonPlugin, NuagesVolumetriques, Ocean, Orage, ParametresRivage, PresetMeteo,
+    SourceFond,
 };
 
 fn main() {
@@ -33,10 +35,11 @@ fn main() {
             McfPrecipitationsPlugin,
             McfOceanPlugin,
             McfNuagesPlugin,
+            McfSonPlugin,
         ))
         .insert_resource(SourceFond::new(hauteur_sol))
         .add_systems(Startup, scene)
-        .add_systems(Update, (touches, bouee, capture))
+        .add_systems(Update, (touches, bouee, flash, capture))
         .run();
 }
 
@@ -122,6 +125,7 @@ fn scene(
         Camera3d::default(),
         transformation,
         NuagesVolumetriques::default(),
+        AuditeurMeteo,
         AtmosphereSettings::default(),
         Exposure { ev100: 13.0 },
         Tonemapping::AcesFitted,
@@ -164,6 +168,13 @@ fn bouee(
     let b = params_bord(&etat, &parametres);
     for mut t in &mut bouees {
         t.translation.y = hauteur_eau(&ocean, &carte, &b, t.translation.x, t.translation.z);
+    }
+}
+
+/// Flash des éclairs : l'exposition s'ouvre brièvement (jusqu'à ×3,5 comme SkyForge).
+fn flash(orage: Res<Orage>, mut cameras: Query<&mut Exposure>) {
+    for mut e in &mut cameras {
+        e.ev100 = 13.0 - ops::log2(1.0 + orage.eclat() * 2.5);
     }
 }
 
