@@ -13,7 +13,7 @@
 // transparents au lieu de se fondre dans un ciel analytique : le ciel de l'atmosphère de Bevy prend le relais.
 
 import bevy_render::view::View;
-import package::nuages_commun::{ParamsNuages, PI, remapper};
+import package::nuages_commun::{ParamsNuages, PI, remapper, gradient_hauteur};
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> p: ParamsNuages;
@@ -46,14 +46,6 @@ fn ecrire(bloc: vec2<u32>, couleur: vec4<f32>, distance: f32) {
 fn hg(c: f32, g: f32) -> f32 {
     let g2 = g * g;
     return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
-}
-
-fn gradient_hauteur(h: f32, type_nuage: f32) -> f32 {
-    // Stratus : couche basse et fine ; cumulonimbus : toute la hauteur.
-    let sommet = mix(0.3, 1.0, type_nuage);
-    let bas = saturate(h / 0.07);
-    let haut = saturate((sommet - h) / max(sommet * 0.45, 1e-3));
-    return bas * haut;
 }
 
 fn densite(pos: vec3<f32>, grossiere: bool, detail_proche: f32) -> f32 {

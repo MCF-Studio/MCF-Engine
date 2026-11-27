@@ -12,6 +12,7 @@
 //! - `complet` : + pluie / neige et son d'ambiance.
 //!
 //! Résultats dans `mcf/bench/results/<date>_meteo_<variante>/` (`summary.txt`, `frames.csv`, `passes.csv`).
+//! `MCF_OMBRE=0` : coupe l'ombre des nuages au sol (pour mesurer son coût).
 //! Ne mesurer que sur un vrai GPU : un rendu logiciel (llvmpipe) ne donne que la preuve que l'outil fonctionne.
 
 use bevy::asset::RenderAssetUsages;
@@ -145,6 +146,11 @@ fn main() -> AppExit {
     }
     if v >= Variante::Nuages {
         app.add_plugins(McfNuagesPlugin);
+        // `MCF_OMBRE=0` : sans l'ombre des nuages au sol, pour mesurer son coût.
+        app.insert_resource(mcf_meteo::ReglagesOmbreNuages {
+            active: std::env::var("MCF_OMBRE").as_deref() != Ok("0"),
+            ..default()
+        });
     }
     if v >= Variante::Complet {
         app.add_plugins((McfPrecipitationsPlugin, McfSonPlugin));

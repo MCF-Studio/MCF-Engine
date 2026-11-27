@@ -268,6 +268,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 12 : pluie et neige éclairées par la scène (elles sortaient noires sous un soleil physique).
 - ✅ Étape 13 : écume calée sur la loi de Monahan (14,4 % mesurés pour 14,5 % en tempête, 0,68 % pour 0,69 % à 9 m/s).
 - ✅ Étape 14 : reprojection temporelle des nuages (marche des nuages ÷ 3 sur llvmpipe : ~31 → ~10 ms + 1,2 ms de reconstruction).
+- ✅ Étape 15 : ombre des nuages au sol et sur la mer, sur tous les matériaux (1,8 ms sur llvmpipe ; feature Bevy `pbr_light_textures`).
 
 ---
 

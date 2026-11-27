@@ -110,3 +110,12 @@ fn worley3(p: vec3<f32>, periode: i32) -> f32 {
 fn remapper(v: f32, l0: f32, h0: f32, l1: f32, h1: f32) -> f32 {
     return l1 + (v - l0) * (h1 - l1) / max(h0 - l0, 1e-5);
 }
+
+// Profil vertical selon le type de nuage (partagé par la marche et la carte d'ombre).
+fn gradient_hauteur(h: f32, type_nuage: f32) -> f32 {
+    // Stratus : couche basse et fine ; cumulonimbus : toute la hauteur.
+    let sommet = mix(0.3, 1.0, type_nuage);
+    let bas = saturate(h / 0.07);
+    let haut = saturate((sommet - h) / max(sommet * 0.45, 1e-3));
+    return bas * haut;
+}

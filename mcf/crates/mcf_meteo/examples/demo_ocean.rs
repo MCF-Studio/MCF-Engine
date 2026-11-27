@@ -6,9 +6,11 @@
 //! ou descendre (400 m/s, pour traverser la couche de nuages).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair` (nuageux par défaut).
 //! `MCF_CAMERA=ciel` (regard vers le haut), `MCF_CAMERA=nuages` (dans la couche, à 2 500 m),
-//! `MCF_CAMERA=dessus` (au-dessus, à 5 000 m).
+//! `MCF_CAMERA=dessus` (au-dessus, à 5 000 m), `MCF_CAMERA=survol` (à 1 200 m, regard plongeant vers la mer).
 //! `MCF_REPROJECTION=0` : nuages marchés en pleine résolution chaque image (sans reprojection temporelle).
 //! `MCF_MOUVEMENT=1` : la caméra tourne de 0,5° par image (30°/s à 60 i/s), pour juger les traînées.
+//! `MCF_SOLEIL=haut` : soleil haut (~55°) au lieu du soleil bas de fin d'après-midi.
+//! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -17,11 +19,14 @@ use bevy::light::light_consts::lux;
 use bevy::light::{Atmosphere, AtmosphereEnvironmentMapLight};
 use bevy::pbr::AtmosphereSettings;
 use bevy::prelude::*;
+use bevy::render::gpu_readback::{ReadbackComplete, ReadbackOnce};
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use mcf_meteo::ombre_nuages::TAILLE_OMBRE;
 use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
     CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
-    McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, ParametresRivage, PresetMeteo,
+    McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, OmbreNuages, ParametresRivage,
+    PresetMeteo, ReglagesOmbreNuages,
 };
 
 fn main() {
@@ -33,6 +38,11 @@ fn main() {
             McfOceanPlugin,
             McfNuagesPlugin,
         ))
+        // `MCF_OMBRE=0` : sans l'ombre des nuages (comparaison).
+        .insert_resource(ReglagesOmbreNuages {
+            active: std::env::var("MCF_OMBRE").as_deref() != Ok("0"),
+            ..default()
+        })
         .add_systems(Startup, scene)
         .add_systems(Update, (touches, voler, bouee, capture))
         .run();
@@ -55,12 +65,21 @@ fn scene(
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_xyz(1.0, 0.35, -0.6).looking_at(Vec3::ZERO, Vec3::Y),
+        // `MCF_SOLEIL=haut` : soleil à ~55° (16° par défaut, fin d'après-midi).
+        if std::env::var("MCF_SOLEIL").as_deref() == Ok("haut") {
+            Transform::from_xyz(1.0, 1.65, -0.6).looking_at(Vec3::ZERO, Vec3::Y)
+        } else {
+            Transform::from_xyz(1.0, 0.35, -0.6).looking_at(Vec3::ZERO, Vec3::Y)
+        },
     ));
     let transformation = match std::env::var("MCF_CAMERA").as_deref() {
         Ok("ciel") => Transform::from_xyz(0.0, 6.0, 20.0).looking_at(Vec3::new(0.0, 40.0, -60.0), Vec3::Y),
         Ok("nuages") => {
             Transform::from_xyz(0.0, 2500.0, 0.0).looking_at(Vec3::new(200.0, 2450.0, -1000.0), Vec3::Y)
+        }
+        // Sous la base des nuages, regard plongeant : l'ombre des nuages sur la mer.
+        Ok("survol") => {
+            Transform::from_xyz(0.0, 1200.0, 0.0).looking_at(Vec3::new(0.0, 0.0, -2500.0), Vec3::Y)
         }
         Ok("dessus") => {
             Transform::from_xyz(0.0, 5000.0, 0.0).looking_at(Vec3::new(500.0, 4300.0, -3000.0), Vec3::Y)
@@ -148,11 +167,29 @@ fn touches(clavier: Res<ButtonInput<KeyCode>>, mut demandes: MessageWriter<Chang
     }
 }
 
-fn capture(mut commandes: Commands, mut images: Local<u32>, mut sortie: MessageWriter<AppExit>) {
+fn capture(
+    mut commandes: Commands,
+    mut images: Local<u32>,
+    mut sortie: MessageWriter<AppExit>,
+    ombre: Res<OmbreNuages>,
+) {
     let Ok(chemin) = std::env::var("MCF_CAPTURE") else {
         return;
     };
     *images += 1;
+    // `MCF_OMBRE_PGM=fichier.pgm` : relit aussi la carte d'ombre des nuages (niveaux de gris, `TAILLE_OMBRE` de côté).
+    if *images == 85
+        && let Ok(fichier) = std::env::var("MCF_OMBRE_PGM")
+    {
+        commandes
+            .spawn(ReadbackOnce::texture(ombre.image.clone()))
+            .observe(move |lecture: On<ReadbackComplete>| {
+                let n = TAILLE_OMBRE as usize;
+                let mut pgm = format!("P5 {n} {n} 255\n").into_bytes();
+                pgm.extend(lecture.data.chunks(4).take(n * n).map(|p| p[0]));
+                let _ = std::fs::write(&fichier, pgm);
+            });
+    }
     if *images == 90 {
         commandes
             .spawn(Screenshot::primary_window())
