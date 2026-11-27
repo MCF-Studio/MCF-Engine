@@ -213,13 +213,14 @@ pub fn monahan(u10: f32) -> f32 {
 /// Rapport entre la couverture d'écume affichée et la part de surface visée sous le seuil (modèle gaussien du
 /// jacobien), selon la couverture de Monahan `w` visée. Le modèle gaussien se trompe loin dans la queue et
 /// l'écume persiste après le repliement : on corrige par une table mesurée avec l'exemple `mesurer_ecume`
-/// (llvmpipe, deux itérations de réglage, 5 / 9 / 11 / 22 m/s), interpolée linéairement.
+/// (llvmpipe, 5 / 9 / 11 / 22 m/s, interpolation entre deux réglages mesurés chacun à 4 instants, de 18 à 47 s),
+/// interpolée linéairement.
 pub fn persistance_ecume(w: f32) -> f32 {
     const TABLE: [(f32, f32); 4] = [
         (0.000_93, 0.147),
-        (0.006_9, 0.33),
-        (0.013_7, 0.46),
-        (0.145_2, 0.885),
+        (0.006_9, 0.28),
+        (0.013_7, 0.364),
+        (0.145_2, 0.842),
     ];
     let w = w.max(0.0);
     if w <= TABLE[0].0 {

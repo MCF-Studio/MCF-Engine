@@ -5,7 +5,7 @@
 use bevy::prelude::*;
 use mcf_meteo::nuages::{
     BOUCLE_DECALAGE_M, BOUCLE_TEMPS_S, DeriveNuages, PERIODE_CARTE_M, SoleilNuages, calculer_params,
-    taille_marche,
+    decalage_reprojection, taille_marche,
 };
 use mcf_meteo::{EtatMeteo, PresetMeteo, ReglagesNuages};
 
@@ -107,4 +107,17 @@ fn taille_de_la_marche() {
     assert_eq!(taille_marche(UVec2::new(0, 0), 0.5), UVec2::ONE);
     assert_eq!(taille_marche(UVec2::new(100, 100), f32::NAN), UVec2::new(50, 50));
     assert_eq!(taille_marche(UVec2::new(100, 100), 4.0), UVec2::new(100, 100));
+}
+
+#[test]
+fn reprojection_couvre_les_4_pixels_du_bloc() {
+    // 4 images consécutives marchent chacune un pixel différent du bloc 2 × 2, puis le cycle recommence.
+    let mut vus: Vec<UVec2> = (0..4).map(decalage_reprojection).collect();
+    assert!(vus.iter().all(|d| d.x < 2 && d.y < 2));
+    vus.sort_by_key(|d| (d.x, d.y));
+    vus.dedup();
+    assert_eq!(vus.len(), 4);
+    for i in 0..8 {
+        assert_eq!(decalage_reprojection(i), decalage_reprojection(i + 4));
+    }
 }

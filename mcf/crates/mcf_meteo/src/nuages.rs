@@ -7,6 +7,10 @@
 //! 2. à chaque image, pour chaque caméra portant [`NuagesVolumetriques`], une passe de calcul marche dans la
 //!    couche [bas, haut] en demi résolution (pas fins près de la caméra pour voler dedans, grands pas au loin),
 //!    s'arrête devant la géométrie opaque (tampon de profondeur) et écrit lumière diffusée + transmittance ;
+//!    avec la reprojection temporelle (étape 14, `NuagesVolumetriques::reprojection`), elle ne marche qu'un
+//!    pixel par bloc 2 × 2 à chaque image (ordre de Bayer, 4 images pour tout couvrir) ; une seconde passe
+//!    reconstruit les autres depuis l'image précédente (position monde = rayon × distance moyenne du nuage,
+//!    reprojetée par l'ancienne matrice), bornée au min / max des blocs frais voisins pour éviter les traînées ;
 //! 3. le résultat est composé sur l'image HDR au début de la passe transparente : après le ciel de
 //!    l'atmosphère (les nuages le masquent), avant la pluie et les objets transparents (ils restent devant).
 //!
@@ -77,14 +81,47 @@ pub const BOUCLE_TEMPS_S: f32 = 4500.0;
 pub struct NuagesVolumetriques {
     /// Résolution de la marche par rapport à l'écran (0,5 = demi résolution).
     pub echelle_resolution: f32,
+    /// Reprojection temporelle : un pixel sur 4 est marché à chaque image, les autres sont repris de l'image
+    /// précédente (voir `nuages_reconstruction.wesl`).
+    pub reprojection: bool,
 }
 
 impl Default for NuagesVolumetriques {
     fn default() -> Self {
         Self {
             echelle_resolution: 0.5,
+            reprojection: true,
         }
     }
+}
+
+/// Pixel marché dans chaque bloc 2 × 2 selon le numéro d'image (ordre de Bayer : les 4 pixels en 4 images, en
+/// alternant les diagonales).
+pub fn decalage_reprojection(image: u32) -> UVec2 {
+    const ORDRE: [UVec2; 4] = [
+        UVec2::new(0, 0),
+        UVec2::new(1, 1),
+        UVec2::new(1, 0),
+        UVec2::new(0, 1),
+    ];
+    ORDRE[(image % 4) as usize]
+}
+
+/// Paramètres de la reprojection d'une vue (même ordre que `ParamsReprojection` dans les shaders).
+#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ParamsReprojection {
+    /// `clip_from_world` de l'image précédente.
+    pub precedente: Mat4,
+    /// Taille de la texture complète (demi résolution de l'écran).
+    pub taille_cible: UVec2,
+    /// Pixel marché dans chaque bloc à cette image.
+    pub decalage: UVec2,
+    /// Côté des blocs : 2 avec reprojection, 1 sans.
+    pub pas: u32,
+    /// 0 si l'image précédente n'est pas utilisable (première image, taille changée).
+    pub valide: u32,
+    r0: u32,
+    r1: u32,
 }
 
 /// Réglages des nuages (valeurs par défaut de SkyForge).
@@ -324,6 +361,7 @@ impl Plugin for McfNuagesPlugin {
         bevy::asset::embedded_asset!(app, "nuages_bruit.wesl");
         bevy::asset::embedded_asset!(app, "nuages_marche.wesl");
         bevy::asset::embedded_asset!(app, "nuages_composition.wesl");
+        bevy::asset::embedded_asset!(app, "nuages_reconstruction.wesl");
         app.register_type::<NuagesVolumetriques>()
             .register_type::<ReglagesNuages>()
             .register_type::<DeriveNuages>()
@@ -346,6 +384,7 @@ impl Plugin for McfNuagesPlugin {
         };
         rendu
             .init_resource::<TamponParamsNuages>()
+            .init_resource::<HistoriquesNuages>()
             .add_render_command::<Transparent3d, DessinerNuages>()
             .add_systems(RenderStartup, creer_ressources)
             .add_systems(
@@ -403,6 +442,8 @@ struct RessourcesNuages {
     disposition_bruit: BindGroupLayoutDescriptor,
     disposition_marche: BindGroupLayoutDescriptor,
     disposition_composition: BindGroupLayoutDescriptor,
+    disposition_reconstruction: BindGroupLayoutDescriptor,
+    reconstruction: CachedComputePipelineId,
     cuire_forme: CachedComputePipelineId,
     cuire_detail: CachedComputePipelineId,
     cuire_carte: CachedComputePipelineId,
@@ -421,14 +462,38 @@ struct RessourcesNuages {
 struct TamponParamsNuages(UniformBuffer<ParamsNuages>);
 
 #[derive(Component)]
-struct TextureNuages(CachedTexture);
+struct TexturesNuages {
+    /// Pixels marchés à cette image (un par bloc).
+    frais: CachedTexture,
+    /// Distance moyenne des nuages de chaque bloc.
+    distance: CachedTexture,
+    /// Image précédente reconstruite (lue).
+    historique: TextureView,
+    /// Image reconstruite à cette image (écrite, puis composée).
+    sortie: TextureView,
+    params: ParamsReprojection,
+}
 
 #[derive(Component)]
 struct GroupesNuages {
     marche: BindGroup,
+    reconstruction: BindGroup,
     composition: BindGroup,
-    taille: UVec2,
+    taille_frais: UVec2,
+    taille_cible: UVec2,
 }
+
+/// Images reconstruites gardées d'une image à l'autre, par caméra.
+struct Historique {
+    textures: [TextureView; 2],
+    taille: UVec2,
+    courante: usize,
+    image: u32,
+    precedente: Option<Mat4>,
+}
+
+#[derive(Resource, Default)]
+struct HistoriquesNuages(bevy::platform::collections::HashMap<MainEntity, Historique>);
 
 fn texture_bruit(
     peripherique: &RenderDevice,
@@ -482,6 +547,23 @@ fn creer_ressources(
                 texture_2d(filtrable),
                 sampler(SamplerBindingType::Filtering),
                 texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
+                uniform_buffer::<ParamsReprojection>(false),
+                texture_storage_2d(TextureFormat::R32Float, StorageTextureAccess::WriteOnly),
+            ),
+        ),
+    );
+    let disposition_reconstruction = BindGroupLayoutDescriptor::new(
+        "nuages_reconstruction",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                uniform_buffer::<ViewUniform>(true),
+                uniform_buffer::<ParamsReprojection>(false),
+                texture_2d(filtrable),
+                texture_2d(TextureSampleType::Float { filterable: false }),
+                texture_2d(filtrable),
+                sampler(SamplerBindingType::Filtering),
+                texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly),
             ),
         ),
     );
@@ -496,6 +578,7 @@ fn creer_ressources(
     let bruit = load_embedded_asset!(serveur.as_ref(), "nuages_bruit.wesl");
     let marche = load_embedded_asset!(serveur.as_ref(), "nuages_marche.wesl");
     let composition = load_embedded_asset!(serveur.as_ref(), "nuages_composition.wesl");
+    let reconstruction = load_embedded_asset!(serveur.as_ref(), "nuages_reconstruction.wesl");
     let calcul = |disposition: &BindGroupLayoutDescriptor, shader: &Handle<Shader>, entree: &'static str| {
         cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: Some(Cow::Borrowed(entree)),
@@ -578,6 +661,8 @@ fn creer_ressources(
         cuire_detail: calcul(&disposition_bruit, &bruit, "cuire_detail"),
         cuire_carte: calcul(&disposition_bruit, &bruit, "cuire_carte"),
         marche: calcul(&disposition_marche, &marche, "marcher"),
+        reconstruction: calcul(&disposition_reconstruction, &reconstruction, "reconstruire"),
+        disposition_reconstruction,
         composition: pipeline_composition,
         forme: texture_bruit(
             &peripherique,
@@ -611,36 +696,127 @@ fn creer_ressources(
     });
 }
 
+fn texture_nuages(
+    cache_textures: &mut TextureCache,
+    peripherique: &RenderDevice,
+    nom: &'static str,
+    taille: UVec2,
+    format: TextureFormat,
+) -> CachedTexture {
+    cache_textures.get(
+        peripherique,
+        TextureDescriptor {
+            label: Some(nom),
+            size: Extent3d {
+                width: taille.x,
+                height: taille.y,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+    )
+}
+
 fn preparer_textures(
     mut commandes: Commands,
     mut cache_textures: ResMut<TextureCache>,
+    mut historiques: ResMut<HistoriquesNuages>,
     peripherique: Res<RenderDevice>,
-    vues: Query<(Entity, &ExtractedCamera, &NuagesVolumetriques), With<ExtractedView>>,
+    vues: Query<(
+        Entity,
+        &MainEntity,
+        &ExtractedCamera,
+        &ExtractedView,
+        &NuagesVolumetriques,
+    )>,
 ) {
-    for (entite, camera, nuages) in &vues {
+    let mut vues_vues = Vec::new();
+    for (entite, principale, camera, vue, nuages) in &vues {
         let Some(taille_vue) = camera.physical_viewport_size else {
             continue;
         };
-        let taille = taille_marche(taille_vue, nuages.echelle_resolution);
-        let texture = cache_textures.get(
+        vues_vues.push(*principale);
+        let cible = taille_marche(taille_vue, nuages.echelle_resolution);
+        let pas = if nuages.reprojection { 2 } else { 1 };
+        let taille_frais = UVec2::new(cible.x.div_ceil(pas), cible.y.div_ceil(pas));
+        let frais = texture_nuages(
+            &mut cache_textures,
             &peripherique,
-            TextureDescriptor {
-                label: Some("nuages_marche"),
-                size: Extent3d {
-                    width: taille.x,
-                    height: taille.y,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: TextureFormat::Rgba16Float,
-                usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
+            "nuages_marche",
+            taille_frais,
+            TextureFormat::Rgba16Float,
         );
-        commandes.entity(entite).insert(TextureNuages(texture));
+        let distance = texture_nuages(
+            &mut cache_textures,
+            &peripherique,
+            "nuages_distance",
+            taille_frais,
+            TextureFormat::R32Float,
+        );
+        let historique = historiques.0.entry(*principale).or_insert_with(|| Historique {
+            textures: [0, 1].map(|_| creer_historique(&peripherique, cible)),
+            taille: cible,
+            courante: 0,
+            image: 0,
+            precedente: None,
+        });
+        if historique.taille != cible {
+            historique.textures = [0, 1].map(|_| creer_historique(&peripherique, cible));
+            historique.taille = cible;
+            historique.precedente = None;
+        }
+        let actuelle = vue.clip_from_view * vue.world_from_view.to_matrix().inverse();
+        let params = ParamsReprojection {
+            precedente: historique.precedente.unwrap_or(actuelle),
+            taille_cible: cible,
+            decalage: if pas == 2 {
+                decalage_reprojection(historique.image)
+            } else {
+                UVec2::ZERO
+            },
+            pas,
+            valide: u32::from(historique.precedente.is_some()),
+            ..default()
+        };
+        let lecture = historique.courante;
+        let ecriture = 1 - lecture;
+        commandes.entity(entite).insert(TexturesNuages {
+            frais,
+            distance,
+            historique: historique.textures[lecture].clone(),
+            sortie: historique.textures[ecriture].clone(),
+            params,
+        });
+        historique.courante = ecriture;
+        historique.image = historique.image.wrapping_add(1);
+        historique.precedente = Some(actuelle);
     }
+    // Caméras disparues : on libère leur historique.
+    historiques.0.retain(|e, _| vues_vues.contains(e));
+}
+
+fn creer_historique(peripherique: &RenderDevice, taille: UVec2) -> TextureView {
+    peripherique
+        .create_texture(&TextureDescriptor {
+            label: Some("nuages_historique"),
+            size: Extent3d {
+                width: taille.x,
+                height: taille.y,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&TextureViewDescriptor::default())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -653,7 +829,7 @@ fn preparer_groupes(
     uniformes_vues: Res<ViewUniforms>,
     params: Option<Res<ParamsNuages>>,
     mut tampon: ResMut<TamponParamsNuages>,
-    vues: Query<(Entity, &TextureNuages, &ViewDepthStencilTexture)>,
+    vues: Query<(Entity, &TexturesNuages, &ViewDepthStencilTexture)>,
 ) {
     if ressources.groupe_bruit.is_none() {
         let groupe = peripherique.create_bind_group(
@@ -674,7 +850,13 @@ fn preparer_groupes(
     };
     let disposition_marche = cache.get_bind_group_layout(&ressources.disposition_marche);
     let disposition_composition = cache.get_bind_group_layout(&ressources.disposition_composition);
-    for (entite, texture, profondeur) in &vues {
+    let disposition_reconstruction = cache.get_bind_group_layout(&ressources.disposition_reconstruction);
+    for (entite, textures, profondeur) in &vues {
+        let mut tampon_reprojection = UniformBuffer::from(textures.params);
+        tampon_reprojection.write_buffer(&peripherique, &file);
+        let Some(liaison_reprojection) = tampon_reprojection.binding() else {
+            continue;
+        };
         let Some(vue_profondeur) = profondeur.attachment.depth_stencil_views().depth_only_view() else {
             continue;
         };
@@ -689,19 +871,36 @@ fn preparer_groupes(
                 &ressources.detail,
                 &ressources.carte,
                 &ressources.echantillonneur_bruit,
-                &texture.0.default_view,
+                &textures.frais.default_view,
+                liaison_reprojection.clone(),
+                &textures.distance.default_view,
+            )),
+        );
+        let reconstruction = peripherique.create_bind_group(
+            "nuages_reconstruction",
+            &disposition_reconstruction,
+            &BindGroupEntries::sequential((
+                liaison_vue.clone(),
+                liaison_reprojection,
+                &textures.frais.default_view,
+                &textures.distance.default_view,
+                &textures.historique,
+                &ressources.echantillonneur_nuages,
+                &textures.sortie,
             )),
         );
         let composition = peripherique.create_bind_group(
             "nuages_composition",
             &disposition_composition,
-            &BindGroupEntries::sequential((&texture.0.default_view, &ressources.echantillonneur_nuages)),
+            &BindGroupEntries::sequential((&textures.sortie, &ressources.echantillonneur_nuages)),
         );
-        let taille = texture.0.texture.size();
+        let taille = textures.frais.texture.size();
         commandes.entity(entite).insert(GroupesNuages {
             marche,
+            reconstruction,
             composition,
-            taille: UVec2::new(taille.width, taille.height),
+            taille_frais: UVec2::new(taille.width, taille.height),
+            taille_cible: textures.params.taille_cible,
         });
     }
 }
@@ -718,7 +917,10 @@ fn mettre_en_file(
     };
     // Rien à composer tant que le bruit n'est pas cuit et que la marche ne peut pas tourner (la texture de
     // marche serait vide, donc noire et opaque).
-    if !ressources.cuit.load(Ordering::Relaxed) || cache.get_compute_pipeline(ressources.marche).is_none() {
+    if !ressources.cuit.load(Ordering::Relaxed)
+        || cache.get_compute_pipeline(ressources.marche).is_none()
+        || cache.get_compute_pipeline(ressources.reconstruction).is_none()
+    {
         return;
     }
     for (entite, entite_principale, vue) in &vues {
@@ -818,7 +1020,10 @@ fn marcher(
     if !ressources.cuit.load(Ordering::Relaxed) {
         return;
     }
-    let Some(pipeline) = cache.get_compute_pipeline(ressources.marche) else {
+    let (Some(pipeline), Some(pipeline_reconstruction)) = (
+        cache.get_compute_pipeline(ressources.marche),
+        cache.get_compute_pipeline(ressources.reconstruction),
+    ) else {
         return;
     };
     let (decalage_vue, groupes) = vue.into_inner();
@@ -833,6 +1038,19 @@ fn marcher(
     let span = diagnostics.pass_span(&mut passe, "nuages_marche");
     passe.set_pipeline(pipeline);
     passe.set_bind_group(0, &groupes.marche, &[decalage_vue.offset]);
-    passe.dispatch_workgroups(groupes.taille.x.div_ceil(8), groupes.taille.y.div_ceil(8), 1);
+    passe.dispatch_workgroups(
+        groupes.taille_frais.x.div_ceil(8),
+        groupes.taille_frais.y.div_ceil(8),
+        1,
+    );
+    span.end(&mut passe);
+    let span = diagnostics.pass_span(&mut passe, "nuages_reconstruction");
+    passe.set_pipeline(pipeline_reconstruction);
+    passe.set_bind_group(0, &groupes.reconstruction, &[decalage_vue.offset]);
+    passe.dispatch_workgroups(
+        groupes.taille_cible.x.div_ceil(8),
+        groupes.taille_cible.y.div_ceil(8),
+        1,
+    );
     span.end(&mut passe);
 }
