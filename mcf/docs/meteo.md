@@ -81,7 +81,21 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   les nuages (la carte d'environnement vient de l'atmosphère seule), pas d'ombre des nuages au sol, MSAA coupé
   sur la caméra des nuages, coût GPU non mesuré (llvmpipe seulement : à mesurer en priorité, c'est la passe la
   plus lourde du module).
-- ⬜ Étapes 6, 8 et 9.
+- ✅ Étape 6 : vagues de bord (`rivage`, sans rendu pour la partie calcul). Le jeu donne la hauteur du sol par une
+  `SourceFond` (une fonction ; plus tard le terrain de la carte). Autour de la caméra, une grille 256 × 256 cases
+  de 2 m échantillonne le fond et calcule la distance signée au rivage (transformée de distance euclidienne
+  exacte, Felzenszwalb) et la normale du rivage ; reconstruite quand la caméra a bougé d'un quart de grille
+  (128 m) : 3,5 ms en profil dev, 2,8 ms en release sur la machine de test pour un fond simple (pic ponctuel,
+  à surveiller avec un vrai
+  terrain). Modèle de SkyForge : levée de la houle (loi de Green), déferlement de McCowan, crête penchée vers la
+  plage, jet de rive, écume de déferlement et traînée, liseré qui respire, fond visible à travers l'eau peu
+  profonde. `rivage::hauteur_eau` pour la flottaison près des côtes. Démo `demo_plage`. 9 tests.
+  Ajout par rapport à SkyForge : la houle du large est aussi limitée à 0,35 × la profondeur (sans cela, les creux
+  d'une houle de tempête découvraient le fond par 10 m d'eau).
+  Limites : la grille ne suit qu'une caméra (la première `Camera3d`), le motif d'écume est en bruit de Worley
+  calculé par pixel (coût à mesurer), pas de sable mouillé par le jet de rive (l'humidité reste globale), pas de
+  réfraction réelle (le fond est une couleur réglable, `ReglagesOcean::couleur_fond`), coût GPU non mesuré.
+- ⬜ Étapes 8 et 9.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
