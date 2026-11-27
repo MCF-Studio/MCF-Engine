@@ -26,7 +26,7 @@ fn maillage_un_quad_par_particule() {
 #[test]
 fn quantite_selon_les_precipitations() {
     let r = ReglagesPrecipitations::default();
-    let clair = calculer_uniformes(&PresetMeteo::Clair.etat(), Vec3::ZERO, &r, Vec3::ZERO, 0.0);
+    let clair = calculer_uniformes(&PresetMeteo::Clair.etat(), Vec3::ZERO, &r, None, Vec3::ZERO, 0.0);
     // `actives` est privé côté Rust : on le vérifie par égalité avec un état sans précipitations.
     let sec = calculer_uniformes(
         &EtatMeteo {
@@ -35,11 +35,19 @@ fn quantite_selon_les_precipitations() {
         },
         Vec3::ZERO,
         &r,
+        None,
         Vec3::ZERO,
         0.0,
     );
     assert_eq!(clair, sec);
-    let tempete = calculer_uniformes(&PresetMeteo::Tempete.etat(), Vec3::ZERO, &r, Vec3::ZERO, 0.0);
+    let tempete = calculer_uniformes(
+        &PresetMeteo::Tempete.etat(),
+        Vec3::ZERO,
+        &r,
+        None,
+        Vec3::ZERO,
+        0.0,
+    );
     assert_ne!(tempete, sec);
 }
 
@@ -64,4 +72,25 @@ fn valeurs_non_finies_ignorees() {
     e.avancer(Vec3::splat(f32::NAN), Vec3::splat(70.0), f32::NAN);
     e.avancer(Vec3::ONE, Vec3::splat(70.0), f32::INFINITY);
     assert_eq!(e.temps(), 0.0);
+}
+
+#[test]
+fn luminance_suit_l_eclairage_de_la_scene() {
+    use mcf_meteo::precipitations::luminance_precipitations;
+    let r = ReglagesPrecipitations::default();
+    let pluie = PresetMeteo::Pluie.etat();
+    // Soleil physique (≈ 130 000 lux) : bien plus lumineux que la valeur fixe, sinon la pluie sort noire avec une
+    // exposition EV100 13 (facteur ≈ 1e-4).
+    let physique = luminance_precipitations(&pluie, &r, Some(130_000.0));
+    assert!(physique * 1e-4 > 0.5, "{physique}");
+    // Proportionnelle à l'éclairement, et plus faible quand les nuages cachent le soleil.
+    let demi = luminance_precipitations(&pluie, &r, Some(65_000.0));
+    assert!((physique / demi - 2.0).abs() < 1e-4);
+    assert!(luminance_precipitations(&PresetMeteo::Tempete.etat(), &r, Some(130_000.0)) < physique);
+    // Sans lumière directionnelle : la valeur fixe des réglages.
+    assert!(
+        (luminance_precipitations(&pluie, &r, None) - 2500.0 * (0.35 + 0.65 * pluie.intensite_soleil)).abs()
+            < 1e-3
+    );
+    assert!(luminance_precipitations(&pluie, &r, Some(f32::NAN)).is_finite());
 }
