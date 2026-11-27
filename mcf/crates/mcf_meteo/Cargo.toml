@@ -1,0 +1,32 @@
+[package]
+name = "mcf_meteo"
+description = "Météo et eau MCF : état météo, transitions (puis vent, pluie, neige, humidité, océan, nuages)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["rendu"]
+# Rendu (pluie, neige…). Le serveur dédié s'en passe : `default-features = false`.
+rendu = ["bevy/3d_bevy_render"]
+
+[dependencies]
+# Sans la feature `rendu` : uniquement de la logique, utilisable par le serveur dédié pour synchroniser la météo.
+bevy = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+# Démo visuelle (`cargo run -p mcf_meteo --example demo_meteo`).
+bevy = { workspace = true, features = ["3d"] }
+
+[[example]]
+name = "demo_meteo"
+required-features = ["rendu"]
+
+[[example]]
+name = "demo_ocean"
+required-features = ["rendu"]
+
+[lints]
+workspace = true

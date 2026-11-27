@@ -355,6 +355,20 @@ Préparée pendant les phases précédentes, lancée seulement quand le moteur e
 
 ---
 
+## Hors feuille de route — Météo et eau (`mcf_meteo`)
+
+Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas devant la phase 2. Plan et état :
+[`mcf/docs/meteo.md`](mcf/docs/meteo.md).
+
+- ✅ Étape 1 : état météo, préréglages, transitions, tests.
+- ✅ Étape 2 : champ de vent sur le CPU (couche limite, rafales, turbulence), tests.
+- ✅ Étape 3 : pluie et neige sur le GPU, démo `demo_meteo` (coût GPU pas encore mesuré).
+- ✅ Étape 4a : pas de pluie sous les abris (`AbriPrecipitations`).
+- ✅ Étape 4b : sol mouillé, flaques et neige au sol (`SurfacesMeteo`, `MateriauMeteo`).
+- ✅ Étape 5a : océan (houle de Gerstner, flottaison, rendu), démo `demo_ocean`.
+
+---
+
 ## Ce qui mérite d'être optimisé (liste de travail)
 
 Classé par impact estimé pour un RP 3D multijoueur mid poly. Chaque ligne = un ticket avec sa mesure.
