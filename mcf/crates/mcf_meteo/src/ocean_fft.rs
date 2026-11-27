@@ -20,6 +20,7 @@ use bevy::image::{
     ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor, TextureFormatPixelInfo,
 };
 use bevy::prelude::*;
+use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_resource::binding_types::{
@@ -492,12 +493,16 @@ fn simuler(
         return;
     };
     let tuiles = N_FFT.div_ceil(8);
+    // Temps GPU de la passe dans les diagnostics de rendu (`render/ocean_fft/elapsed_gpu`, banc d'essai).
+    let diagnostics = contexte.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
     let mut passe = contexte
         .command_encoder()
         .begin_compute_pass(&ComputePassDescriptor {
             label: Some("ocean_fft"),
             ..default()
         });
+    let span = diagnostics.pass_span(&mut passe, "ocean_fft");
     if rendu.initialiser {
         passe.set_pipeline(init);
         passe.set_bind_group(0, &groupes.init, &[]);
@@ -515,4 +520,5 @@ fn simuler(
     passe.set_pipeline(assembler);
     passe.set_bind_group(0, &groupes.assemblage, &[]);
     passe.dispatch_workgroups(tuiles, tuiles, CASCADES);
+    span.end(&mut passe);
 }

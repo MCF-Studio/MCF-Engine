@@ -31,6 +31,7 @@ use bevy::ecs::system::SystemParamItem;
 use bevy::ecs::system::lifetimeless::Read;
 use bevy::prelude::*;
 use bevy::render::camera::ExtractedCamera;
+use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_phase::{
@@ -785,12 +786,15 @@ fn cuire_bruit(
     ) else {
         return;
     };
+    let diagnostics = contexte.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
     let mut passe = contexte
         .command_encoder()
         .begin_compute_pass(&ComputePassDescriptor {
             label: Some("nuages_bruit"),
             ..default()
         });
+    let span = diagnostics.pass_span(&mut passe, "nuages_bruit");
     passe.set_bind_group(0, groupe, &[]);
     passe.set_pipeline(forme);
     passe.dispatch_workgroups(TAILLE_FORME / 4, TAILLE_FORME / 4, TAILLE_FORME / 4);
@@ -798,6 +802,7 @@ fn cuire_bruit(
     passe.dispatch_workgroups(TAILLE_DETAIL / 4, TAILLE_DETAIL / 4, TAILLE_DETAIL / 4);
     passe.set_pipeline(carte);
     passe.dispatch_workgroups(TAILLE_CARTE / 8, TAILLE_CARTE / 8, 1);
+    span.end(&mut passe);
     ressources.cuit.store(true, Ordering::Relaxed);
 }
 
@@ -817,13 +822,17 @@ fn marcher(
         return;
     };
     let (decalage_vue, groupes) = vue.into_inner();
+    let diagnostics = contexte.diagnostic_recorder();
+    let diagnostics = diagnostics.as_deref();
     let mut passe = contexte
         .command_encoder()
         .begin_compute_pass(&ComputePassDescriptor {
             label: Some("nuages_marche"),
             ..default()
         });
+    let span = diagnostics.pass_span(&mut passe, "nuages_marche");
     passe.set_pipeline(pipeline);
     passe.set_bind_group(0, &groupes.marche, &[decalage_vue.offset]);
     passe.dispatch_workgroups(groupes.taille.x.div_ceil(8), groupes.taille.y.div_ceil(8), 1);
+    span.end(&mut passe);
 }

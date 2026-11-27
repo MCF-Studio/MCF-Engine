@@ -44,6 +44,39 @@ pub fn aggregate_render<'a>(entries: impl IntoIterator<Item = (&'a str, f64)>) -
     totals
 }
 
+/// Temps GPU de chaque passe de premier niveau (`render/<passe>/elapsed_gpu`), dans l'ordre d'apparition.
+pub fn gpu_par_passe<'a>(entries: impl IntoIterator<Item = (&'a str, f64)>) -> Vec<(&'a str, f64)> {
+    entries
+        .into_iter()
+        .filter(|(_, v)| v.is_finite())
+        .filter_map(|(path, v)| {
+            let rest = path.strip_prefix("render/")?;
+            let passe = rest.strip_suffix("/elapsed_gpu")?;
+            (!passe.is_empty() && !passe.contains('/')).then_some((passe, v))
+        })
+        .collect()
+}
+
+/// En-tête de `passes.csv`.
+pub const PASSES_CSV_HEADER: &str = "passe,images,gpu_moyen_ms,gpu_p50_ms,gpu_p99_ms,gpu_pic_ms";
+
+/// Contenu de `passes.csv` : une ligne par passe (`stats` = statistiques des temps GPU de la passe), triées par
+/// temps moyen décroissant.
+pub fn passes_csv(stats: &[(String, crate::SeriesStats)]) -> String {
+    let mut lignes: Vec<&(String, crate::SeriesStats)> = stats.iter().collect();
+    lignes.sort_by(|a, b| b.1.mean.total_cmp(&a.1.mean).then_with(|| a.0.cmp(&b.0)));
+    let mut csv = String::from(PASSES_CSV_HEADER);
+    csv.push('\n');
+    for (nom, s) in lignes {
+        let _ = writeln!(
+            csv,
+            "{nom},{},{:.4},{:.4},{:.4},{:.4}",
+            s.count, s.mean, s.p50, s.p99, s.max
+        );
+    }
+    csv
+}
+
 /// Une image mesurée.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FrameSample {
@@ -109,6 +142,30 @@ mod tests {
         assert_eq!(t.gpu_ms, Some(2.5));
         assert_eq!(t.cpu_ms, Some(1.0));
         assert_eq!(t.triangles, Some(1002.0));
+    }
+
+    #[test]
+    fn passes_de_premier_niveau() {
+        let p = gpu_par_passe([
+            ("render/ocean_fft/elapsed_gpu", 0.3),
+            ("render/fxaa/fxaa/elapsed_gpu", 0.4),
+            ("render/ocean_fft/elapsed_cpu", 0.1),
+            ("render/nuages_marche/elapsed_gpu", f64::NAN),
+            ("render//elapsed_gpu", 1.0),
+            ("process/mem_usage", 3.0),
+        ]);
+        assert_eq!(p, vec![("ocean_fft", 0.3)]);
+    }
+
+    #[test]
+    fn csv_des_passes_trie() {
+        let s = |m: f64| crate::SeriesStats::from_optional(&[Some(m), Some(m)]).expect("série");
+        let csv = passes_csv(&[("a".into(), s(0.5)), ("b".into(), s(2.0))]);
+        let mut l = csv.lines();
+        assert_eq!(l.next(), Some(PASSES_CSV_HEADER));
+        assert!(l.next().is_some_and(|x| x.starts_with("b,2,2.0000")));
+        assert!(l.next().is_some_and(|x| x.starts_with("a,2,0.5000")));
+        assert_eq!(l.next(), None);
     }
 
     #[test]

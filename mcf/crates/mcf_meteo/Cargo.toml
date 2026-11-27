@@ -21,6 +21,8 @@ bevy = { workspace = true, features = ["std"] }
 [dev-dependencies]
 # Démo visuelle (`cargo run -p mcf_meteo --example demo_meteo`).
 bevy = { workspace = true, features = ["3d"] }
+# Banc d'essai GPU (`cargo bench-meteo`).
+mcf_bench = { workspace = true }
 
 [[example]]
 name = "demo_meteo"
@@ -36,3 +38,7 @@ workspace = true
 [[example]]
 name = "demo_plage"
 required-features = ["rendu"]
+
+[[example]]
+name = "bench_meteo"
+required-features = ["rendu", "son"]

@@ -9,7 +9,13 @@ use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::PrimaryWindow;
 
-use crate::{CameraPath, FrameSample, FrameStats, SeriesStats, aggregate_render, frames_csv};
+use std::collections::{BTreeMap, HashMap};
+
+use bevy::platform::time::Instant;
+
+use crate::{
+    CameraPath, FrameSample, FrameStats, SeriesStats, aggregate_render, frames_csv, gpu_par_passe, passes_csv,
+};
 
 /// Réglages d'une mesure.
 #[derive(Resource, Debug, Clone)]
@@ -77,6 +83,12 @@ struct Recording {
     /// Instant réel (s) du début de la mesure, après la chauffe.
     start: Option<f64>,
     frames: Vec<FrameSample>,
+    /// Temps GPU par passe de premier niveau, une valeur par image mesurée.
+    passes: BTreeMap<String, Vec<Option<f64>>>,
+    /// Instant de la dernière mesure lue pour chaque diagnostic de rendu : une passe qui ne tourne pas à chaque
+    /// image (cuisson unique d'une texture…) laisse sa dernière valeur dans le `DiagnosticsStore` ; sans ce
+    /// suivi, elle serait recomptée à chaque image.
+    vus: HashMap<String, Instant>,
     done: bool,
 }
 
@@ -98,6 +110,29 @@ fn push_series(
     info.push((format!("{key}_moyen{unit}"), fmt(stats.map(|s| s.mean))));
     info.push((format!("{key}_p99{unit}"), fmt(stats.map(|s| s.p99))));
     info.push((format!("{key}_pic{unit}"), fmt(stats.map(|s| s.max))));
+}
+
+/// Diagnostics de rendu (`render/…`) mesurés depuis le dernier appel, d'après l'instant de leur dernière mesure.
+fn mesures_fraiches(
+    store: Option<&DiagnosticsStore>,
+    vus: &mut HashMap<String, Instant>,
+) -> Vec<(String, f64)> {
+    let mut frais = Vec::new();
+    for d in store.into_iter().flat_map(DiagnosticsStore::iter) {
+        let chemin = d.path().as_str();
+        if !chemin.starts_with("render/") {
+            continue;
+        }
+        let Some(m) = d.measurement() else {
+            continue;
+        };
+        let nouvelle = vus.get(chemin).is_none_or(|t| m.time > *t);
+        if nouvelle {
+            vus.insert(chemin.to_owned(), m.time);
+            frais.push((chemin.to_owned(), m.value));
+        }
+    }
+    frais
 }
 
 fn measure_duration(settings: &BenchSettings, cams: &Query<&BenchCamera>) -> f32 {
@@ -129,6 +164,10 @@ fn record(
         return;
     }
     let now = time.elapsed_secs_f64();
+    // Mesures de rendu nouvelles depuis l'image précédente (lues aussi pendant la chauffe, pour que les valeurs
+    // restées de la chauffe ne soient pas prises pour des nouvelles).
+    let store = store.as_deref();
+    let frais = mesures_fraiches(store, &mut rec.vus);
     let Some(start) = rec.start else {
         if now >= f64::from(settings.warmup_secs) {
             rec.start = Some(now);
@@ -139,13 +178,17 @@ fn record(
     let t = (now - start) as f32;
     // Diagnostics : dernière valeur connue. Le GPU et le système sont en retard d'une ou deux images
     // (lecture asynchrone), et la mémoire système n'est rafraîchie qu'environ une fois par seconde.
-    let store = store.as_deref();
-    let render = aggregate_render(
-        store
-            .into_iter()
-            .flat_map(DiagnosticsStore::iter)
-            .filter_map(|d| Some((d.path().as_str(), d.value()?))),
-    );
+    let render = aggregate_render(frais.iter().map(|(p, v)| (p.as_str(), *v)));
+    let n = rec.frames.len();
+    for (passe, v) in gpu_par_passe(frais.iter().map(|(p, v)| (p.as_str(), *v))) {
+        // Une passe apparue en cours de mesure : images précédentes sans valeur.
+        let serie = rec
+            .passes
+            .entry(passe.to_owned())
+            .or_insert_with(|| vec![None; n]);
+        serie.resize(n, None);
+        serie.push(Some(v));
+    }
     rec.frames.push(FrameSample {
         t_s: t,
         frame_ms: time.delta_secs_f64() * 1000.0,
@@ -240,7 +283,12 @@ fn record(
     // Bevy 0.20.1 n'expose aucun compteur d'appels de dessin : on l'écrit plutôt que de l'inventer.
     info.push(("appels_dessin".into(), "non exposé par Bevy 0.20.1".into()));
 
-    match write_results(&settings, unix, &info, &rec.frames) {
+    let passes: Vec<(String, SeriesStats)> = rec
+        .passes
+        .iter()
+        .filter_map(|(k, v)| Some((k.clone(), SeriesStats::from_optional(v)?)))
+        .collect();
+    match write_results(&settings, unix, &info, &rec.frames, &passes) {
         Ok(dir) => {
             info!(
                 "mesure « {} » : {:.1} FPS moyen, {:.1} FPS 1 % low, pire image {:.1} ms → {}",
@@ -267,6 +315,7 @@ fn write_results(
     unix: u64,
     info: &[(String, String)],
     frames: &[FrameSample],
+    passes: &[(String, SeriesStats)],
 ) -> std::io::Result<PathBuf> {
     let safe: String = settings
         .name
@@ -282,6 +331,7 @@ fn write_results(
     let dir = settings.out_dir.join(format!("{unix}_{safe}"));
     fs::create_dir_all(&dir)?;
     fs::write(dir.join("frames.csv"), frames_csv(frames))?;
+    fs::write(dir.join("passes.csv"), passes_csv(passes))?;
     let mut summary = String::new();
     for (k, v) in info {
         let _ = writeln!(summary, "{k} = {v}");
