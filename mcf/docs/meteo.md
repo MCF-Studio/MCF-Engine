@@ -188,6 +188,24 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Captures fixes (ciel, dans les nuages, dessus) identiques à l'œil ; caméra qui tourne de 0,5° par image
   (`MCF_MOUVEMENT=1`) : pas de traînée visible, écart moyen 1,4 / 255 (ciel) et 0,6 / 255 (dans la couche).
   Non mesuré : vol rapide à travers la couche et vrai GPU.
+- ✅ Étape 15 : ombre des nuages au sol et sur la mer (`ombre_nuages`, dans `McfNuagesPlugin`). Une passe
+  `nuages_ombre` écrit chaque image la transmittance des nuages vue du soleil (carte 128 × 128 sur 8 km centrée
+  sur la caméra, 62 m par texel, 16 pas dans la couche, densité grossière de la marche). La carte est posée sur
+  le soleil comme `DirectionalLightTexture` : Bevy atténue le soleil sur **tous** les matériaux (océan, sable,
+  `StandardMaterial`) sans toucher à leurs shaders ; la lumière du ciel reste. Translation et échelle du soleil
+  sont réglées par le module (calées sur les texels : pas de scintillement), sa rotation reste au jeu.
+  Conditions : feature Bevy `pbr_light_textures` (ajoutée aux exemples) et tableaux de textures sur le GPU (pas
+  Metal) ; sans elles, aucune ombre et rien d'autre ne change. Le soleil ne doit pas avoir de parent.
+  Réglages `ReglagesOmbreNuages` (active, demi-taille, pas). `demo_ocean` : `MCF_CAMERA=survol`,
+  `MCF_SOLEIL=haut`, `MCF_OMBRE=0`, `MCF_OMBRE_PGM` (relecture de la carte).
+  Mesure (`cargo bench-meteo` nuages, nuageux, 640 × 360, llvmpipe, 2 passages chacun) : `nuages_ombre`
+  1,78–1,89 ms (6,8 ms avec une carte 256² et 24 pas, d'où la réduction) ; passe opaque 14,8 / 15,6 ms contre
+  13,9 / 14,3 ms sans ombre ; image 192 / 199 ms contre 186 / 187 ms (écart plus grand que la somme des passes :
+  bruit de llvmpipe probable).
+  Constat : avec le préréglage nuageux, 17,5 % de la carte est au soleil par soleil à ~55°, presque rien par
+  soleil bas (16°) : les rayons rasants traversent ~10 km de couche. C'est physiquement cohérent, mais plus
+  sombre que la part de ciel bleu visible (la densité grossière, sans érosion, gonfle un peu les nuages). À juger
+  en jeu ; sinon baisser `EtatMeteo::couverture_nuageuse` ou ajouter une force d'ombre réglable.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -121,3 +121,79 @@ fn reprojection_couvre_les_4_pixels_du_bloc() {
         assert_eq!(decalage_reprojection(i), decalage_reprojection(i + 4));
     }
 }
+
+#[test]
+fn ombre_calee_sur_la_projection_de_bevy() {
+    use mcf_meteo::ReglagesOmbreNuages;
+    use mcf_meteo::ombre_nuages::{TAILLE_OMBRE, centre_ombre, params_ombre, uv_ombre};
+    let reglages = ReglagesOmbreNuages::default();
+    let demi = reglages.demi_taille;
+    let texel = 2.0 * demi / TAILLE_OMBRE as f32;
+    let rotation = Transform::from_xyz(1.0, 0.35, -0.6)
+        .looking_at(Vec3::ZERO, Vec3::Y)
+        .rotation;
+    let camera = Vec3::new(123.4, 6.0, -987.6);
+    let centre = centre_ombre(rotation, camera, demi);
+    // La caméra reste à moins d'un demi-texel du centre de la carte.
+    let uv = uv_ombre(rotation, centre, demi, camera);
+    assert!((uv - Vec2::splat(0.5)).abs().max_element() <= 0.5 / TAILLE_OMBRE as f32 + 1e-5);
+    // Petit mouvement : le centre ne bouge pas (pas de scintillement) ou saute d'un texel entier.
+    let autre = centre_ombre(rotation, camera + Vec3::new(3.0, 0.0, 2.0), demi);
+    let saut = rotation.inverse() * (autre - centre);
+    for c in [saut.x, saut.y] {
+        assert!((c / texel - (c / texel).round()).abs() < 1e-3, "saut {c}");
+    }
+    // Un point du nuage et le point du sol qu'il ombre (même rayon vers le soleil) tombent sur le même texel.
+    let p = params_ombre(rotation, centre, &reglages);
+    let sol = Vec3::new(500.0, 0.0, 300.0);
+    let nuage = sol + p.vers_soleil * (2000.0 / p.vers_soleil.y);
+    assert!(
+        (uv_ombre(rotation, centre, demi, sol) - uv_ombre(rotation, centre, demi, nuage)).length() < 1e-4
+    );
+    // Et le shader retrouve le rayon depuis l'uv (même formule que `nuages_ombre.wesl`).
+    let uv = uv_ombre(rotation, centre, demi, sol);
+    let local = Vec2::new(1.0 - 2.0 * uv.x, 2.0 * uv.y - 1.0) * demi;
+    let origine = p.centre + p.droite * local.x + p.haut_lumiere * local.y;
+    let ecart = (origine - sol) - p.vers_soleil * (origine - sol).dot(p.vers_soleil);
+    assert!(ecart.length() < 0.05, "écart au rayon {ecart}");
+}
+
+#[test]
+fn ombre_posee_sur_le_soleil() {
+    use bevy::light::DirectionalLightTexture;
+    use mcf_meteo::{NuagesVolumetriques, OmbreNuages, ReglagesOmbreNuages};
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        AssetPlugin::default(),
+        bevy::image::ImagePlugin::default(),
+    ))
+    .init_asset::<bevy::shader::Shader>()
+    .add_plugins((mcf_meteo::McfMeteoPlugin, mcf_meteo::McfNuagesPlugin));
+    let soleil = app
+        .world_mut()
+        .spawn((
+            DirectionalLight::default(),
+            Transform::from_xyz(1.0, 1.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ))
+        .id();
+    app.world_mut().spawn((
+        NuagesVolumetriques::default(),
+        GlobalTransform::from_xyz(50.0, 2.0, 80.0),
+    ));
+    app.update();
+    app.update();
+    let image = app.world().resource::<OmbreNuages>().image.clone();
+    let texture = app
+        .world()
+        .get::<DirectionalLightTexture>(soleil)
+        .expect("texture posée");
+    assert_eq!(texture.image, image);
+    assert!(!texture.tiled);
+    let t = app.world().get::<Transform>(soleil).expect("transformation du soleil");
+    assert_eq!(t.scale, Vec3::splat(ReglagesOmbreNuages::default().demi_taille));
+    // Coupée : la texture est retirée.
+    app.world_mut().resource_mut::<ReglagesOmbreNuages>().active = false;
+    app.update();
+    assert!(app.world().get::<DirectionalLightTexture>(soleil).is_none());
+}

@@ -376,9 +376,11 @@ impl Plugin for McfNuagesPlugin {
                 Update,
                 (preparer_cameras, mettre_a_jour_params).after(MiseAJourMeteo),
             );
+        crate::ombre_nuages::construire(app);
     }
 
     fn finish(&self, app: &mut App) {
+        crate::ombre_nuages::finir(app);
         let Some(rendu) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
@@ -438,7 +440,7 @@ fn mettre_a_jour_params(
 // Monde du rendu
 
 #[derive(Resource)]
-struct RessourcesNuages {
+pub(crate) struct RessourcesNuages {
     disposition_bruit: BindGroupLayoutDescriptor,
     disposition_marche: BindGroupLayoutDescriptor,
     disposition_composition: BindGroupLayoutDescriptor,
@@ -449,20 +451,20 @@ struct RessourcesNuages {
     cuire_carte: CachedComputePipelineId,
     marche: CachedComputePipelineId,
     composition: CachedRenderPipelineId,
-    forme: TextureView,
+    pub(crate) forme: TextureView,
     detail: TextureView,
-    carte: TextureView,
-    echantillonneur_bruit: Sampler,
+    pub(crate) carte: TextureView,
+    pub(crate) echantillonneur_bruit: Sampler,
     echantillonneur_nuages: Sampler,
     groupe_bruit: Option<BindGroup>,
-    cuit: AtomicBool,
+    pub(crate) cuit: AtomicBool,
 }
 
 #[derive(Resource, Default)]
-struct TamponParamsNuages(UniformBuffer<ParamsNuages>);
+pub(crate) struct TamponParamsNuages(pub(crate) UniformBuffer<ParamsNuages>);
 
 #[derive(Component)]
-struct TexturesNuages {
+pub(crate) struct TexturesNuages {
     /// Pixels marchés à cette image (un par bloc).
     frais: CachedTexture,
     /// Distance moyenne des nuages de chaque bloc.
@@ -820,7 +822,7 @@ fn creer_historique(peripherique: &RenderDevice, taille: UVec2) -> TextureView {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn preparer_groupes(
+pub(crate) fn preparer_groupes(
     mut commandes: Commands,
     mut ressources: ResMut<RessourcesNuages>,
     cache: Res<PipelineCache>,
@@ -969,7 +971,7 @@ impl<P: PhaseItem> RenderCommand<P> for CommandeNuages {
 
 type DessinerNuages = (SetItemPipeline, CommandeNuages);
 
-fn cuire_bruit(
+pub(crate) fn cuire_bruit(
     mut contexte: RenderContext,
     ressources: Option<Res<RessourcesNuages>>,
     cache: Res<PipelineCache>,

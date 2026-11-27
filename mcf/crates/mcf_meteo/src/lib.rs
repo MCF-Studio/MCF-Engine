@@ -44,6 +44,8 @@ pub mod nuages;
 pub mod ocean;
 #[cfg(feature = "rendu")]
 pub mod ocean_fft;
+#[cfg(feature = "rendu")]
+pub mod ombre_nuages;
 pub mod orage;
 #[cfg(feature = "rendu")]
 pub mod precipitations;
@@ -66,6 +68,8 @@ pub use mer_du_vent::{MerDuVent, ReglagesFft};
 pub use nuages::{McfNuagesPlugin, NuagesVolumetriques, ReglagesNuages};
 #[cfg(feature = "rendu")]
 pub use ocean::{McfOceanPlugin, ReglagesOcean};
+#[cfg(feature = "rendu")]
+pub use ombre_nuages::{OmbreNuages, ReglagesOmbreNuages};
 pub use orage::{Eclair, Orage};
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};

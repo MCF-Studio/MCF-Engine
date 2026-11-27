@@ -7,6 +7,7 @@
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie|neige` (nuageux par défaut).
 //! `MCF_CAMERA=haut` : vue plongeante depuis 35 m.
+//! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::Exposure;
@@ -24,7 +25,7 @@ use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
     AuditeurMeteo, CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
     McfPrecipitationsPlugin, McfSonPlugin, MerDuVent, NuagesVolumetriques, Ocean, Orage, ParametresRivage,
-    PresetMeteo, SourceFond,
+    PresetMeteo, ReglagesOmbreNuages, SourceFond,
 };
 
 fn main() {
@@ -37,6 +38,11 @@ fn main() {
             McfNuagesPlugin,
             McfSonPlugin,
         ))
+        // `MCF_OMBRE=0` : sans l'ombre des nuages (comparaison).
+        .insert_resource(ReglagesOmbreNuages {
+            active: std::env::var("MCF_OMBRE").as_deref() != Ok("0"),
+            ..default()
+        })
         .insert_resource(SourceFond::new(hauteur_sol))
         .add_systems(Startup, scene)
         .add_systems(Update, (touches, bouee, flash, capture))
