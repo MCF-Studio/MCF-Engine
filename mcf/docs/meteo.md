@@ -174,9 +174,10 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   jacobien est maintenant calculé depuis le spectre (écart type de la divergence de chaque cascade, loi
   normale) pour viser W, corrigé par une table mesurée (`persistance_ecume`) ; l'écume naît plus franchement
   (`(seuil − J) × 6` au lieu de × 1,5). Mesure (exemple `mesurer_ecume` : relecture de l'écume du GPU et
-  formule du matériau sur 250 m × 250 m, intensité ≥ 0,5, llvmpipe, un tirage par météo) :
-  0,12 / 0,52 / 1,03 / 13,2 % pour 0,09 / 0,69 / 1,37 / 14,5 % visés (5 / 9 / 11 / 22 m/s). La table a été
-  réglée sur ces mêmes tirages : à revérifier sur d'autres instants et sur un vrai GPU.
+  formule du matériau sur 250 m × 250 m, intensité ≥ 0,5, llvmpipe, moyenne de 4 instants de 18 à 47 s ;
+  `MCF_DUREE` choisit l'instant) : 0,10 / 0,68 / 1,32 / 14,4 % pour 0,09 / 0,69 / 1,37 / 14,5 % visés
+  (5 / 9 / 11 / 22 m/s), écart entre instants ±0,04 point à 9 m/s, ±0,14 à 11 m/s, ±0,45 à 22 m/s. La table a été réglée
+  sur ces mêmes instants (3 réglages, le dernier par interpolation) : à revérifier sur un vrai GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -15,8 +15,13 @@ use mcf_meteo::{
     ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfOceanPlugin, Ocean, PresetMeteo, ReglagesFft, ReglagesOcean,
 };
 
-/// Durée de simulation avant la relecture (s) : l'écume atteint son régime établi.
-const DUREE_S: f32 = 25.0;
+/// Durée de simulation avant la relecture (s, `MCF_DUREE`, 25 par défaut) : l'écume atteint son régime établi.
+fn duree_s() -> f32 {
+    std::env::var("MCF_DUREE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(25.0)
+}
 /// Seuil d'intensité au-delà duquel un point compte comme écume.
 const SEUIL: f32 = 0.5;
 
@@ -78,7 +83,7 @@ fn piloter(
     reglages: Res<ReglagesFft>,
     reglages_ocean: Option<Res<ReglagesOcean>>,
 ) {
-    if *lance || virtuel.elapsed_secs() < DUREE_S {
+    if *lance || virtuel.elapsed_secs() < duree_s() {
         return;
     }
     *lance = true;
