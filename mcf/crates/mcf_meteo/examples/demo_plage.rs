@@ -7,6 +7,7 @@
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie|neige` (nuageux par défaut).
 //! `MCF_CAMERA=haut` : vue plongeante depuis 35 m.
+//! `MCF_SABLE=0` : sable simple, sans l'humidité de la pluie ni des vagues (comparaison).
 //! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
 use bevy::asset::RenderAssetUsages;
@@ -27,6 +28,7 @@ use mcf_meteo::{
     McfPrecipitationsPlugin, McfSonPlugin, MerDuVent, NuagesVolumetriques, Ocean, Orage, ParametresRivage,
     PresetMeteo, ReglagesOmbreNuages, SourceFond,
 };
+use mcf_meteo::{CarteAbris, MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo};
 
 fn main() {
     App::new()
@@ -37,6 +39,7 @@ fn main() {
             McfOceanPlugin,
             McfNuagesPlugin,
             McfSonPlugin,
+            McfMateriauMeteoPlugin,
         ))
         // `MCF_OMBRE=0` : sans l'ombre des nuages (comparaison).
         .insert_resource(ReglagesOmbreNuages {
@@ -108,6 +111,8 @@ fn scene(
     mut milieux: ResMut<Assets<ScatteringMedium>>,
     mut maillages: ResMut<Assets<Mesh>>,
     mut materiaux: ResMut<Assets<StandardMaterial>>,
+    mut materiaux_meteo: ResMut<Assets<MateriauMeteo>>,
+    abris: Res<CarteAbris>,
     mut demandes: MessageWriter<ChangerMeteo>,
 ) {
     commandes.spawn(Atmosphere::earth(milieux.add(ScatteringMedium::earth(256, 256))));
@@ -137,15 +142,27 @@ fn scene(
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
     ));
-    commandes.spawn((
-        Name::new("Plage"),
-        Mesh3d(maillages.add(maillage_terrain(300.0, -400.0, 200.0, 1.0))),
-        MeshMaterial3d(materiaux.add(StandardMaterial {
-            base_color: Color::srgb(0.78, 0.70, 0.52),
-            perceptual_roughness: 0.95,
-            ..default()
-        })),
-    ));
+    let sable = StandardMaterial {
+        base_color: Color::srgb(0.78, 0.70, 0.52),
+        perceptual_roughness: 0.95,
+        ..default()
+    };
+    let plage = commandes
+        .spawn((
+            Name::new("Plage"),
+            Mesh3d(maillages.add(maillage_terrain(300.0, -400.0, 200.0, 1.0))),
+        ))
+        .id();
+    // Sable « météo » : mouillé par la pluie et par les vagues de bord. `MCF_SABLE=0` : sable simple (comparaison).
+    if std::env::var("MCF_SABLE").as_deref() == Ok("0") {
+        commandes
+            .entity(plage)
+            .insert(MeshMaterial3d(materiaux.add(sable)));
+    } else {
+        commandes.entity(plage).insert(MeshMaterial3d(
+            materiaux_meteo.add(materiau_meteo(sable, 0.9, 1.0, &abris)),
+        ));
+    }
     commandes.spawn((
         Bouee,
         Mesh3d(maillages.add(Sphere::new(0.4))),

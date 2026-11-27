@@ -31,13 +31,15 @@ struct ExtensionMeteo {
     pluie: f32,          // intensité de la pluie (ondulations dans les flaques)
     porosite: f32,       // 0 = métal / verre, 1 = très poreux (terre, béton brut)
     reception_flaques: f32, // 0 = jamais de flaques (murs, toits en pente), 1 = sol
-    _r0: f32,
-    _r1: f32,
+    niveau_mer: f32,     // niveau de la mer (m)
+    hauteur_mouillee: f32, // hauteur au-dessus de la mer jusqu'où les vagues mouillent le sable (m)
     abris: vec4<f32>,    // carte des abris : origine x, origine z, côté d'une case, cases par côté
+    rivage: vec4<f32>,   // grille du rivage : origine x, origine z, côté (m), 1 si active
 };
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(100) var<uniform> meteo: ExtensionMeteo;
 @group(constants::MATERIAL_BIND_GROUP) @binding(101) var carte_abris: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(102) var carte_rivage: texture_2d<f32>;
 
 fn hachage(x_in: u32) -> u32 {
     var x = x_in;
@@ -72,6 +74,26 @@ fn sous_abri(p: vec3<f32>) -> bool {
     }
     // Petite marge : une surface juste sous le toit est abritée, le toit lui-même ne l'est pas.
     return p.y < textureLoad(carte_abris, c, 0).r - 0.05;
+}
+
+// Sable mouillé par les vagues de bord : sous la hauteur atteinte par l'eau (jet de rive), et seulement près du
+// rivage (distance signée de la grille du rivage, lue au plus proche : les cases font 2 m).
+fn rive_mouillee(p: vec3<f32>) -> f32 {
+    if (meteo.rivage.w <= 0.0) {
+        return 0.0;
+    }
+    let n = vec2<i32>(textureDimensions(carte_rivage));
+    let c = vec2<i32>(floor((p.xz - meteo.rivage.xy) / meteo.rivage.z * vec2<f32>(n)));
+    if (any(c < vec2<i32>(0)) || any(c >= n)) {
+        return 0.0;
+    }
+    let distance = textureLoad(carte_rivage, c, 0).g;
+    let pres = 1.0 - smoothstep(40.0, 60.0, distance);
+    // Limite légèrement ondulée (motif de ~7 m, ±4 cm de hauteur : sur une plage en pente douce, une plus grande
+    // variation donnait des taches sur des dizaines de mètres), fondu sur 25 cm (sable humide puis sec).
+    let bord = (bruit_valeur(p.xz * 0.15) - 0.5) * 0.08;
+    let h = p.y - meteo.niveau_mer;
+    return pres * (1.0 - smoothstep(meteo.hauteur_mouillee - 0.25, meteo.hauteur_mouillee, h + bord));
 }
 
 // Ondulations des impacts de pluie : anneaux qui s'élargissent, une goutte par cellule et par période.
@@ -111,7 +133,8 @@ fn fragment(
     let vers_ciel = saturate(n.y);
 
     // 1-2. Surface mouillée (les faces verticales reçoivent moins de pluie).
-    let mouillage = meteo.mouillage * expose * mix(0.6, 1.0, vers_ciel);
+    // Les vagues mouillent aussi sous un abri (un ponton), et toutes les faces.
+    let mouillage = max(meteo.mouillage * expose * mix(0.6, 1.0, vers_ciel), rive_mouillee(p));
     let porosite = meteo.porosite;
     pbr_input.material.base_color = vec4<f32>(
         pbr_input.material.base_color.rgb * mix(1.0, mix(0.85, 0.3, porosite), mouillage),

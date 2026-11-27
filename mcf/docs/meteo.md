@@ -221,6 +221,19 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   À noter : le filtrage de la carte d'environnement par Bevy coûte ~50 ms sur llvmpipe
   (`lightprobe_irradiance_map` ~30 ms, `lightprobe_radiance_map` ~20 ms), avec ou sans nuages : à surveiller
   sur un vrai GPU.
+- ✅ Étape 17 : sable mouillé par les vagues de bord (`MateriauMeteo`). L'humidité restait globale : par beau
+  temps, le sable était sec jusqu'au bord de l'eau. Le matériau météo lit maintenant la grille du rivage de
+  l'océan (s'il y en a un) et mouille le sol à moins de 60 m du rivage et sous la hauteur atteinte par l'eau :
+  `rivage::hauteur_mouillee` = jet de rive + 10 cm, avec un fondu de 25 cm et une limite légèrement ondulée.
+  Le jet suit le vent (0,29 m par temps clair, 0,45 m en tempête, réglage `ParametresRivage::jet_de_rive`) :
+  sur la plage de démo (pente 4,5 %) par temps clair, sable mouillé sur ~3 m puis humide jusqu'à ~9 m du
+  bord de l'eau au repos. Les vagues mouillent aussi sous un
+  abri. Le sable de `demo_plage` est maintenant un `MateriauMeteo` (`MCF_SABLE=0` : sable simple).
+  Premier essai écarté : en ajoutant la moitié de l'amplitude des vagues et 15 cm, la bande faisait 14 m et
+  couvrait tout le premier plan ; un bord ondulé de ±12 cm faisait des taches sur des dizaines de mètres.
+  Coût non mesuré (une lecture de texture et un bruit de plus par pixel du sol). 2 tests.
+  Limites : pas de mémoire de l'humidité (le sable ne sèche pas après une grosse vague), pas de flaques
+  laissées par la mer.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

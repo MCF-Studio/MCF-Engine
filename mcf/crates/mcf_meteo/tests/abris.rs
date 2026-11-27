@@ -77,13 +77,34 @@ fn materiau_mis_a_jour_seulement_si_changement_visible() {
         mouillage: 0.5,
         ..Default::default()
     };
-    assert!(appliquer(&mut u, &s, 0.0, abris));
+    assert!(appliquer(&mut u, &s, 0.0, abris, Default::default()));
     s.mouillage += 0.001;
     assert!(
-        !appliquer(&mut u, &s, 0.0, abris),
+        !appliquer(&mut u, &s, 0.0, abris, Default::default()),
         "écart invisible : pas de renvoi au GPU"
     );
     s.mouillage += 0.01;
-    assert!(appliquer(&mut u, &s, 0.0, abris));
+    assert!(appliquer(&mut u, &s, 0.0, abris, Default::default()));
     assert_eq!(u.mouillage, s.mouillage);
+}
+
+#[test]
+fn rive_mouillee_renvoyee_au_gpu() {
+    use mcf_meteo::SurfacesMeteo;
+    use mcf_meteo::materiau_meteo::{RiveMouillee, UniformesSurface, appliquer};
+    let mut u = UniformesSurface::default();
+    let s = SurfacesMeteo::default();
+    let abris = Vec4::new(0.0, 0.0, 1.0, 0.0);
+    let mut rive = RiveMouillee {
+        grille: Vec4::new(-256.0, -256.0, 512.0, 1.0),
+        niveau: 0.0,
+        hauteur: 0.4,
+    };
+    assert!(appliquer(&mut u, &s, 0.0, abris, rive));
+    assert_eq!(u.rivage, rive.grille);
+    // Moins d'un centimètre : rien à renvoyer.
+    rive.hauteur += 0.005;
+    assert!(!appliquer(&mut u, &s, 0.0, abris, rive));
+    rive.hauteur += 0.05;
+    assert!(appliquer(&mut u, &s, 0.0, abris, rive));
 }
