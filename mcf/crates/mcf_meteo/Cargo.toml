@@ -30,3 +30,7 @@ required-features = ["rendu"]
 
 [lints]
 workspace = true
+
+[[example]]
+name = "demo_plage"
+required-features = ["rendu"]

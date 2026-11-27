@@ -48,7 +48,6 @@ use bevy::render::view::{
     ExtractedView, Msaa, ViewDepthStencilTexture, ViewUniform, ViewUniformOffset, ViewUniforms,
 };
 use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
-use bevy::shader::load_shader_library;
 
 use crate::MiseAJourMeteo;
 use crate::etat::EtatMeteo;
@@ -320,7 +319,7 @@ pub struct McfNuagesPlugin;
 
 impl Plugin for McfNuagesPlugin {
     fn build(&self, app: &mut App) {
-        load_shader_library!(app, "nuages_commun.wesl");
+        crate::charger_bruit_wesl(app);
         bevy::asset::embedded_asset!(app, "nuages_bruit.wesl");
         bevy::asset::embedded_asset!(app, "nuages_marche.wesl");
         bevy::asset::embedded_asset!(app, "nuages_composition.wesl");

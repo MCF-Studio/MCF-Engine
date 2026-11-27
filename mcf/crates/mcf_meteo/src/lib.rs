@@ -4,10 +4,11 @@
 //! CPU (étape 2), la pluie et la neige sur le GPU (étape 3, feature `rendu`, [`McfPrecipitationsPlugin`]), les
 //! abris (étape 4a) et les surfaces mouillées, flaques et neige au sol (étape 4b, [`SurfacesMeteo`],
 //! `McfMateriauMeteoPlugin`), puis l'océan : houle de Gerstner calée sur JONSWAP ([`Ocean`], aussi pour la
-//! flottaison) et son rendu (étape 5a, `McfOceanPlugin`), avec les cascades FFT de la mer du vent (étape 5b), et les nuages volumétriques traversables (étape 7,
+//! flottaison) et son rendu (étape 5a, `McfOceanPlugin`), avec les cascades FFT de la mer du vent (étape 5b) et
+//! les vagues de bord ([`rivage`], étape 6), et enfin les nuages volumétriques traversables (étape 7,
 //! `McfNuagesPlugin`).
 //! Sans la feature `rendu`, aucune dépendance au rendu : le serveur dédié peut piloter la météo et la diffuser.
-//! Les étapes suivantes (vagues de bord, son, banc d'essai) sont décrites dans `mcf/docs/meteo.md`.
+//! Les étapes suivantes (son, banc d'essai) sont décrites dans `mcf/docs/meteo.md`.
 //!
 //! Utilisation :
 //! ```no_run
@@ -41,6 +42,7 @@ pub mod ocean;
 pub mod ocean_fft;
 #[cfg(feature = "rendu")]
 pub mod precipitations;
+pub mod rivage;
 pub mod surfaces;
 pub mod transition;
 pub mod vent;
@@ -59,9 +61,22 @@ pub use ocean::{McfOceanPlugin, ReglagesOcean};
 pub use ocean_fft::ReglagesFft;
 #[cfg(feature = "rendu")]
 pub use precipitations::{McfPrecipitationsPlugin, ReglagesPrecipitations};
+pub use rivage::{CarteRivage, ParametresRivage, SourceFond};
 pub use surfaces::{ParametresSurfaces, SurfacesMeteo};
 pub use transition::{ChangerMeteo, TransitionMeteo};
 pub use vent::{ChampVent, EchantillonVent, ParametresVent};
+
+/// Charge une seule fois la bibliothèque WGSL de bruit (`nuages_commun.wesl`), partagée par les nuages et l'océan.
+#[cfg(feature = "rendu")]
+pub(crate) fn charger_bruit_wesl(app: &mut App) {
+    #[derive(Resource)]
+    struct BruitWeslCharge;
+    if app.world().contains_resource::<BruitWeslCharge>() {
+        return;
+    }
+    bevy::shader::load_shader_library!(app, "nuages_commun.wesl");
+    app.insert_resource(BruitWeslCharge);
+}
 
 /// Ensemble de systèmes de la météo, pour ordonner les autres systèmes (rendu, son, gameplay) après lui.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -80,6 +95,9 @@ impl Plugin for McfMeteoPlugin {
             .register_type::<SurfacesMeteo>()
             .register_type::<Ocean>()
             .register_type::<ParametresSurfaces>()
+            .register_type::<ParametresRivage>()
+            .init_resource::<ParametresRivage>()
+            .init_resource::<CarteRivage>()
             .init_resource::<EtatMeteo>()
             .init_resource::<TransitionMeteo>()
             .init_resource::<ChampVent>()
