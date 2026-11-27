@@ -36,7 +36,15 @@ use bevy::{
 use bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
 use mcf_carte::{Carte, Densite, Famille, Id, relief::Pinceau};
 use mcf_geo::{ClasseRoute, P2};
-use mcf_meteo::{ McfMeteoPlugin, McfPrecipitationsPlugin, ChangerMeteo, PresetMeteo};
+use mcf_meteo::{
+    McfMeteoPlugin,
+    McfPrecipitationsPlugin,
+    McfOceanPlugin,
+    ChangerMeteo,
+    PresetMeteo,
+    Ocean
+};
+use mcf_meteo::ocean::SurfaceOcean;
 /// Couche de rendu vue seulement par la caméra Plan.
 pub const COUCHE_PLAN: usize = 1;
 /// Couche de rendu vue seulement par la caméra 3D.
@@ -457,8 +465,13 @@ pub fn lancer(dossier: Option<PathBuf>, distant: Option<OptionsDistant>) -> AppE
     .add_plugins((
         McfMeteoPlugin,
         McfPrecipitationsPlugin,
+        McfOceanPlugin
     ))
-    .add_systems(Update, touches_meteo)
+    .add_systems(Update, (
+        touches_meteo,
+        initialiser_ocean,
+        synchroniser_ocean
+    ).chain())
     .insert_resource(Projet {
         carte,
         message,
@@ -589,6 +602,18 @@ mod tests {
     }
 }
 
+fn initialiser_ocean(
+    mut commands: Commands,
+    surfaces: Query<Entity, Added<SurfaceOcean>>,
+) {
+    for entity in &surfaces {
+        commands.entity(entity).insert((
+            RenderLayers::layer(COUCHE_3D),
+            Visibility::Hidden,
+        ));
+    }
+}
+
 fn touches_meteo(
     clavier: Res<ButtonInput<KeyCode>>,
     mut demandes: MessageWriter<ChangerMeteo>,
@@ -608,5 +633,30 @@ fn touches_meteo(
                 duree_s: 5.0,
             });
         }
+    }
+}
+
+fn synchroniser_ocean(
+    projet: Res<Projet>,
+    mut ocean: ResMut<Ocean>,
+    mut surfaces: Query<
+        (&mut Visibility, &mut RenderLayers),
+        With<SurfaceOcean>,
+    >,
+) {
+    let niveau = projet.carte.manifeste.niveau_eau_m;
+
+    if let Some(niveau) = niveau {
+        ocean.niveau = niveau as f32;
+    }
+
+    for (mut visibilite, mut couches) in &mut surfaces {
+        *couches = RenderLayers::layer(COUCHE_3D);
+
+        *visibilite = if niveau.is_some() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 }

@@ -56,7 +56,6 @@ pub struct Affiche {
 struct Materiaux {
     plan: Handle<StandardMaterial>,
     voile_plan: Handle<StandardMaterial>,
-    eau: Handle<StandardMaterial>,
 }
 
 pub struct ScenePlugin;
@@ -191,12 +190,12 @@ fn materiaux(materials: &mut Assets<StandardMaterial>) -> Materiaux {
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
-        eau: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.22, 0.42, 0.62, 0.82),
-            perceptual_roughness: 0.15,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
-        }),
+        // eau: materials.add(StandardMaterial {
+        //     base_color: Color::srgba(0.22, 0.42, 0.62, 0.82),
+        //     perceptual_roughness: 0.15,
+        //     alpha_mode: AlphaMode::Blend,
+        //     ..default()
+        // }),
     }
 }
 
@@ -483,21 +482,21 @@ fn reconstruire(
             COUCHE_PLAN,
         );
     }
-    if manifeste_change && let Some(niveau) = eau {
-        let (w, h) = ((fin[0] - coin[0]) as f32, (fin[1] - coin[1]) as f32);
-        let c = Vec3::new(
-            ((coin[0] + fin[0]) * 0.5) as f32,
-            niveau as f32,
-            ((coin[1] + fin[1]) * 0.5) as f32,
-        );
-        ajouter(
-            &mut commands,
-            Partie::Eau,
-            Plane3d::default().mesh().size(w, h).build().translated_by(c),
-            mats.eau.clone(),
-            COUCHE_3D,
-        );
-    }
+    // if manifeste_change && let Some(niveau) = eau {
+    //     let (w, h) = ((fin[0] - coin[0]) as f32, (fin[1] - coin[1]) as f32);
+    //     let c = Vec3::new(
+    //         ((coin[0] + fin[0]) * 0.5) as f32,
+    //         niveau as f32,
+    //         ((coin[1] + fin[1]) * 0.5) as f32,
+    //     );
+    //     ajouter(
+    //         &mut commands,
+    //         Partie::Eau,
+    //         Plane3d::default().mesh().size(w, h).build().translated_by(c),
+    //         mats.eau.clone(),
+    //         COUCHE_3D,
+    //     );
+    // }
 
     if !sol.rien() {
         // Routes par case : chaque tronçon va dans la case du centre de son axe, chaque carrefour dans celle de son
