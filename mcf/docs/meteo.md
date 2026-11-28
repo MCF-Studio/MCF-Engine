@@ -332,5 +332,13 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   le trajet du banc survole surtout le large, il passe peu de temps près du rivage. En tempête le sable reste
   très sombre.
 
+- ✅ Étape 25 : deux réglages de réalisme.
+  1. Sable mouillé : l'albédo d'un matériau très poreux tombait à 30 % une fois mouillé (sable presque noir en
+     tempête) ; il tombe maintenant à 45 % (un sable mouillé réfléchit environ moitié moins que sec). Bande de
+     sable de la capture tempête (llvmpipe) : 76/74/67 → 86/83/74 sur 255.
+  2. Écume du large : table `persistance_ecume` recalée sur la mesure RTX 3070 (0,99 / 1,78 / 16,6 % mesurés pour
+     0,69 / 1,37 / 14,5 % visés à 9 / 11 / 22 m/s). Correction au premier ordre, le point à 5 m/s est extrapolé :
+     **à remesurer sur GPU réel** avec `mesurer_ecume`.
+
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

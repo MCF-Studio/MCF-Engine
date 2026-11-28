@@ -214,13 +214,16 @@ pub fn monahan(u10: f32) -> f32 {
 /// jacobien), selon la couverture de Monahan `w` visée. Le modèle gaussien se trompe loin dans la queue et
 /// l'écume persiste après le repliement : on corrige par une table mesurée avec l'exemple `mesurer_ecume`
 /// (llvmpipe, 5 / 9 / 11 / 22 m/s, interpolation entre deux réglages mesurés chacun à 4 instants, de 18 à 47 s),
-/// interpolée linéairement.
+/// interpolée linéairement. Recalée ensuite sur GPU réel (RTX 3070, ~400 images/s) : à cadence élevée, les
+/// repliements brefs sont tous vus et la couverture mesurée dépassait la cible (0,99 / 1,78 / 16,6 % pour
+/// 0,69 / 1,37 / 14,5 % à 9 / 11 / 22 m/s) ; les trois points sont multipliés par ces rapports (correction au
+/// premier ordre), le point à 5 m/s, non mesuré sur GPU, par le rapport du point voisin.
 pub fn persistance_ecume(w: f32) -> f32 {
     const TABLE: [(f32, f32); 4] = [
-        (0.000_93, 0.147),
-        (0.006_9, 0.28),
-        (0.013_7, 0.364),
-        (0.145_2, 0.842),
+        (0.000_93, 0.21),
+        (0.006_9, 0.40),
+        (0.013_7, 0.473),
+        (0.145_2, 0.963),
     ];
     let w = w.max(0.0);
     if w <= TABLE[0].0 {

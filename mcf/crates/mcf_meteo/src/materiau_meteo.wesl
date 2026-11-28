@@ -154,7 +154,7 @@ fn fragment(
     let mouillage = max(meteo.mouillage * expose * mix(0.6, 1.0, vers_ciel), rive_mouillee(p));
     let porosite = meteo.porosite;
     pbr_input.material.base_color = vec4<f32>(
-        pbr_input.material.base_color.rgb * mix(1.0, mix(0.85, 0.3, porosite), mouillage),
+        pbr_input.material.base_color.rgb * mix(1.0, mix(0.85, 0.45, porosite), mouillage),
         pbr_input.material.base_color.a,
     );
     pbr_input.material.perceptual_roughness = mix(
