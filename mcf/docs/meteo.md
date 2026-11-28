@@ -312,5 +312,25 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   mesuré (0,09 à 0,21, 2 % limités en tempête) ; c'est le réglage à 0,2 qui a été écouté sur le PC de test et
   jugé « beaucoup mieux ».
 
+- ✅ Étape 24 : écume du rivage. Retour à l'écran (RTX 3070) : « ça manque l'écume », avec deux photos de plage
+  en référence : mer propre au large, écume seulement où la vague casse, réseau de rubans blancs autour de trous
+  sur la lame d'eau qui court sur le sable, bourrelet blanc au front. Deux causes trouvées :
+  1. l'écume du bord était un voile gris plafonné (pellicule à 35 %), en taches rondes ;
+  2. l'exposition des démos était fixée pour le plein soleil (EV100 13) : sous un ciel couvert, tout ce qui est
+     blanc sortait gris et le sable presque noir.
+  Correction : `reseau_ecume` dans `ocean.wesl` (deux Worley 2D animés, mailles ~70 cm et ~25 cm, étirés selon
+  la normale au rivage, l'écume occupe ce qui est loin des germes ; couverture moyenne au-delà de 45 à 140 m),
+  bourrelet plein là où la lame d'eau fait moins de 2 à 4 cm, et `EtatMeteo::exposition_ev100` (13 par beau
+  temps, jusqu'à 11,2 sous couverture totale) utilisée par `demo_plage` et `demo_ocean`. L'écume du large (loi
+  de Monahan) n'est pas modifiée. Mesurée au passage sur RTX 3070 avec `mesurer_ecume` : 0,99 % / 1,78 % /
+  16,6 % de la mer couverte (nuageux / pluie / tempête) pour 0,69 % / 1,37 % / 14,5 % visés : un peu trop, la
+  table `persistance_ecume` est à recaler. Vue `MCF_CAMERA=ecume` dans `demo_plage`. 1 test.
+  Coût mesuré sur RTX 3070 (Vulkan, 1080p, tempête, 40 s, fenêtre au premier plan, un run par cas) : océan
+  1,748 → 1,730 ms GPU (453,5 → 458,1 FPS), complet 2,393 → 2,421 ms GPU (333,1 → 332,2 FPS) : écart moyen dans
+  le bruit entre deux runs. Le p99 GPU monte de 3,47 → 3,65 ms (océan) et 4,23 → 4,54 ms (complet) : avec un
+  seul run, impossible de dire si c'est l'écume ou la variation. Aucune image au-dessus de 10 ms après. Réserve :
+  le trajet du banc survole surtout le large, il passe peu de temps près du rivage. En tempête le sable reste
+  très sombre.
+
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -6,7 +6,7 @@
 //! `cargo run -p mcf_meteo --example demo_plage`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie|neige` (nuageux par défaut).
-//! `MCF_CAMERA=haut` : vue plongeante depuis 35 m.
+//! `MCF_CAMERA=haut` : vue plongeante depuis 35 m. `MCF_CAMERA=ecume` : debout au bord de l'eau, regard vers le bas.
 //! `MCF_SABLE=0` : sable simple, sans l'humidité de la pluie ni des vagues (comparaison).
 //! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
@@ -129,6 +129,9 @@ fn scene(
     let transformation = match std::env::var("MCF_CAMERA").as_deref() {
         Ok("haut") => Transform::from_xyz(x0 - 20.0, 35.0, rivage + 40.0)
             .looking_at(Vec3::new(x0, 0.0, rivage - 40.0), Vec3::Y),
+        // Debout au bord de l'eau, regard vers le bas : l'écume du jet de rive.
+        Ok("ecume") => Transform::from_xyz(x0, hauteur_sol(x0, rivage + 5.0) + 1.7, rivage + 5.0)
+            .looking_at(Vec3::new(x0, 0.0, rivage - 6.0), Vec3::Y),
         _ => Transform::from_xyz(x0, hauteur_sol(x0, rivage + 14.0) + 1.7, rivage + 14.0)
             .looking_at(Vec3::new(x0 - 10.0, 0.0, rivage - 60.0), Vec3::Y),
     };
@@ -198,10 +201,11 @@ fn bouee(
     }
 }
 
-/// Flash des éclairs : l'exposition s'ouvre brièvement (jusqu'à ×3,5 comme SkyForge).
-fn flash(orage: Res<Orage>, mut cameras: Query<&mut Exposure>) {
+/// Exposition selon la couverture nuageuse, et flash des éclairs : elle s'ouvre brièvement (jusqu'à ×3,5 comme
+/// SkyForge).
+fn flash(orage: Res<Orage>, etat: Res<EtatMeteo>, mut cameras: Query<&mut Exposure>) {
     for mut e in &mut cameras {
-        e.ev100 = 13.0 - ops::log2(1.0 + orage.eclat() * 2.5);
+        e.ev100 = etat.exposition_ev100() - ops::log2(1.0 + orage.eclat() * 2.5);
     }
 }
 
