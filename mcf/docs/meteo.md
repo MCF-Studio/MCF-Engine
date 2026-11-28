@@ -278,7 +278,9 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   captures (llvmpipe : sol, abri, plage, mer, MSAA ×4 et sans).
   Limites : seuls les impacts à l'écran existent (voulu) ; caméra en perspective seulement ; une seule caméra
   servie ; un toit non déclaré et hors de l'écran laisse passer des éclaboussures dessous ; forme identique sur
-  toutes les surfaces (pas d'orientation selon la normale) ; **coût GPU non mesuré**.
+  toutes les surfaces (pas d'orientation selon la normale).
+  Coût mesuré (RTX 3070, 1080p, tempête, `bancs-essai.md` 2026-11-28 (4)) : `pluie_impacts` 0,024 ms,
+  éclaboussures complètes +0,034 ms de GPU par image (340,5 → 334,9 FPS).
 - ✅ Étape 21 : ronds d'impact et ruissellement. Océan : la pluie ajoute à la pente des ronds qui s'élargissent
   (jusqu'à ~35 cm, à moins de 40 m de la caméra) et dépolit la surface (rugosité + 0,07 × pluie : la mer devient
   plus mate) ; uniforme `pluie` dans `UniformesOcean`. Matériau météo : les ronds, jusque-là réservés aux
@@ -287,8 +289,9 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   sinueux, parcourus par des gouttes qui descendent (plus sombres, plus lisses, bombés), tant qu'il pleut ou
   que la surface est encore mouillée, moins marqués sur un matériau poreux. `demo_meteo` : `MCF_CAMERA=mur`.
   Rendu vérifié par captures. Limites : filets identiques quelle que soit la pente (pas d'écoulement suivant
-  le relief), pas de gouttes qui tombent du bord des toits, **coût non mesuré** (une boucle de 18 cellules par
-  pixel proche pour les ronds).
+  le relief), pas de gouttes qui tombent du bord des toits. Coût : invisible sur le parcours du banc (RTX 3070,
+  écart de −0,004 ms avec la mesure précédente, dans le bruit), mais ce parcours vole surtout en altitude : le
+  coût au ras d'un sol mouillé (une boucle de 18 cellules par pixel proche) n'est pas isolé.
 - ✅ Étape 22 : gouttes de pluie. Les gouttes étaient des traits de 12 mm de large à l'alpha uniforme : barres
   blanches près de la caméra, pointillés au loin. Elles ont maintenant un diamètre de 2,5 à 4,5 mm, des bords
   doux, une tête nette et une traînée qui s'efface, un filet de lumière au centre (effet de lentille) ; au

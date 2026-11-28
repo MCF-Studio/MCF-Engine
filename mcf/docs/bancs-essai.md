@@ -180,3 +180,26 @@ Constats :
   8 s et à 39,6–40 s, avec un GPU à 3,4–5,5 ms. Ce sont des vues chargées du parcours, pas des à-coups CPU.
 - base et nuages non remesurées sur cette branche.
 
+### 2026-11-28 (4) — pluie réaliste (étapes 20 à 22)
+
+- Branche `meteo/eclaboussures` (commit `7e1a8229f`), même machine, variante complet, tempête, 1920 × 1080,
+  0 image sans focus dans les deux passages.
+
+| Passage | Images | FPS moyen | FPS 1 % low | ms moyen | ms p50 | ms p99 | ms pire | GPU moyen | GPU p99 | GPU pic |
+|---|---|---|---|---|---|---|---|---|---|---|
+| avec éclaboussures | 13 396 | 334,9 | 179,2 | 2,986 | 2,847 | 5,180 | 10,178 | 2,377 | 4,292 | 5,322 |
+| `MCF_ECLABOUSSURES=0` | 13 621 | 340,5 | 183,2 | 2,937 | 2,810 | 5,101 | 8,715 | 2,343 | 4,221 | 5,381 |
+| avant (mesure (3), étape 19) | 13 630 | 340,7 | 183,9 | 2,935 | 2,800 | 4,983 | 6,778 | 2,347 | 4,042 | 5,497 |
+
+Constats :
+- Passe `pluie_impacts` : 0,0235 ms en moyenne (p99 0,028, pic 0,51). Éclaboussures complètes (passe + dessin) :
+  +0,034 ms de GPU moyen, −5,6 FPS (340,5 → 334,9).
+- Ronds de pluie (mer et sol), ruissellement et nouvelles gouttes restent actifs dans les deux passages : leur
+  coût est l'écart avec la mesure (3), soit −0,004 ms : **invisible dans le bruit de mesure**.
+  `main_transparent_pass_3d` (pluie, éclaboussures, composition des nuages) : 0,080 ms dans les deux cas.
+- **Réserve** : le parcours du banc passe l'essentiel de son temps en altitude ; les ronds et le ruissellement
+  ne sont calculés qu'à moins de 35–40 m des surfaces. Leur coût au ras du sol, écran plein de sol mouillé,
+  n'est pas isolé par cette mesure (pic GPU inchangé : 5,3 ms contre 5,5 ms avant, sur les vues près de la plage).
+- Une image à 10,2 ms à 28,84 s dans le passage avec éclaboussures (GPU 2,1 ms : à-coup CPU isolé, absent de
+  l'autre passage, non expliqué).
+
