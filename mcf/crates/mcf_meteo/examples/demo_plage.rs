@@ -33,25 +33,32 @@ use mcf_meteo::{
 };
 
 fn main() {
-    App::new()
-        .add_plugins((
-            DefaultPlugins,
-            McfMeteoPlugin,
-            McfPrecipitationsPlugin,
-            McfOceanPlugin,
-            McfNuagesPlugin,
-            McfSonPlugin,
-            McfMateriauMeteoPlugin,
-        ))
-        // `MCF_OMBRE=0` : sans l'ombre des nuages (comparaison).
-        .insert_resource(ReglagesOmbreNuages {
-            active: std::env::var("MCF_OMBRE").as_deref() != Ok("0"),
-            ..default()
-        })
-        .insert_resource(SourceFond::new(hauteur_sol))
-        .add_systems(Startup, scene)
-        .add_systems(Update, (touches, bouee, flash, capture))
-        .run();
+    let mut app = App::new();
+    app.add_plugins((
+        DefaultPlugins,
+        McfMeteoPlugin,
+        McfPrecipitationsPlugin,
+        McfOceanPlugin,
+        McfNuagesPlugin,
+        McfSonPlugin,
+        McfMateriauMeteoPlugin,
+    ))
+    // `MCF_OMBRE=0` : sans l'ombre des nuages (comparaison).
+    .insert_resource(ReglagesOmbreNuages {
+        active: std::env::var("MCF_OMBRE").as_deref() != Ok("0"),
+        ..default()
+    })
+    .insert_resource(SourceFond::new(hauteur_sol))
+    .add_systems(Startup, scene)
+    .add_systems(Update, (touches, bouee, flash, capture));
+    // Capture : pas de temps fixe (1/30 s par image), pour que le rendu logiciel, très lent, montre la même
+    // simulation qu'une vraie carte (les embruns naissent selon le temps écoulé).
+    if std::env::var("MCF_CAPTURE").is_ok() {
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_secs_f32(1.0 / 30.0),
+        ));
+    }
+    app.run();
 }
 
 /// Ligne de rivage (z en fonction de x), comme SkyForge : sinuosités + bruit. La terre est vers +Z.

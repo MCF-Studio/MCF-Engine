@@ -2,8 +2,8 @@
 //!
 //! Là où une vague de bord déferle (crête au-dessus de la limite de McCowan, voir [`crate::rivage::vagues_bord`]),
 //! l'eau est projetée en gerbes de gouttelettes que le vent emporte. Une gerbe est rendue comme quelques
-//! « bouffées » : des nuages de gouttelettes qui montent, s'étalent, retombent et s'effacent en une à deux
-//! secondes.
+//! « bouffées » : des nuages de gouttelettes qui montent, s'étalent, retombent et s'effacent en une
+//! demi-seconde à une seconde.
 //!
 //! - Simulation sur le CPU ([`Embruns`]) : à chaque image, des points tirés au hasard autour de la caméra sont
 //!   testés avec la même fonction de vagues que la flottaison ; une crête qui déferle y fait naître des bouffées.
@@ -64,9 +64,9 @@ impl Default for ReglagesEmbruns {
         Self {
             active: true,
             rayon: 110.0,
-            essais_par_s: 9000.0,
-            taille: 0.7,
-            opacite: 0.9,
+            essais_par_s: 3000.0,
+            taille: 0.28,
+            opacite: 0.5,
             albedo: 0.9,
         }
     }
@@ -142,7 +142,7 @@ impl Embruns {
         let dt = if dt.is_finite() { dt.clamp(0.0, 0.1) } else { 0.0 };
         let vent = if vent.is_finite() { vent } else { Vec3::ZERO };
         // Gouttelettes fines : elles tombent bien moins vite qu'un corps en chute libre.
-        const PESANTEUR: f32 = 4.5;
+        const PESANTEUR: f32 = 7.0;
         const TRAINEE: f32 = 1.4;
         let suivi = 1.0 - ops::exp(-TRAINEE * dt);
         for b in &mut self.bouffees {
@@ -180,7 +180,7 @@ impl Embruns {
         }
         let crete = vagues_bord(p, &e, profondeur, bord, ocean.temps()).crete;
         // Seul le sommet de la crête projette de l'eau, et d'autant plus souvent que la vague est forte.
-        if crete < 0.55 || self.hasard() > crete * force_vagues.max(0.15) {
+        if crete < 0.7 || self.hasard() > crete * force_vagues.max(0.15) {
             return 0;
         }
         let d = deplacement_total(ocean, mer, carte, bord, p);
@@ -191,7 +191,7 @@ impl Embruns {
         // La crête avance vers la terre à la célérité de la vague.
         let celerite = bord.omega * bord.longueur / std::f32::consts::TAU;
         let avant = Vec3::new(e.normale.x, 0.0, e.normale.y);
-        let nombre = 3 + (self.hasard() * 5.0 * force_vagues) as u32;
+        let nombre = 1 + (self.hasard() * 2.0 * force_vagues) as u32;
         let mut nes = 0;
         for _ in 0..nombre {
             if self.bouffees.len() >= MAX_EMBRUNS {
@@ -201,13 +201,13 @@ impl Embruns {
             let cote = Vec3::new(-avant.z, 0.0, avant.x) * (a * 2.0 - 1.0) * 0.9;
             let vitesse = avant * celerite * (0.35 + 0.4 * b)
                 + cote
-                + Vec3::Y * (1.2 + 3.2 * c * (0.4 + 0.6 * force_vagues)) * bord.amplitude.clamp(0.4, 1.4)
+                + Vec3::Y * (0.8 + 1.8 * c * (0.4 + 0.6 * force_vagues)) * bord.amplitude.clamp(0.4, 1.4)
                 + vent * 0.15;
             self.bouffees.push(Bouffee {
                 position: origine + cote * 0.4 + Vec3::Y * 0.05,
                 vitesse,
                 age: 0.0,
-                vie: 0.9 + 0.9 * g,
+                vie: 0.45 + 0.55 * g,
                 taille: reglages.taille.max(0.01) * bord.amplitude.clamp(0.4, 1.4) * (0.7 + 0.6 * a),
                 force: (crete * (0.45 + 0.55 * force_vagues)).clamp(0.0, 1.0),
                 graine: g,

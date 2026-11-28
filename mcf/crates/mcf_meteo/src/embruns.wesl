@@ -41,7 +41,7 @@ fn vertex(s: Sommet) -> VersFragment {
     droite = select(vec3<f32>(1.0, 0.0, 0.0), normalize(droite), dot(droite, droite) > 1e-6);
     let haut = cross(vers_camera, droite);
     // La bouffée s'étale en vieillissant.
-    let l = s.donnees.y * (1.0 + 2.6 * s.donnees.x);
+    let l = s.donnees.y * (1.0 + 2.2 * s.donnees.x);
     let monde = s.position + (droite * s.coin.x + haut * s.coin.y) * l;
     o.clip = view.clip_from_world * vec4<f32>(monde, 1.0);
     // Fondu quand la bouffée arrive sur la caméra (sinon elle remplit l'écran d'un coup).
@@ -73,15 +73,21 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
     // Coordonnées bornées : avec le MSAA elles débordent un peu du quad.
     let uv = clamp(i.uv, vec2<f32>(-1.0), vec2<f32>(1.0));
     let r = length(uv);
-    // Nuage : dense au centre, fondu vers le bord, contour irrégulier par un bruit à deux échelles.
+    // Gerbe : une enveloppe floue, remplie de gouttelettes distinctes (et non un nuage plein, qui fait fumée).
+    // Elle se disperse en vieillissant : de moins en moins de gouttelettes, plus un voile très léger.
     let forme = bruit(uv * 2.3 + graine) * 0.65 + bruit(uv * 6.1 + graine * 1.7) * 0.35;
     let rr = r / (0.55 + 0.45 * forme);
-    let bord = exp(-rr * rr * 2.2) * (1.0 - smoothstep(0.75, 1.0, r));
-    // Grain de gouttelettes, plus marqué quand la bouffée se disperse.
-    let grain = mix(1.0, 0.55 + 0.9 * bruit(uv * 19.0 + graine * 3.1), 0.35 + 0.5 * age);
-    // Apparition rapide, disparition lente.
-    let vie = smoothstep(0.0, 0.08, age) * pow(1.0 - saturate(age), 1.3);
-    let a = saturate(bord * grain * vie * i.donnees.w * u.opacite) * i.proche;
+    let enveloppe = exp(-rr * rr * 2.6) * (1.0 - smoothstep(0.75, 1.0, r));
+    // Les gouttelettes suivent la bouffée qui s'étale : le motif est plus serré au début.
+    let echelle = 9.0 * (1.0 + 2.2 * age);
+    let g1 = bruit(uv * echelle + graine * 3.1);
+    let g2 = bruit(uv * echelle * 2.3 + graine * 5.7);
+    let seuil = mix(0.52, 0.74, age);
+    let gouttes = smoothstep(seuil, seuil + 0.12, g1) * 0.8 + smoothstep(seuil + 0.05, seuil + 0.15, g2) * 0.6;
+    let voile = 0.12;
+    // Apparition rapide, disparition régulière.
+    let vie = smoothstep(0.0, 0.1, age) * (1.0 - saturate(age));
+    let a = saturate(enveloppe * (gouttes + voile) * vie * i.donnees.w * u.opacite) * i.proche;
     // Prémultiplié : les gouttelettes éclairent beaucoup et cachent un peu.
     return vec4<f32>(u.couleur * view.exposure * a, a * 0.7);
 }

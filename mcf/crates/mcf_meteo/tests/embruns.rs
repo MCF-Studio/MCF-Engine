@@ -78,7 +78,7 @@ fn force_selon_les_vagues() {
 fn les_bouffees_retombent_et_meurent() {
     let mut embruns = simuler(PresetMeteo::Tempete, 6.0);
     assert!(!embruns.bouffees().is_empty());
-    // Sans nouvelle naissance, tout a disparu après la plus longue durée de vie (1,8 s).
+    // Sans nouvelle naissance, tout a disparu après la plus longue durée de vie (1 s).
     for _ in 0..150 {
         embruns.avancer(1.0 / 60.0, Vec3::ZERO, 0.0);
     }
