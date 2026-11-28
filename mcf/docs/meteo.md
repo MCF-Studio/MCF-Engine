@@ -306,9 +306,11 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   rivage, volume général 0,8, 18 s) du mélange avant limiteur : niveau efficace 0,30 / 0,39 / 0,44 / 0,70 de la
   pleine échelle (clair / nuageux / pluie / tempête), 0,2 / 1,3 / 2,4 / 14,8 % des échantillons au-dessus de 1 ;
   et le limiteur `m / (1 + |m|)` déformait à tous les niveaux (gain 0,67 dès 0,5). Correction : gain de sortie
-  `NIVEAU_SORTIE` = 0,3 et limiteur transparent jusqu'à 0,5 puis genou en `tanh` vers 0,98 (`son::limiter`).
-  Après : niveau efficace 0,09 / 0,12 / 0,13 / 0,21, crête 0,48 / 0,62 / 0,64 / 0,92, 0 / 0 / 0 / 2,0 % des
-  échantillons touchés par le limiteur. 2 tests. Jugé seulement par la mesure : à réécouter.
+  `NIVEAU_SORTIE` = 0,2 (−14 dB) et limiteur transparent jusqu'à 0,6 puis genou en `tanh` vers 0,98
+  (`son::limiter`). Après : niveau efficace 0,06 / 0,08 / 0,09 / 0,14, crête 0,32 / 0,41 / 0,43 / 0,76, 0 / 0 /
+  0 / 0,01 % des échantillons touchés par le limiteur. 2 tests. Un premier réglage à 0,3 et seuil 0,5 a été
+  mesuré (0,09 à 0,21, 2 % limités en tempête) ; c'est le réglage à 0,2 qui a été écouté sur le PC de test et
+  jugé « beaucoup mieux ».
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

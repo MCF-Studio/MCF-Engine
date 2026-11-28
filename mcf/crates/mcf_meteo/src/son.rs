@@ -60,9 +60,9 @@ impl Default for ReglagesSon {
 /// Gain appliqué au mélange avant le limiteur. Mesuré sur une plage (14 m du rivage, volume général 0,8), sans
 /// ce gain : niveau efficace de 0,30 (clair) à 0,70 (tempête) de la pleine échelle et 15 % des échantillons
 /// au-dessus de 1 en tempête : beaucoup trop fort pour une ambiance, et écrasé par le limiteur.
-pub const NIVEAU_SORTIE: f32 = 0.3;
+pub const NIVEAU_SORTIE: f32 = 0.2;
 /// Seuil du limiteur : en dessous, le signal sort tel quel.
-pub const SEUIL_LIMITEUR: f32 = 0.5;
+pub const SEUIL_LIMITEUR: f32 = 0.6;
 /// Valeur que la sortie n'atteint jamais.
 pub const PLAFOND_SORTIE: f32 = 0.98;
 

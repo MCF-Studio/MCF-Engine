@@ -286,7 +286,7 @@ fn niveau_d_ambiance_sans_saturation() {
         let y = &y[96_000 * 2..];
         let niveau = rms(y);
         let limites = y.iter().filter(|v| v.abs() > SEUIL_LIMITEUR).count() as f32 / y.len() as f32;
-        assert!((0.05..0.25).contains(&niveau), "vent {vent} : niveau {niveau}");
+        assert!((0.04..0.2).contains(&niveau), "vent {vent} : niveau {niveau}");
         assert!(limites < 0.05, "vent {vent} : {limites} des échantillons limités");
         // Plus de vent et de pluie : plus fort.
         assert!(niveau > precedent);
