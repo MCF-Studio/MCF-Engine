@@ -82,7 +82,8 @@ fn rive_mouillee(p: vec3<f32>) -> f32 {
     if (meteo.rivage.w <= 0.0) {
         return 0.0;
     }
-    let n = vec2<i32>(textureDimensions(carte_rivage));
+    // La carte fait 2n × n texels : la moitié gauche porte le fond et la distance.
+    let n = vec2<i32>(i32(textureDimensions(carte_rivage).y));
     let c = vec2<i32>(floor((p.xz - meteo.rivage.xy) / meteo.rivage.z * vec2<f32>(n)));
     if (any(c < vec2<i32>(0)) || any(c >= n)) {
         return 0.0;

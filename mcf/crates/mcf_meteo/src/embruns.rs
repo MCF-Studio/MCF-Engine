@@ -180,7 +180,7 @@ impl Embruns {
         }
         let crete = vagues_bord(p, &e, profondeur, bord, ocean.temps()).crete;
         // Seul le sommet de la crête projette de l'eau, et d'autant plus souvent que la vague est forte.
-        if crete < 0.7 || self.hasard() > crete * force_vagues.max(0.15) {
+        if crete < 0.7 || self.hasard() > crete * force_vagues.max(0.35) {
             return 0;
         }
         let d = deplacement_total(ocean, mer, carte, bord, p);
@@ -243,15 +243,16 @@ impl Embruns {
                 self.hasard() * std::f32::consts::TAU,
             );
             let (s, c) = ops::sin_cos(a);
-            self.semer_en(
-                centre + Vec2::new(c, s) * r,
-                ocean,
-                mer,
-                carte,
-                bord,
-                vent,
-                reglages,
-            );
+            let mut p = centre + Vec2::new(c, s) * r;
+            // Les vagues ne cassent que dans une bande étroite le long du rivage : on y ramène le point tiré, le
+            // long de la normale, plutôt que de gaspiller les essais au large ou à terre.
+            if let Some(e) = carte.echantillonner(p)
+                && e.normale != Vec2::ZERO
+                && e.distance.abs() < 80.0
+            {
+                p += e.normale * (-(1.0 + 13.0 * self.hasard()) - e.distance);
+            }
+            self.semer_en(p, ocean, mer, carte, bord, vent, reglages);
         }
     }
 }

@@ -60,6 +60,8 @@ struct Rivage {
     fond: f32,
     distance: f32,          // distance signée au rivage (m), < 0 en mer
     normale: vec2<f32>,     // vers la terre
+    trajet: f32,            // temps (s) qu'il reste à une vague de bord pour atteindre le rivage
+    fond_amont: f32,        // fond un peu plus au large : borne la hauteur de la vague qui arrive
     poids: f32,             // 0 hors de la grille, fondu sur les bords de la grille
 };
 
@@ -68,11 +70,14 @@ fn lire_rivage(xz: vec2<f32>) -> Rivage {
     r.fond = -1e4;
     r.distance = -1e4;
     r.normale = vec2<f32>(0.0);
+    r.trajet = 0.0;
+    r.fond_amont = -1e4;
     r.poids = 0.0;
     if (ocean.rivage.w <= 0.0) {
         return r;
     }
-    let n = vec2<i32>(textureDimensions(carte_rivage));
+    // La carte fait 2n × n texels : moitié gauche (fond, distance, normale), moitié droite (temps de trajet).
+    let n = vec2<i32>(i32(textureDimensions(carte_rivage).y));
     let nf = vec2<f32>(n);
     let u = (xz - ocean.rivage.xy) / ocean.rivage.z;
     if (any(u < vec2<f32>(0.0)) || any(u > vec2<f32>(1.0))) {
@@ -87,6 +92,14 @@ fn lire_rivage(xz: vec2<f32>) -> Rivage {
     let c = textureLoad(carte_rivage, vec2<i32>(i0.x, i1.y), 0);
     let d = textureLoad(carte_rivage, i1, 0);
     let v = mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+    let droite = vec2<i32>(n.x, 0);
+    let va = mix(
+        mix(textureLoad(carte_rivage, i0 + droite, 0).xy, textureLoad(carte_rivage, vec2<i32>(i1.x, i0.y) + droite, 0).xy, t.x),
+        mix(textureLoad(carte_rivage, vec2<i32>(i0.x, i1.y) + droite, 0).xy, textureLoad(carte_rivage, i1 + droite, 0).xy, t.x),
+        t.y,
+    );
+    r.trajet = va.x;
+    r.fond_amont = va.y;
     r.fond = v.x;
     r.distance = v.y;
     r.normale = select(vec2<f32>(0.0), normalize(v.zw), dot(v.zw, v.zw) > 1e-8);
@@ -102,10 +115,10 @@ fn attenuation_houle(profondeur: f32) -> f32 {
     return saturate(min(rampe, limite));
 }
 
-fn phase_bord(xz: vec2<f32>, distance: f32) -> f32 {
-    let k = TAU / max(ocean.bord.y, 1.0);
+// Phase des vagues de bord. `trajet` : temps (s) qu'il reste à la vague pour atteindre le rivage.
+fn phase_bord(xz: vec2<f32>, trajet: f32) -> f32 {
     let ondulation = perlin3(vec3<f32>(xz.x * 0.015, 1.3, xz.y * 0.015), 0) * 4.0;
-    return k * distance + ondulation - ocean.bord.w * ocean.temps;
+    return ondulation - ocean.bord.w * (trajet + ocean.temps);
 }
 
 struct Bord {
@@ -129,13 +142,21 @@ fn vagues_bord(xz: vec2<f32>, r: Rivage, profondeur: f32) -> Bord {
         return o;
     }
     let n = r.normale;
-    let k = TAU / max(ocean.bord.y, 1.0);
-    let th = phase_bord(xz, d);
+    // Nombre d'onde local : la vague ralentit (célérité √(g h) en eau peu profonde, bornée par celle du large)
+    // et se resserre quand le fond remonte. C'est ce qui la dresse avant qu'elle casse.
+    let celerite_large = sqrt(9.81 * max(ocean.bord.y, 1.0) / TAU);
+    let k = ocean.bord.w / min(sqrt(9.81 * max(profondeur, 0.15)), celerite_large);
+    let th = phase_bord(xz, r.trajet);
     let h = max(profondeur, 0.05);
     var a = ocean.bord.x * clamp(pow(4.0 / h, 0.25), 0.6, 1.7);     // levée de la houle (Green)
     let a_max = 0.39 * h + 0.03;                                     // déferlement (McCowan)
     let deferlement = saturate((a / a_max - 0.7) * 3.0);
-    a = min(a, a_max) * enveloppe;
+    // La hauteur est bornée par la profondeur un peu plus au large (la vague garde son élan : sur une plage
+    // raide elle arrive encore haute au bord), puis la vague s'écrase sur les 30 derniers centimètres d'eau.
+    let h_amont = max(h, profondeur + r.fond - r.fond_amont);
+    // Hauteur inégale le long de la crête : la vague casse par sections, pas d'un bloc.
+    let section = 0.85 + 0.15 * perlin3(vec3<f32>(xz.x * 0.07, 7.1, xz.y * 0.07), 0);
+    a = min(a, 0.39 * h_amont + 0.03) * section * smoothstep(0.0, 0.3, profondeur) * enveloppe;
     // Rouleau. En eau peu profonde la vague n'est plus une sinusoïde : sa crête devient pointue et son creux
     // plat (profil (½ + ½ cos θ)ⁿ, n de 1 au large à 4 près du bord, recentré pour garder le niveau moyen), et
     // quand elle déferle elle se penche vers la plage jusqu'à dresser sa face presque à la verticale.
@@ -161,11 +182,18 @@ fn vagues_bord(xz: vec2<f32>, r: Rivage, profondeur: f32) -> Bord {
     // Écume de déferlement : la crête, toute la face avant du rouleau (côté plage), et la traînée derrière.
     let crete = pow(saturate(c), 6.0);
     // Seul le haut de la face blanchit : le bas du mur reste de l'eau sombre, c'est ce qui le fait voir.
-    let face = smoothstep(0.3, 0.62, pc) * step(0.0, s) * deferlement;
+    // Près du bord, le rouleau s'écrase : l'écume dévale toute la face.
+    let ecrase = 1.0 - smoothstep(0.35, 1.0, profondeur);
+    let face = smoothstep(mix(0.3, 0.02, ecrase), mix(0.62, 0.2, ecrase), pc) * step(0.0, s) * deferlement;
     let derriere = fract(-th / TAU);
-    o.ecume = deferlement * max(max(crete, face), exp(-derriere * 7.0) * 0.8) * enveloppe;
-    o.crete = deferlement * max(crete, face) * enveloppe * r.poids;
-    o.zone = deferlement * enveloppe * r.poids;
+    // Là où la vague a de la hauteur, sa crête et le haut de sa face portent une masse d'écume épaisse (`crete`)
+    // et le bas du mur reste de l'eau nue ; sur la lame d'eau mince du bord, les vaguelettes ne laissent qu'un
+    // réseau d'écume à plat (`ecume`).
+    let hauteur = smoothstep(0.1, 0.3, a);
+    let front = max(crete, face);
+    o.ecume = deferlement * max(front * (1.0 - hauteur) * 0.7, exp(-derriere * 7.0) * 0.8) * enveloppe;
+    o.crete = deferlement * front * enveloppe * r.poids * hauteur;
+    o.zone = deferlement * enveloppe * r.poids * (1.0 - hauteur * saturate(s * 3.0));
     o.deplacement *= r.poids;
     o.pente *= r.poids;
     o.ecume *= r.poids;
@@ -329,6 +357,9 @@ fn vertex(s: Sommet) -> VertexOutput {
         let profondeur = ocean.niveau - riv.fond;
         let b = vagues_bord(xz, riv, profondeur);
         depl = depl * mix(1.0, attenuation_houle(profondeur), riv.poids) + b.deplacement;
+        // Bouillonnement : la masse d'écume du rouleau est bosselée (grandes bosses seulement, à l'échelle de la
+        // grille). Seulement à l'image : la bouée et le son suivent la vague lisse.
+        depl.y += b.crete * 0.22 * (bruit_valeur(xz * 0.8 + vec2<f32>(0.0, ocean.temps * 1.5)) - 0.3);
     }
     let monde = vec3<f32>(xz.x, ocean.niveau, xz.y) + depl;
     out.world_position = vec4<f32>(monde, 1.0);
@@ -432,19 +463,24 @@ fn fragment(
     // Rivage : houle atténuée en eau peu profonde, pente et écume des vagues de bord.
     let riv = lire_rivage(repos);
     var ecume_bord = 0.0;
+    var creux = 0.0;
     var eau = 1e4;
     if (riv.poids > 0.0) {
         let profondeur = ocean.niveau - riv.fond;
         let b = vagues_bord(repos, riv, profondeur);
         pente = pente * mix(1.0, attenuation_houle(profondeur), riv.poids) + b.pente;
         // Relief de la masse d'écume du rouleau : elle est bosselée, pas lisse.
+        // La masse d'écume est un nuage de bulles qui diffuse la lumière : elle reste claire même sur la face du
+        // rouleau tournée à l'opposé du soleil. On l'éclaire comme une surface presque à plat, bosselée.
+        pente *= 1.0 - 0.75 * smoothstep(0.3, 0.55, b.crete);
         if (b.crete > 0.02) {
             let pas = 0.12;
             let q0 = repos * 2.4 + vec2<f32>(0.0, ocean.temps * 2.1);
             let h0 = bruit_valeur(q0) + 0.5 * bruit_valeur(q0 * 2.7);
             let hx = bruit_valeur(q0 + vec2<f32>(pas, 0.0)) + 0.5 * bruit_valeur((q0 + vec2<f32>(pas, 0.0)) * 2.7);
             let hz = bruit_valeur(q0 + vec2<f32>(0.0, pas)) + 0.5 * bruit_valeur((q0 + vec2<f32>(0.0, pas)) * 2.7);
-            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.22 * b.crete;
+            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.45 * b.crete;
+            creux = (1.0 - saturate(h0 / 1.5)) * smoothstep(0.3, 0.55, b.crete);
         }
         // Hauteur d'eau au-dessus du fond, sous ce pixel.
         eau = max(monde.y - lire_rivage(monde.xz).fond, 0.0);
@@ -457,17 +493,19 @@ fn fragment(
         // trous où l'on voit le fond, dense sur la lame d'eau mince qui court sur le sable, de plus en plus lâche
         // vers le large ; un bourrelet blanc plein au front du jet de rive ; rien au-delà des vagues qui cassent.
         // `couverture` dit quelle part de la surface l'écume occupe : elle règle la largeur des filaments.
-        let mince = 1.0 - smoothstep(0.0, 0.4, eau);
+        let mince = 1.0 - smoothstep(0.0, 0.25, eau);
         // Dans toute la zone où les vagues ont cassé, il reste de l'écume en réseau entre deux rouleaux ; seule la
         // crête et le haut de la face du rouleau sont blancs pleins.
         // Par plaques : la nappe d'eau mince qui couvre le sable n'est pas uniformément couverte d'écume.
-        let plaques = mix(0.4, 1.0, smoothstep(0.3, 0.7, perlin3(vec3<f32>(repos.x * 0.22, ocean.temps * 0.05, repos.y * 0.22), 0) * 0.5 + 0.5));
+        let plaques = mix(0.2, 1.0, smoothstep(0.3, 0.7, perlin3(vec3<f32>(repos.x * 0.22, ocean.temps * 0.05, repos.y * 0.22), 0) * 0.5 + 0.5));
         let residu = max(max(mince * 0.66 * plaques, surf * respiration * 0.35), max(b.ecume * (0.6 + 0.14 * lace), b.zone * 0.3));
-        let couverture = saturate(max(min(residu, 0.66), b.crete * 1.4));
+        let couverture = saturate(min(residu, 0.66));
+        // Masse blanche du rouleau : pleine, sans trous, avec un bord déchiqueté.
+        let masse = smoothstep(0.3, 0.55, b.crete + (lace - 0.5) * 0.3);
         let bourrelet = 1.0 - smoothstep(0.004, 0.012 + 0.01 * lace, eau);
         // Motif posé sur la surface au repos : sur la face dressée du rouleau, les coordonnées du monde ne varient
         // presque plus avec la hauteur et le motif s'étirerait en rayures verticales.
-        ecume_bord = max(reseau_ecume(repos, riv.normale, couverture, distance), bourrelet) * riv.poids;
+        ecume_bord = max(max(reseau_ecume(repos, riv.normale, couverture, distance), bourrelet), masse) * riv.poids;
     }
     // Pluie : ronds d'impact près de la caméra (au-delà, ils sont plus petits qu'un pixel : la rugosité prend
     // le relais, plus bas).
@@ -501,7 +539,8 @@ fn fragment(
     let ecume = saturate(max(max(ecume_fft * mix(0.5, 1.2, motif), ecume_houle * smoothstep(0.35, 0.75, motif)), ecume_bord) * ocean.ecume);
     if (ecume > 0.0) {
         pbr_input.material.base_color = vec4<f32>(
-            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.93, 0.95, 0.96), ecume),
+            // Les creux de la masse d'écume du rouleau sont un peu plus sombres : c'est ce qui lui donne du volume.
+            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.93, 0.95, 0.96) * (1.0 - 0.3 * creux), ecume),
             1.0,
         );
         pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.8, ecume);

@@ -146,6 +146,9 @@ fn scene(
             Transform::from_xyz(x0 + 6.0, hauteur_sol(x0 + 6.0, rivage + 6.0) + 1.6, rivage + 6.0)
                 .looking_at(Vec3::new(x0 - 22.0, 0.4, rivage - 13.0), Vec3::Y)
         }
+        // Face à la mer, à hauteur d'homme, comme un film pris depuis la plage.
+        Ok("face") => Transform::from_xyz(x0, hauteur_sol(x0, rivage + 7.0) + 1.5, rivage + 7.0)
+            .looking_at(Vec3::new(x0, 0.6, rivage - 14.0), Vec3::Y),
         // Debout au bord de l'eau, regard vers le bas : l'écume du jet de rive.
         Ok("ecume") => Transform::from_xyz(x0, hauteur_sol(x0, rivage + 5.0) + 1.7, rivage + 5.0)
             .looking_at(Vec3::new(x0, 0.0, rivage - 6.0), Vec3::Y),
@@ -250,12 +253,18 @@ fn capture(mut commandes: Commands, mut images: Local<u32>, mut sortie: MessageW
         return;
     };
     *images += 1;
-    if *images == 90 {
+    // `MCF_IMAGE=n` : numéro de l'image capturée (30 images par seconde simulée), pour voir une autre phase.
+    let cible = std::env::var("MCF_IMAGE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90u32)
+        .max(2);
+    if *images == cible {
         commandes
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(chemin));
     }
-    if *images == 110 {
+    if *images == cible + 20 {
         sortie.write(AppExit::Success);
     }
 }

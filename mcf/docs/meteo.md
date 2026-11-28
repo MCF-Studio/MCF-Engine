@@ -376,6 +376,29 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites constatées sur les captures llvmpipe : par beau temps le rouleau est une butte d'écume plutôt qu'un
   mur net, l'écume couvre presque toute la zone intérieure ; en tempête l'écume se distingue mal de l'eau grise.
   Test de McCowan réécrit en hauteur crête à creux (≤ 0,78 h). 93 tests.
+  - **Reprise après contrôle sur GPU réel (RTX 3070, pluie)** : pas de mur visible, pas de masse d'écume, nappe
+    gris-lilas délavée au premier plan. Cause : les vagues de bord gardaient 24 m de longueur d'onde jusqu'au
+    sable (face à 12° pour 1 m de vague) et la borne de McCowan locale les aplatissait avant le bord.
+    - Temps de trajet : la grille du rivage porte le temps que met une vague pour atteindre le rivage (équation
+      eikonale |∇τ| = 1/c, « fast marching », c = min(√(g h), célérité du large), h ≥ 0,15 m). La phase suit ce
+      temps : les vagues ralentissent et se resserrent quand le fond remonte (14 m de longueur d'onde par 1,3 m
+      de fond, 5 m au bord). Texture du rivage en `2n × n` texels (moitié droite : trajet, fond en amont).
+    - Hauteur : bornée par la profondeur lue 0,2 longueur d'onde plus au large (`fond_amont`) et non plus sous
+      la vague, puis écrasée sur les 30 derniers centimètres d'eau. Écart assumé à McCowan local : sur une plage
+      raide la vague arrive haute au bord (« shore break »), comme sur la vidéo de référence. Sur fond plat rien
+      ne change (test McCowan inchangé).
+    - Hauteur modulée de ±15 % le long de la crête (bruit de Perlin) : la vague casse par sections.
+    - Écume : masse blanche pleine à bord déchiqueté sur la crête et le haut de la face, seulement là où la
+      vague a de la hauteur (a > 0,1 à 0,3 m) ; le bas du mur reste de l'eau nue ; près du bord l'écume dévale
+      toute la face. La masse est éclairée comme une surface presque à plat (nuage de bulles diffusant), avec
+      bosses dans la normale, creux assombris et bosses de 0,2 m dans le maillage (image seulement). Nappe
+      mince : écume pleine sous 0,25 m d'eau au lieu de 0,4 m, plaques plus contrastées.
+    - Embruns : essais ramenés dans la bande de 1 à 14 m du rivage (au lieu d'un disque de 110 m), seuil plus
+      bas par beau temps. **Non vus en capture llvmpipe : à juger sur GPU réel.**
+    - `demo_plage` : vue `MCF_CAMERA=face` (face à la mer, comme la vidéo), `MCF_IMAGE=n` (image capturée).
+    Captures llvmpipe, beau temps : mur sombre d'environ 1 m avec crête blanche bosselée, visible. Tempête : mur
+    vert de 2 m visible, mais l'écume reste grise et se distingue mal. **Coût non mesuré** (maillage ×4, 8
+    lectures de texture en plus par sommet et par pixel près du bord). 95 tests.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

@@ -200,7 +200,7 @@ fn creer_ocean(
     textures: Res<TexturesOcean>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let rivage = images.add(image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0]]));
+    let rivage = images.add(image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0], [0.0; 4]]));
     commandes.insert_resource(TextureRivage(rivage.clone()));
     let eau = StandardMaterial {
         // Eau profonde : presque noire, c'est le reflet du ciel qui la colore.
@@ -241,8 +241,9 @@ fn image_rivage(n: u32, donnees: Vec<[f32; 4]>) -> Image {
         .flat_map(|c| c.iter().flat_map(|v| v.to_le_bytes()))
         .collect();
     Image::new(
+        // Deux moitiés côte à côte, voir `GrilleRivage::donnees_gpu`.
         Extent3d {
-            width: n,
+            width: 2 * n,
             height: n,
             depth_or_array_layers: 1,
         },
@@ -313,7 +314,7 @@ fn mettre_a_jour_rivage(
     };
     let image = match carte.grille() {
         Some(g) => image_rivage(g.n(), g.donnees_gpu()),
-        None => image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0]]),
+        None => image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0], [0.0; 4]]),
     };
     if let Some(mut i) = images.get_mut(&texture.0) {
         *i = image;

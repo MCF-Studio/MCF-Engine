@@ -41,7 +41,7 @@ fn simuler(preset: PresetMeteo, duree_s: f32) -> Embruns {
 }
 
 #[test]
-fn embruns_en_tempete_pas_par_temps_calme() {
+fn embruns_surtout_en_tempete() {
     let tempete = simuler(PresetMeteo::Tempete, 8.0);
     assert!(
         tempete.bouffees().len() > 50,
@@ -59,7 +59,7 @@ fn embruns_en_tempete_pas_par_temps_calme() {
     }
     let clair = simuler(PresetMeteo::Clair, 8.0);
     assert!(
-        clair.bouffees().len() * 5 < tempete.bouffees().len(),
+        clair.bouffees().len() * 2 < tempete.bouffees().len(),
         "{} par temps clair, {} en tempête",
         clair.bouffees().len(),
         tempete.bouffees().len()
