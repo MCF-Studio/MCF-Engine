@@ -57,6 +57,26 @@ impl Default for ReglagesSon {
     }
 }
 
+/// Gain appliqué au mélange avant le limiteur. Mesuré sur une plage (14 m du rivage, volume général 0,8), sans
+/// ce gain : niveau efficace de 0,30 (clair) à 0,70 (tempête) de la pleine échelle et 15 % des échantillons
+/// au-dessus de 1 en tempête : beaucoup trop fort pour une ambiance, et écrasé par le limiteur.
+pub const NIVEAU_SORTIE: f32 = 0.2;
+/// Seuil du limiteur : en dessous, le signal sort tel quel.
+pub const SEUIL_LIMITEUR: f32 = 0.6;
+/// Valeur que la sortie n'atteint jamais.
+pub const PLAFOND_SORTIE: f32 = 0.98;
+
+/// Limiteur de sortie : transparent jusqu'à [`SEUIL_LIMITEUR`], puis genou doux vers [`PLAFOND_SORTIE`].
+/// (L'ancien `m / (1 + |m|)` déformait le son à tous les niveaux : gain de 0,67 dès |m| = 0,5.)
+pub fn limiter(m: f32) -> f32 {
+    let a = m.abs();
+    if a <= SEUIL_LIMITEUR {
+        return m;
+    }
+    let marge = PLAFOND_SORTIE - SEUIL_LIMITEUR;
+    (SEUIL_LIMITEUR + marge * ops::tanh((a - SEUIL_LIMITEUR) / marge)).copysign(m)
+}
+
 /// État du monde vu par le son, envoyé à chaque image.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntreesSon {
@@ -408,8 +428,7 @@ impl SynthAmbiance {
                 }
                 let tonnerre = self.tonnerre_pb[c].traiter(tonnerre) * self.lisse[4];
 
-                let m = (mer + ressac + vent + pluie_c + tonnerre) * r.general;
-                *sortie_c = m / (1.0 + m.abs());
+                *sortie_c = limiter((mer + ressac + vent + pluie_c + tonnerre) * r.general * NIVEAU_SORTIE);
             }
             for t in self.tonnerres.iter_mut().filter(|t| t.actif) {
                 if t.delai > 0.0 {
