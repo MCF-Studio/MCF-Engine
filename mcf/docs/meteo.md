@@ -355,5 +355,27 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   n'est pas lisible dans la passe transparente). Sur llvmpipe la cadence est si basse que le plafond d'essais
   par image réduit la densité : **aspect et coût à juger sur GPU réel**.
 
+- 🚧 Étape 27 : rouleaux (première version, à juger sur GPU réel). Retour à l'écran sur l'étape 26 : les embruns
+  faisaient « un banc de boules de fumée », et vidéo de référence d'une vraie barre : la vague se dresse en mur,
+  casse, devient une masse d'écume épaisse et bosselée avec des jets fins, puis file sur le sable.
+  - Embruns refaits : moins nombreux (3 000 essais/s), plus petits (0,28 m), vie de 0,45 à 1 s, gouttelettes
+    distinctes dans une enveloppe floue, exposition de la caméra appliquée (oubli de la première version).
+  - Profil des vagues de bord (`vagues_bord`, GPU et CPU) : la sinusoïde devient (½ + ½ cos θ)ⁿ, n de 1 au large
+    à 4 près du bord, recentrée (crête pointue, creux plat), et la crête avance vers la plage quand la vague
+    déferle (`avancee`, facteur 0,55). À 0,78 la face approchait la verticale mais la grille la dessinait en
+    marches d'escalier. Pas de tube creux : le maillage ne se replie pas.
+  - Maillage de la mer : 512 quads par côté au lieu de 256, répartition en puissance 5 au lieu de 3, part
+    linéaire 0,03 : environ 0,7 m entre deux points près de la caméra et 1,4 m à 60 m (avant : 2,7 m à 20 m,
+    4,2 m à 40 m). **Quatre fois plus de sommets : coût à mesurer.**
+  - Écume : blanc plein sur la crête et le haut de la face (`Bord.crete`), relief par bosses dans la normale,
+    réseau troué résiduel dans toute la zone où les vagues ont cassé (`Bord.zone`), par plaques sur la nappe
+    mince ; motif posé sur la surface au repos (sinon rayures verticales sur la face).
+  - Exposition : 14 par beau temps (l'écume et le sable saturaient au soleil à 13), 11,6 sous couverture totale.
+  - `demo_plage` : avant-plage raide (1,3 m de fond à 8 m du bord) pour que les vagues cassent près du bord,
+    vue `MCF_CAMERA=rouleau`, pas de temps fixe en mode capture.
+  Limites constatées sur les captures llvmpipe : par beau temps le rouleau est une butte d'écume plutôt qu'un
+  mur net, l'écume couvre presque toute la zone intérieure ; en tempête l'écume se distingue mal de l'eau grise.
+  Test de McCowan réécrit en hauteur crête à creux (≤ 0,78 h). 93 tests.
+
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

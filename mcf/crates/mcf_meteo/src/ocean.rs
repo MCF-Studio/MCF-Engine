@@ -40,7 +40,7 @@ pub struct ReglagesOcean {
     pub quads: u32,
     /// Rayon couvert autour de la caméra (m).
     pub rayon: f32,
-    /// Part linéaire de la répartition des sommets (le reste est cubique : dense au centre).
+    /// Part linéaire de la répartition des sommets (le reste est en puissance 5 : dense au centre).
     pub part_lineaire: f32,
     /// Intensité de l'écume.
     pub ecume: f32,
@@ -55,9 +55,9 @@ pub struct ReglagesOcean {
 impl Default for ReglagesOcean {
     fn default() -> Self {
         Self {
-            quads: 256,
+            quads: 512,
             rayon: 6000.0,
-            part_lineaire: 0.02,
+            part_lineaire: 0.03,
             ecume: 1.0,
             lod_proche: 50.0,
             lod_loin: 1500.0,

@@ -493,24 +493,38 @@ pub fn vagues_bord(p: Vec2, e: &EchantillonRivage, profondeur: f32, b: &ParamsBo
     let a_max = 0.39 * h + 0.03;
     let deferlement = ((a / a_max - 0.7) * 3.0).clamp(0.0, 1.0);
     a = a.min(a_max) * enveloppe;
-    // La crête se penche vers la plage en eau peu profonde.
-    let q = 0.35 + (0.95 - 0.35) * (1.0 - h / 3.0).clamp(0.0, 1.0);
+    // Rouleau : crête pointue et creux plat en eau peu profonde, face dressée vers la plage quand la vague
+    // déferle (mêmes formules que `vagues_bord` dans `ocean.wesl`, sans le bouillonnement de l'écume).
+    let raide = (1.0 - h / 3.0).clamp(0.0, 1.0);
+    let q = 0.35 + (0.95 - 0.35) * raide;
     let (s, c) = ops::sin_cos(th);
-    let horizontal = -n * (q * a * s);
-    let mut deplacement = Vec3::new(horizontal.x, a * c, horizontal.y);
-    let pente = n * (-a * k * s);
+    let n_p = 1.0 + 3.0 * raide;
+    let base = 0.5 + 0.5 * c;
+    let pc = ops::powf(base, n_p);
+    let dpc = -0.5 * n_p * ops::powf(base, n_p - 1.0) * s;
+    let moyenne2 = ops::powf(n_p, -0.44);
+    let avancee = 0.55 * deferlement * raide * (a / 0.25).clamp(0.0, 1.0) / (k * 0.89);
+    let horizontal = n * (avancee * pc - q * a * s);
+    let mut deplacement = Vec3::new(horizontal.x, a * (2.0 * pc - moyenne2), horizontal.y);
+    let etirement = (1.0 + k * (avancee * dpc - q * a * c)).max(0.12);
+    let pente = n * (2.0 * a * k * dpc / etirement);
     // Jet de rive : tout le bord monte et descend au rythme des vagues qui arrivent.
     let th_rive = phase_bord(p, 0.0, b, t);
     let ressac = ops::powf((0.5 + 0.5 * ops::cos(th_rive)).clamp(0.0, 1.0), 1.5);
     deplacement.y += b.jet * ressac * lisse(-70.0, -20.0, d);
-    // Écume : sur la crête qui déferle, puis une traînée qui s'efface derrière elle.
+    // Écume : la crête qui déferle, la face avant du rouleau, puis une traînée qui s'efface derrière.
     let crete = ops::powf(c.clamp(0.0, 1.0), 6.0);
+    let face = if s >= 0.0 {
+        lisse(0.3, 0.62, pc) * deferlement
+    } else {
+        0.0
+    };
     let derriere = (-th / std::f32::consts::TAU).rem_euclid(1.0);
-    let trainee = ops::exp(-derriere * 5.0);
+    let trainee = ops::exp(-derriere * 7.0);
     InfoBord {
         deplacement,
         pente,
-        ecume: deferlement * crete.max(trainee * 0.85) * enveloppe,
+        ecume: deferlement * crete.max(face).max(trainee * 0.8) * enveloppe,
         crete: deferlement * crete * enveloppe,
     }
 }

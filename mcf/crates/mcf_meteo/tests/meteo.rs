@@ -169,21 +169,21 @@ fn tous_les_presets_sont_valides() {
 #[test]
 fn exposition_s_ouvre_sous_les_nuages() {
     // Plein soleil : exposition de référence. Ciel couvert : plus ouverte, de façon monotone et bornée.
-    assert_eq!(PresetMeteo::Clair.etat().exposition_ev100(), 13.0);
-    let mut avant = 13.0;
+    assert_eq!(PresetMeteo::Clair.etat().exposition_ev100(), 14.0);
+    let mut avant = 14.0;
     for i in 0..=20 {
         let e = EtatMeteo {
             couverture_nuageuse: i as f32 / 20.0,
             ..default()
         };
         let ev = e.exposition_ev100();
-        assert!(ev <= avant && (11.2 - 1e-4..=13.0).contains(&ev), "{i} : {ev}");
+        assert!(ev <= avant && (11.6 - 1e-4..=14.0).contains(&ev), "{i} : {ev}");
         avant = ev;
     }
-    assert!(PresetMeteo::Pluie.etat().exposition_ev100() < 11.8);
+    assert!(PresetMeteo::Pluie.etat().exposition_ev100() < 12.3);
     let invalide = EtatMeteo {
         couverture_nuageuse: f32::NAN,
         ..default()
     };
-    assert_eq!(invalide.exposition_ev100(), 13.0);
+    assert_eq!(invalide.exposition_ev100(), 14.0);
 }

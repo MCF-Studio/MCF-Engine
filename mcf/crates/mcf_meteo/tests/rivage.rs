@@ -134,7 +134,8 @@ fn vagues_bornees_par_le_deferlement() {
     };
     for distance in [-120.0, -80.0, -40.0, -10.0, -2.0] {
         let profondeur = -distance * 0.05;
-        let mut max = 0.0f32;
+        let mut haut = f32::MIN;
+        let mut bas = f32::MAX;
         let mut ecume = 0.0f32;
         for i in 0..200 {
             let t = i as f32 * 0.1;
@@ -145,14 +146,19 @@ fn vagues_bornees_par_le_deferlement() {
                 &b,
                 t,
             );
-            max = max.max(v.deplacement.y.abs());
+            haut = haut.max(v.deplacement.y);
+            bas = bas.min(v.deplacement.y);
             ecume = ecume.max(v.ecume);
+            // La face du rouleau se dresse mais ne se replie pas : pente finie.
+            assert!(v.pente.is_finite() && v.deplacement.is_finite());
         }
-        // McCowan : A ≤ 0,39 h (+ 3 cm).
+        // McCowan : hauteur crête à creux ≤ 0,78 h (+ 6 cm). La crête est pointue et le creux plat : la crête
+        // monte plus haut que le creux ne descend.
         assert!(
-            max <= 0.39 * profondeur.max(0.05) + 0.03 + 1e-4,
-            "d {distance} : {max}"
+            haut - bas <= 0.78 * profondeur.max(0.05) + 0.06 + 1e-4,
+            "d {distance} : {bas} à {haut}"
         );
+        assert!(haut >= -bas - 1e-4, "d {distance} : crête {haut}, creux {bas}");
         // Près du bord, la houle déferle (écume) ; au large non.
         if distance > -40.0 {
             assert!(ecume > 0.3, "d {distance} : écume {ecume}");

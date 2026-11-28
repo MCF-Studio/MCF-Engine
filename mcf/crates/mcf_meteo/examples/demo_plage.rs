@@ -6,7 +6,8 @@
 //! `cargo run -p mcf_meteo --example demo_plage`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s).
 //! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie|neige` (nuageux par défaut).
-//! `MCF_CAMERA=haut` : vue plongeante depuis 35 m. `MCF_CAMERA=ecume` : debout au bord de l'eau, regard vers le bas.
+//! `MCF_CAMERA=haut` : vue plongeante depuis 35 m. `MCF_CAMERA=ecume` : debout au bord de l'eau, regard vers le bas. `MCF_CAMERA=rouleau` : regard en biais
+//! le long de la barre.
 //! `MCF_SABLE=0` : sable simple, sans l'humidité de la pluie ni des vagues (comparaison).
 //! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
@@ -72,7 +73,9 @@ fn ligne_rivage(x: f32) -> f32 {
 fn hauteur_sol(x: f32, z: f32) -> f32 {
     let d = z - ligne_rivage(x);
     let mut h = if d < 0.0 {
-        (d * 0.05).max(-12.0)
+        // Avant-plage raide (1,3 m de fond à 8 m du bord) puis pente douce : les vagues cassent près du bord,
+        // en rouleaux, comme sur une vraie plage à barre.
+        (-1.3 * (1.0 - ops::exp(d / 6.0)) + d * 0.04).max(-12.0)
     } else if d < 70.0 {
         d * 0.045
     } else {
@@ -138,6 +141,11 @@ fn scene(
     let transformation = match std::env::var("MCF_CAMERA").as_deref() {
         Ok("haut") => Transform::from_xyz(x0 - 20.0, 35.0, rivage + 40.0)
             .looking_at(Vec3::new(x0, 0.0, rivage - 40.0), Vec3::Y),
+        // Sur la plage, près de l'eau, regard en biais le long de la barre : les rouleaux.
+        Ok("rouleau") => {
+            Transform::from_xyz(x0 + 6.0, hauteur_sol(x0 + 6.0, rivage + 6.0) + 1.6, rivage + 6.0)
+                .looking_at(Vec3::new(x0 - 22.0, 0.4, rivage - 13.0), Vec3::Y)
+        }
         // Debout au bord de l'eau, regard vers le bas : l'écume du jet de rive.
         Ok("ecume") => Transform::from_xyz(x0, hauteur_sol(x0, rivage + 5.0) + 1.7, rivage + 5.0)
             .looking_at(Vec3::new(x0, 0.0, rivage - 6.0), Vec3::Y),
