@@ -343,5 +343,89 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
      −16 % (nuageux), −8 % (pluie), −6 % (tempête) et +22 % (clair, sur une couverture minuscule) : la
      correction au premier ordre dépasse un peu la cible. Non réitéré.
 
+- ✅ Étape 26 : embruns des vagues qui cassent (`embruns.rs`, `embruns.wesl`). Là où une vague de bord déferle
+  (`InfoBord::crete`, nouveau champ de `vagues_bord`), des bouffées de gouttelettes naissent, montent, sont
+  emportées par le vent et s'effacent en 0,9 à 1,8 s. Simulation sur le CPU (`Embruns` : points tirés au hasard
+  dans un disque de 110 m autour de la caméra marquée `EmbrunsVagues`, 9 000 essais par seconde, au plus 256 par
+  image ; gravité réduite, traînée vers le vent), au plus 2 048 bouffées ; rendu en quads face caméra dans un
+  maillage réécrit à chaque image, mélange prémultiplié. Force nulle sous 30 cm d'amplitude de vague de bord,
+  pleine à 1 m : rien par temps clair, beaucoup en tempête. Branchés dans `McfOceanPlugin` ; `demo_plage`,
+  `demo_ocean` et `bench_meteo` (variantes avec océan, `MCF_EMBRUNS=0` pour comparer). 5 tests.
+  Limites : pas d'embruns au large (crêtes FFT), pas de fondu contre la géométrie (le tampon de profondeur
+  n'est pas lisible dans la passe transparente). Sur llvmpipe la cadence est si basse que le plafond d'essais
+  par image réduit la densité : **aspect et coût à juger sur GPU réel**.
+
+- 🚧 Étape 27 : rouleaux (première version, à juger sur GPU réel). Retour à l'écran sur l'étape 26 : les embruns
+  faisaient « un banc de boules de fumée », et vidéo de référence d'une vraie barre : la vague se dresse en mur,
+  casse, devient une masse d'écume épaisse et bosselée avec des jets fins, puis file sur le sable.
+  - Embruns refaits : moins nombreux (3 000 essais/s), plus petits (0,28 m), vie de 0,45 à 1 s, gouttelettes
+    distinctes dans une enveloppe floue, exposition de la caméra appliquée (oubli de la première version).
+  - Profil des vagues de bord (`vagues_bord`, GPU et CPU) : la sinusoïde devient (½ + ½ cos θ)ⁿ, n de 1 au large
+    à 4 près du bord, recentrée (crête pointue, creux plat), et la crête avance vers la plage quand la vague
+    déferle (`avancee`, facteur 0,55). À 0,78 la face approchait la verticale mais la grille la dessinait en
+    marches d'escalier. Pas de tube creux : le maillage ne se replie pas.
+  - Maillage de la mer : 512 quads par côté au lieu de 256, répartition en puissance 5 au lieu de 3, part
+    linéaire 0,03 : environ 0,7 m entre deux points près de la caméra et 1,4 m à 60 m (avant : 2,7 m à 20 m,
+    4,2 m à 40 m). **Quatre fois plus de sommets : coût à mesurer.**
+  - Écume : blanc plein sur la crête et le haut de la face (`Bord.crete`), relief par bosses dans la normale,
+    réseau troué résiduel dans toute la zone où les vagues ont cassé (`Bord.zone`), par plaques sur la nappe
+    mince ; motif posé sur la surface au repos (sinon rayures verticales sur la face).
+  - Exposition : 14 par beau temps (l'écume et le sable saturaient au soleil à 13), 11,6 sous couverture totale.
+  - `demo_plage` : avant-plage raide (1,3 m de fond à 8 m du bord) pour que les vagues cassent près du bord,
+    vue `MCF_CAMERA=rouleau`, pas de temps fixe en mode capture.
+  Limites constatées sur les captures llvmpipe : par beau temps le rouleau est une butte d'écume plutôt qu'un
+  mur net, l'écume couvre presque toute la zone intérieure ; en tempête l'écume se distingue mal de l'eau grise.
+  Test de McCowan réécrit en hauteur crête à creux (≤ 0,78 h). 93 tests.
+  - **Reprise après contrôle sur GPU réel (RTX 3070, pluie)** : pas de mur visible, pas de masse d'écume, nappe
+    gris-lilas délavée au premier plan. Cause : les vagues de bord gardaient 24 m de longueur d'onde jusqu'au
+    sable (face à 12° pour 1 m de vague) et la borne de McCowan locale les aplatissait avant le bord.
+    - Temps de trajet : la grille du rivage porte le temps que met une vague pour atteindre le rivage (équation
+      eikonale |∇τ| = 1/c, « fast marching », c = min(√(g h), célérité du large), h ≥ 0,15 m). La phase suit ce
+      temps : les vagues ralentissent et se resserrent quand le fond remonte (14 m de longueur d'onde par 1,3 m
+      de fond, 5 m au bord). Texture du rivage en `2n × n` texels (moitié droite : trajet, fond en amont).
+    - Hauteur : bornée par la profondeur lue 0,2 longueur d'onde plus au large (`fond_amont`) et non plus sous
+      la vague, puis écrasée sur les 30 derniers centimètres d'eau. Écart assumé à McCowan local : sur une plage
+      raide la vague arrive haute au bord (« shore break »), comme sur la vidéo de référence. Sur fond plat rien
+      ne change (test McCowan inchangé).
+    - Hauteur modulée de ±15 % le long de la crête (bruit de Perlin) : la vague casse par sections.
+    - Écume : masse blanche pleine à bord déchiqueté sur la crête et le haut de la face, seulement là où la
+      vague a de la hauteur (a > 0,1 à 0,3 m) ; le bas du mur reste de l'eau nue ; près du bord l'écume dévale
+      toute la face. La masse est éclairée comme une surface presque à plat (nuage de bulles diffusant), avec
+      bosses dans la normale, creux assombris et bosses de 0,2 m dans le maillage (image seulement). Nappe
+      mince : écume pleine sous 0,25 m d'eau au lieu de 0,4 m, plaques plus contrastées.
+    - Embruns : essais ramenés dans la bande de 1 à 14 m du rivage (au lieu d'un disque de 110 m), seuil plus
+      bas par beau temps. **Non vus en capture llvmpipe : à juger sur GPU réel.**
+    - `demo_plage` : vue `MCF_CAMERA=face` (face à la mer, comme la vidéo), `MCF_IMAGE=n` (image capturée).
+    Captures llvmpipe, beau temps : mur sombre d'environ 1 m avec crête blanche bosselée, visible. Tempête : mur
+    vert de 2 m visible, mais l'écume reste grise et se distingue mal. **Coût non mesuré** (maillage ×4, 8
+    lectures de texture en plus par sommet et par pixel près du bord). 95 tests.
+  - **Deuxième contrôle sur GPU réel (7e72122, vue de face)** : mur d'eau visible dans les trois météos (le
+    progrès attendu), mais écume du rouleau en « peau de vache » (taches bleues et blanches), aucun embrun
+    visible, nappe du premier plan trop pleine avec des trous à bords nets, écume grise sous la pluie et en
+    tempête, crête qui ne bascule pas, 5 captures sur 9 vides (la démo quittait avant la fin de l'écriture).
+    Corrections : bosses de la masse d'écume adoucies (0,45 → 0,25) ; luminance minimale de l'écume
+    (`lueur_ecume`, ciel seul, 5 000 à 25 000 lux × 1,5 réglé à l'œil) ; nappe mince plafonnée à 0,52 de
+    couverture, bords des trous deux fois plus doux ; embruns : 3 à 9 bouffées par point (au lieu de 1 à 3),
+    jets de 1,6 à 4,2 m/s quelle que soit la météo ; capture : 90 images de marge avant de quitter.
+    **La crête ne bascule toujours pas** (le maillage ne se replie pas) : limite connue. À recontrôler sur GPU.
+  - **Troisième contrôle sur GPU réel (afcfee7)** : crête plus blanche et moins tachetée par beau temps, plus
+    de capture vide ; mais masse d'écume lisse et mate, toujours aucun embrun visible, et recul sous la pluie et
+    en tempête : l'écume, devenue claire, couvrait presque tout le premier plan (« plâtre »).
+    Corrections : couverture du réseau d'écume abaissée partout (plafond 0,52 → 0,38, zone de déferlement
+    0,3 → 0,16, traînée 0,6 → 0,42) : à 0,5 le réseau couvrait en réalité près de 80 % de la surface ; masse du
+    rouleau : bosses claires dans des creux plus sombres (Worley à deux échelles, −28 %), visibles en lumière
+    plate ; embruns : ils faisaient 0,1 à 0,2 m, à 50 % d'opacité, 72 en vie par beau temps sur 220 m de rivage,
+    donc invisibles : taille 0,42 m, opacité 0,85, 6 000 essais/s dans un rayon de 60 m, gouttelettes plus
+    denses à la naissance. Captures llvmpipe : réseau ajouré au premier plan, gerbes visibles derrière la
+    crête, rouleau blanc bosselé sous la pluie. À recontrôler sur GPU (risque : gerbes trop « fumée »).
+  - **Quatrième contrôle sur GPU réel (4b5e3ae)** : embruns enfin visibles (jets en éventail par beau temps,
+    brume fine sous la pluie), premier plan ajouré sous la pluie et en tempête. Restent : masse du rouleau lisse
+    et molle (« talus de neige »), mailles d'écume grandes, nettes et régulières (« taches de girafe »), surtout
+    par beau temps, brume d'embruns trop dense en tempête, embruns rares par beau temps, crête qui ne bascule pas.
+    Corrections : mailles de 45 et 18 cm (au lieu de 70 et 25), bords plus doux et plus irréguliers, veines
+    effacées par plaques ; bord de la masse du rouleau déchiqueté (bruit ±0,25 sur le seuil), bosses du
+    maillage 0,22 → 0,38 m ; embruns : même cadence par tous les temps (probabilité 0,6 × crête, 3 à 5 bouffées),
+    seule leur force dépend de la météo. À recontrôler sur GPU.
+
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

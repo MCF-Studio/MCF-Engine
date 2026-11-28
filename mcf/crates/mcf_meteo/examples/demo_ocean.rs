@@ -26,7 +26,7 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use mcf_meteo::ombre_nuages::TAILLE_OMBRE;
 use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
-    CarteRivage, ChangerMeteo, EclaboussuresPluie, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin,
+    CarteRivage, ChangerMeteo, EclaboussuresPluie, EmbrunsVagues, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin,
     McfOceanPlugin, McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, OmbreNuages,
     ParametresRivage, PresetMeteo, ReglagesOmbreNuages,
 };
@@ -118,6 +118,7 @@ fn scene(
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
         EclaboussuresPluie,
+        EmbrunsVagues,
     ));
     // Une bouée qui flotte grâce à `Ocean::hauteur`.
     commandes.spawn((

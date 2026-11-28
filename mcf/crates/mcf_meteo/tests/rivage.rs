@@ -121,6 +121,9 @@ fn echantillon(distance: f32, fond: f32) -> EchantillonRivage {
         fond,
         distance,
         normale: Vec2::Y,
+        // Comme sur un fond plat profond : célérité du large.
+        trajet: -distance / mcf_meteo::rivage::celerite_large(24.0),
+        fond_amont: fond,
     }
 }
 
@@ -134,7 +137,8 @@ fn vagues_bornees_par_le_deferlement() {
     };
     for distance in [-120.0, -80.0, -40.0, -10.0, -2.0] {
         let profondeur = -distance * 0.05;
-        let mut max = 0.0f32;
+        let mut haut = f32::MIN;
+        let mut bas = f32::MAX;
         let mut ecume = 0.0f32;
         for i in 0..200 {
             let t = i as f32 * 0.1;
@@ -145,14 +149,19 @@ fn vagues_bornees_par_le_deferlement() {
                 &b,
                 t,
             );
-            max = max.max(v.deplacement.y.abs());
+            haut = haut.max(v.deplacement.y);
+            bas = bas.min(v.deplacement.y);
             ecume = ecume.max(v.ecume);
+            // La face du rouleau se dresse mais ne se replie pas : pente finie.
+            assert!(v.pente.is_finite() && v.deplacement.is_finite());
         }
-        // McCowan : A ≤ 0,39 h (+ 3 cm).
+        // McCowan : hauteur crête à creux ≤ 0,78 h (+ 6 cm). La crête est pointue et le creux plat : la crête
+        // monte plus haut que le creux ne descend.
         assert!(
-            max <= 0.39 * profondeur.max(0.05) + 0.03 + 1e-4,
-            "d {distance} : {max}"
+            haut - bas <= 0.78 * profondeur.max(0.05) + 0.06 + 1e-4,
+            "d {distance} : {bas} à {haut}"
         );
+        assert!(haut >= -bas - 1e-4, "d {distance} : crête {haut}, creux {bas}");
         // Près du bord, la houle déferle (écume) ; au large non.
         if distance > -40.0 {
             assert!(ecume > 0.3, "d {distance} : écume {ecume}");
@@ -233,4 +242,77 @@ fn sable_mouille_selon_le_jet_de_rive() {
     assert!(tempete > calme, "calme {calme} m, tempête {tempete} m");
     // Bornée par le jet de rive réglé : pas de plage entière mouillée.
     assert!(tempete <= p.jet_de_rive + MARGE_SABLE_HUMIDE + 1e-6);
+}
+
+/// Plage raide : 1,5 m de fond à 8 m du bord, puis un plateau.
+fn plage_raide(_x: f32, z: f32) -> f32 {
+    (z * 0.19).max(-1.5)
+}
+
+#[test]
+fn les_vagues_ralentissent_en_arrivant() {
+    let g = GrilleRivage::construire(&plage_raide, Vec2::ZERO, 0.0, 1.0, 128);
+    // Le temps de trajet décroît jusqu'au rivage, et la vague met plus de temps par mètre près du bord.
+    let t = |z: f32| {
+        g.echantillonner(Vec2::new(0.0, z))
+            .expect("point dans la grille")
+            .trajet
+    };
+    let mut precedent = t(-50.0);
+    for z in [-40.0, -30.0, -20.0, -10.0, -5.0, -2.0] {
+        assert!(
+            t(z) < precedent && t(z) > 0.0,
+            "z = {z} : {} puis {}",
+            precedent,
+            t(z)
+        );
+        precedent = t(z);
+    }
+    let lenteur_bord = (t(-4.0) - t(-2.0)) / 2.0;
+    let lenteur_plateau = (t(-40.0) - t(-38.0)) / 2.0;
+    assert!(
+        lenteur_bord > lenteur_plateau * 1.3,
+        "{lenteur_bord} s/m au bord, {lenteur_plateau} s/m au plateau"
+    );
+    // Sur le plateau (1,5 m de fond) : célérité √(g h) = 3,84 m/s.
+    assert!(
+        (1.0 / lenteur_plateau - 3.84).abs() < 0.2,
+        "{} m/s",
+        1.0 / lenteur_plateau
+    );
+}
+
+#[test]
+fn la_vague_arrive_haute_sur_une_plage_raide() {
+    let g = GrilleRivage::construire(&plage_raide, Vec2::ZERO, 0.0, 1.0, 128);
+    let b = ParamsBord {
+        amplitude: 0.5,
+        longueur: 24.0,
+        jet: 0.0,
+        omega: 1.6,
+    };
+    // À 2 m du bord il reste 0,38 m d'eau : la borne locale de McCowan donnerait 0,3 m de creux à crête. La
+    // vague garde la hauteur que lui permettait le fond 4,8 m plus au large.
+    let p = Vec2::new(0.0, -2.0);
+    let e = g.echantillonner(p).expect("point dans la grille");
+    assert!(e.fond_amont < e.fond - 0.5, "{e:?}");
+    let (mut haut, mut bas) = (f32::MIN, f32::MAX);
+    for i in 0..200 {
+        let y = vagues_bord(p, &e, -e.fond, &b, i as f32 * 0.02).deplacement.y;
+        haut = haut.max(y);
+        bas = bas.min(y);
+    }
+    assert!(haut - bas > 0.6, "creux à crête {} m", haut - bas);
+    // Le creux ne découvre pas le fond.
+    assert!(bas > e.fond, "creux {bas} m, fond {} m", e.fond);
+    // À terre, plus de vague.
+    let terre = g
+        .echantillonner(Vec2::new(0.0, 3.0))
+        .expect("point dans la grille");
+    assert_eq!(
+        vagues_bord(Vec2::new(0.0, 3.0), &terre, -terre.fond, &b, 1.0)
+            .deplacement
+            .y,
+        0.0
+    );
 }

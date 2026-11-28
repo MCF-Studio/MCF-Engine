@@ -71,9 +71,10 @@ impl EtatMeteo {
         self.direction_vent() * self.vent_vitesse
     }
 
-    /// Exposition conseillée de la caméra (EV100) : 13 par beau temps, ouverte jusqu'à 1,8 diaphragme de plus
-    /// sous un ciel couvert, comme le fait l'œil ou un appareil photo. Sans cela, à exposition fixe de plein
-    /// soleil, tout ce qui est blanc sous les nuages (écume, neige) sort gris et le sable presque noir.
+    /// Exposition conseillée de la caméra (EV100) : 14 par beau temps (plein soleil : l'écume et le sable clair
+    /// ne doivent pas saturer), ouverte jusqu'à 2,4 diaphragmes de plus sous un ciel couvert, comme le fait l'œil
+    /// ou un appareil photo. À exposition fixe, tout ce qui est blanc sous les nuages (écume, neige) sort gris
+    /// et le sable presque noir, ou bien tout sature au soleil.
     pub fn exposition_ev100(&self) -> f32 {
         let couverture = if self.couverture_nuageuse.is_finite() {
             self.couverture_nuageuse
@@ -81,7 +82,7 @@ impl EtatMeteo {
             0.0
         };
         let c = ((couverture - 0.45) / 0.5).clamp(0.0, 1.0);
-        13.0 - 1.8 * c * c * (3.0 - 2.0 * c)
+        14.0 - 2.4 * c * c * (3.0 - 2.0 * c)
     }
 
     /// Part des précipitations qui tombe en neige, `[0, 1]` : 0 au-dessus de 1,5 °C, 1 en dessous de −1 °C.

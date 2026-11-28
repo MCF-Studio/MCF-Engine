@@ -32,6 +32,19 @@ use crate::rivage::{
 /// Matériau de l'océan : `StandardMaterial` (couleur de l'eau profonde, réflectance) + extension.
 pub type MateriauOcean = ExtendedMaterial<StandardMaterial, ExtensionOcean>;
 
+/// Luminance minimale de l'écume (cd/m²) : un blanc d'albédo 0,9 éclairé par le ciel seul, de 5 000 lux sous
+/// couverture totale à 25 000 lux par ciel dégagé (mêmes valeurs que les embruns).
+pub fn lueur_ecume(etat: &EtatMeteo) -> f32 {
+    let couverture = etat.couverture_nuageuse;
+    let degage = if couverture.is_finite() {
+        1.0 - couverture.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    // × 1,5, réglé à l'œil : à 1,0 l'écume restait gris-lilas sous la pluie (l'horizon clair éclaire aussi).
+    1.5 * 0.9 * (5_000.0 + 20_000.0 * degage) / std::f32::consts::PI
+}
+
 /// Réglages du maillage et de l'aspect.
 #[derive(Resource, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Resource, Default)]
@@ -40,7 +53,7 @@ pub struct ReglagesOcean {
     pub quads: u32,
     /// Rayon couvert autour de la caméra (m).
     pub rayon: f32,
-    /// Part linéaire de la répartition des sommets (le reste est cubique : dense au centre).
+    /// Part linéaire de la répartition des sommets (le reste est en puissance 5 : dense au centre).
     pub part_lineaire: f32,
     /// Intensité de l'écume.
     pub ecume: f32,
@@ -55,9 +68,9 @@ pub struct ReglagesOcean {
 impl Default for ReglagesOcean {
     fn default() -> Self {
         Self {
-            quads: 256,
+            quads: 512,
             rayon: 6000.0,
-            part_lineaire: 0.02,
+            part_lineaire: 0.03,
             ecume: 1.0,
             lod_proche: 50.0,
             lod_loin: 1500.0,
@@ -86,7 +99,8 @@ pub struct UniformesOcean {
     lod_loin: f32,
     /// Intensité de la pluie, `[0, 1]` : ronds d'impact près de la caméra, mer plus mate.
     pluie: f32,
-    remplissage2: f32,
+    /// Luminance minimale de l'écume (cd/m²), voir [`lueur_ecume`].
+    lueur_ecume: f32,
     /// Grille du rivage : origine x, origine z, côté (m), 1 si active.
     rivage: Vec4,
     /// Vagues de bord : amplitude (m), longueur d'onde (m), jet de rive (m), pulsation (rad/s).
@@ -173,6 +187,7 @@ impl Plugin for McfOceanPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "ocean.wesl");
         crate::charger_bruit_wesl(app);
+        crate::embruns::construire(app);
         app.add_plugins((MaterialPlugin::<MateriauOcean>::default(), McfOceanFftPlugin))
             .register_type::<ReglagesOcean>()
             .init_resource::<ReglagesOcean>()
@@ -199,7 +214,7 @@ fn creer_ocean(
     textures: Res<TexturesOcean>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let rivage = images.add(image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0]]));
+    let rivage = images.add(image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0], [0.0; 4]]));
     commandes.insert_resource(TextureRivage(rivage.clone()));
     let eau = StandardMaterial {
         // Eau profonde : presque noire, c'est le reflet du ciel qui la colore.
@@ -240,8 +255,9 @@ fn image_rivage(n: u32, donnees: Vec<[f32; 4]>) -> Image {
         .flat_map(|c| c.iter().flat_map(|v| v.to_le_bytes()))
         .collect();
     Image::new(
+        // Deux moitiés côte à côte, voir `GrilleRivage::donnees_gpu`.
         Extent3d {
-            width: n,
+            width: 2 * n,
             height: n,
             depth_or_array_layers: 1,
         },
@@ -312,7 +328,7 @@ fn mettre_a_jour_rivage(
     };
     let image = match carte.grille() {
         Some(g) => image_rivage(g.n(), g.donnees_gpu()),
-        None => image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0]]),
+        None => image_rivage(1, vec![[0.0, -LOIN, 0.0, 0.0], [0.0; 4]]),
     };
     if let Some(mut i) = images.get_mut(&texture.0) {
         *i = image;
@@ -350,7 +366,7 @@ pub fn calculer_uniformes(
         lod_proche: reglages.lod_proche,
         lod_loin: reglages.lod_loin,
         pluie: etat.pluie().clamp(0.0, 1.0),
-        remplissage2: 0.0,
+        lueur_ecume: lueur_ecume(etat),
         rivage: grille,
         bord: Vec4::new(b.amplitude, b.longueur, b.jet, b.omega),
         couleur_fond: Vec4::new(fond.red, fond.green, fond.blue, 1.0),

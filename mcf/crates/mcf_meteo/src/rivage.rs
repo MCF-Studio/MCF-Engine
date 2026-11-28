@@ -109,6 +109,11 @@ pub struct EchantillonRivage {
     pub distance: f32,
     /// Normale horizontale du rivage, orientée vers la terre.
     pub normale: Vec2,
+    /// Temps (s) que met une vague de bord pour aller de ce point au rivage (négatif à terre).
+    pub trajet: f32,
+    /// Hauteur du sol (m) un peu plus au large ([`PART_AMONT`] × la longueur d'onde, vers la mer) : la vague
+    /// qui arrive ici a encore la hauteur que cette profondeur-là lui permettait.
+    pub fond_amont: f32,
 }
 
 /// Grille du fond autour d'un centre.
@@ -121,6 +126,123 @@ pub struct GrilleRivage {
     fond: Vec<f32>,
     distance: Vec<f32>,
     normale: Vec<Vec2>,
+    trajet: Vec<f32>,
+    amont: Vec<f32>,
+}
+
+/// Distance vers le large, en part de la longueur d'onde, où l'on lit la profondeur qui borne la hauteur de la
+/// vague. Une vague ne perd pas sa hauteur à l'instant où le fond remonte : sur une plage raide elle arrive
+/// encore haute au bord et s'y écrase (« shore break »).
+pub const PART_AMONT: f32 = 0.2;
+
+/// Longueur d'onde des vagues de bord par défaut (m), voir [`ParametresRivage::longueur_onde`].
+pub const LONGUEUR_ONDE_DEFAUT: f32 = 24.0;
+/// Profondeur minimale (m) pour la célérité des vagues : en dessous, l'eau n'est plus qu'une lame sur le sable.
+pub const PROFONDEUR_MIN_CELERITE: f32 = 0.15;
+
+/// Célérité au large (m/s) d'une vague de longueur d'onde `longueur` (dispersion en eau profonde).
+pub fn celerite_large(longueur: f32) -> f32 {
+    let l = if longueur.is_finite() {
+        longueur.max(1.0)
+    } else {
+        LONGUEUR_ONDE_DEFAUT
+    };
+    ops::sqrt(G * l / std::f32::consts::TAU)
+}
+
+/// Célérité (m/s) d'une vague de bord par `profondeur` mètres de fond : en eau peu profonde elle ne dépend que
+/// de la profondeur (√(g h)) ; elle ne dépasse pas sa célérité au large. C'est ce ralentissement qui resserre
+/// les vagues et les dresse avant qu'elles cassent.
+pub fn celerite(profondeur: f32, longueur: f32) -> f32 {
+    ops::sqrt(G * profondeur.max(PROFONDEUR_MIN_CELERITE)).min(celerite_large(longueur))
+}
+
+/// Temps de trajet (s) d'une vague de chaque case de mer jusqu'au rivage : équation eikonale |∇τ| = 1/c résolue
+/// par marche rapide (Sethian) depuis les cases de mer qui touchent la terre. À terre, le temps est négatif
+/// (prolongement à la célérité du large), pour que la phase reste continue au bord. `inverse_c` : 1/c par case.
+fn temps_de_trajet(
+    distance: &[f32],
+    terre: &[bool],
+    inverse_c: &[f32],
+    n: usize,
+    cellule: f32,
+    c0: f32,
+) -> Vec<f32> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    #[derive(PartialEq)]
+    struct Cle(f32);
+    impl Eq for Cle {}
+    impl PartialOrd for Cle {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for Cle {
+        fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+            self.0.total_cmp(&o.0)
+        }
+    }
+    let mut tau = vec![f32::INFINITY; n * n];
+    let mut fige = vec![false; n * n];
+    let mut tas = BinaryHeap::new();
+    let voisins = |i: usize| {
+        let (x, y) = (i % n, i / n);
+        [
+            (x > 0).then(|| i - 1),
+            (x + 1 < n).then(|| i + 1),
+            (y > 0).then(|| i - n),
+            (y + 1 < n).then(|| i + n),
+        ]
+    };
+    for i in 0..n * n {
+        if !terre[i] && voisins(i).into_iter().flatten().any(|j| terre[j]) {
+            tau[i] = (-distance[i]).max(0.0) * inverse_c[i];
+            tas.push(Reverse((Cle(tau[i]), i)));
+        }
+    }
+    while let Some(Reverse((Cle(t), i))) = tas.pop() {
+        if fige[i] || t > tau[i] {
+            continue;
+        }
+        fige[i] = true;
+        for j in voisins(i).into_iter().flatten() {
+            if terre[j] || fige[j] {
+                continue;
+            }
+            let v = voisins(j);
+            let pris = |k: Option<usize>| k.filter(|&k| !terre[k]).map_or(f32::INFINITY, |k| tau[k]);
+            let a = pris(v[0]).min(pris(v[1]));
+            let b = pris(v[2]).min(pris(v[3]));
+            let f = cellule * inverse_c[j];
+            let (petit, grand) = if a < b { (a, b) } else { (b, a) };
+            let nouveau = if grand - petit >= f {
+                petit + f
+            } else {
+                0.5 * (a + b + ops::sqrt(2.0 * f * f - (a - b) * (a - b)))
+            };
+            if nouveau < tau[j] {
+                tau[j] = nouveau;
+                tas.push(Reverse((Cle(nouveau), j)));
+            }
+        }
+    }
+    (0..n * n)
+        .map(|i| {
+            if terre[i] {
+                // À terre : comme si la vague continuait à la célérité du large.
+                if distance[i].abs() < LOIN_DU_RIVAGE * 0.5 {
+                    -distance[i] / c0
+                } else {
+                    0.0
+                }
+            } else if tau[i].is_finite() {
+                tau[i]
+            } else {
+                0.0
+            }
+        })
+        .collect()
 }
 
 const TRES_LOIN: f64 = 1e9;
@@ -200,13 +322,27 @@ impl GrilleRivage {
         (centre / pas).round() * pas - Vec2::splat(taille * 0.5)
     }
 
-    /// Construit la grille : fond aux centres des cases, distance signée et normale du rivage au niveau `niveau`.
+    /// Construit la grille pour des vagues de longueur d'onde [`LONGUEUR_ONDE_DEFAUT`], voir
+    /// [`GrilleRivage::construire_pour`].
     pub fn construire(
         fond: &dyn Fn(f32, f32) -> f32,
         centre: Vec2,
         niveau: f32,
         cellule: f32,
         n: u32,
+    ) -> Self {
+        Self::construire_pour(fond, centre, niveau, cellule, n, LONGUEUR_ONDE_DEFAUT)
+    }
+
+    /// Construit la grille : fond aux centres des cases, distance signée et normale du rivage au niveau `niveau`,
+    /// temps de trajet jusqu'au rivage des vagues de bord de longueur d'onde `longueur` au large.
+    pub fn construire_pour(
+        fond: &dyn Fn(f32, f32) -> f32,
+        centre: Vec2,
+        niveau: f32,
+        cellule: f32,
+        n: u32,
+        longueur: f32,
     ) -> Self {
         let cellule = if cellule.is_finite() {
             cellule.max(0.1)
@@ -253,6 +389,26 @@ impl GrilleRivage {
                 normale.push(Vec2::new(gx, gz).normalize_or_zero());
             }
         }
+        let c0 = celerite_large(longueur);
+        let inverse_c: Vec<f32> = h.iter().map(|&v| 1.0 / celerite(niveau - v, longueur)).collect();
+        let trajet = temps_de_trajet(&distance, &terre, &inverse_c, nu, cellule, c0);
+        // Fond lu vers le large, le long de la normale (bilinéaire, borné à la grille).
+        let recul = PART_AMONT * longueur.max(1.0) / cellule;
+        let max = (nu - 1) as f32;
+        let mut amont = Vec::with_capacity(nu * nu);
+        for y in 0..nu {
+            for x in 0..nu {
+                let q = (Vec2::new(x as f32, y as f32) - normale[y * nu + x] * recul)
+                    .clamp(Vec2::ZERO, Vec2::splat(max));
+                let i0 = q.floor();
+                let t = q - i0;
+                let (x0, y0) = (i0.x as usize, i0.y as usize);
+                let (x1, y1) = ((x0 + 1).min(nu - 1), (y0 + 1).min(nu - 1));
+                let a = h[y0 * nu + x0] + (h[y0 * nu + x1] - h[y0 * nu + x0]) * t.x;
+                let b = h[y1 * nu + x0] + (h[y1 * nu + x1] - h[y1 * nu + x0]) * t.x;
+                amont.push(a + (b - a) * t.y);
+            }
+        }
         Self {
             origine,
             cellule,
@@ -261,6 +417,8 @@ impl GrilleRivage {
             fond: h,
             distance,
             normale,
+            trajet,
+            amont,
         }
     }
 
@@ -284,18 +442,26 @@ impl GrilleRivage {
         self.niveau
     }
 
-    /// Données par case pour le GPU : (fond, distance, normale.x, normale.z), ligne par ligne depuis −Z.
+    /// Données pour le GPU : une image de `2n × n` texels, ligne par ligne depuis −Z. Moitié gauche : (fond,
+    /// distance, normale.x, normale.z) ; moitié droite : (temps de trajet, fond en amont, 0, 0).
     pub fn donnees_gpu(&self) -> Vec<[f32; 4]> {
-        (0..self.fond.len())
-            .map(|i| {
-                [
+        let nu = self.n as usize;
+        let mut donnees = Vec::with_capacity(2 * nu * nu);
+        for y in 0..nu {
+            for x in 0..nu {
+                let i = y * nu + x;
+                donnees.push([
                     self.fond[i],
                     self.distance[i],
                     self.normale[i].x,
                     self.normale[i].y,
-                ]
-            })
-            .collect()
+                ]);
+            }
+            for x in 0..nu {
+                donnees.push([self.trajet[y * nu + x], self.amont[y * nu + x], 0.0, 0.0]);
+            }
+        }
+        donnees
     }
 
     /// Échantillon bilinéaire en (x, z), `None` hors de la grille.
@@ -326,6 +492,8 @@ impl GrilleRivage {
             fond: bil(&self.fond),
             distance: bil(&self.distance),
             normale: n,
+            trajet: bil(&self.trajet),
+            fond_amont: bil(&self.amont),
         })
     }
 }
@@ -343,12 +511,21 @@ pub struct DemandeGrille {
     pub cellule: f32,
     /// Cases par côté.
     pub n: u32,
+    /// Longueur d'onde des vagues de bord au large (m).
+    pub longueur: f32,
 }
 
 impl DemandeGrille {
     /// Construit la grille demandée (coûteux : à faire hors de l'image si possible).
     pub fn construire(&self, fond: &dyn Fn(f32, f32) -> f32) -> GrilleRivage {
-        GrilleRivage::construire(fond, self.centre, self.niveau, self.cellule, self.n)
+        GrilleRivage::construire_pour(
+            fond,
+            self.centre,
+            self.niveau,
+            self.cellule,
+            self.n,
+            self.longueur,
+        )
     }
 
     /// Vrai si la grille `g` répond à cette demande.
@@ -426,6 +603,7 @@ impl CarteRivage {
             niveau,
             cellule,
             n,
+            longueur: p.longueur_onde,
         };
         let a_jour = self.grille.as_ref().is_some_and(|g| d.correspond(g));
         (forcer || !a_jour).then_some(d)
@@ -456,6 +634,8 @@ pub struct InfoBord {
     pub pente: Vec2,
     /// Écume de déferlement (0..1).
     pub ecume: f32,
+    /// Crête en train de déferler (0..1) : là où naissent les embruns.
+    pub crete: f32,
 }
 
 /// Ondulation des crêtes le long du rivage (rad), même bruit que le shader.
@@ -463,10 +643,10 @@ pub fn ondulation_crete(p: Vec2) -> f32 {
     perlin3(Vec3::new(p.x * 0.015, 1.3, p.y * 0.015), 0) * 4.0
 }
 
-/// Phase des vagues de bord : les crêtes avancent vers la terre (distance signée croissante).
-pub fn phase_bord(p: Vec2, distance: f32, b: &ParamsBord, t: f32) -> f32 {
-    let k = std::f32::consts::TAU / b.longueur.max(1.0);
-    k * distance + ondulation_crete(p) - b.omega * t
+/// Phase des vagues de bord : les crêtes avancent vers la terre. `trajet` : temps (s) qu'il reste à la vague
+/// pour atteindre le rivage ([`EchantillonRivage::trajet`]) ; une crête garde une phase constante.
+pub fn phase_bord(p: Vec2, trajet: f32, b: &ParamsBord, t: f32) -> f32 {
+    -b.omega * trajet + ondulation_crete(p) - b.omega * t
 }
 
 fn lisse(a: f32, b: f32, x: f32) -> f32 {
@@ -482,33 +662,56 @@ pub fn vagues_bord(p: Vec2, e: &EchantillonRivage, profondeur: f32, b: &ParamsBo
         return InfoBord::default();
     }
     let n = e.normale;
-    let k = std::f32::consts::TAU / b.longueur.max(1.0);
-    let th = phase_bord(p, d, b, t);
+    // Nombre d'onde local : la vague ralentit et se resserre quand le fond remonte.
+    let k = b.omega / celerite(profondeur, b.longueur);
+    let th = phase_bord(p, e.trajet, b, t);
     let h = profondeur.max(0.05);
     // Levée de la houle (loi de Green), bornée.
     let mut a = b.amplitude * ops::powf(4.0 / h, 0.25).clamp(0.6, 1.7);
     // Limite de déferlement (McCowan : H/h = 0,78).
     let a_max = 0.39 * h + 0.03;
     let deferlement = ((a / a_max - 0.7) * 3.0).clamp(0.0, 1.0);
-    a = a.min(a_max) * enveloppe;
-    // La crête se penche vers la plage en eau peu profonde.
-    let q = 0.35 + (0.95 - 0.35) * (1.0 - h / 3.0).clamp(0.0, 1.0);
+    // La hauteur est bornée par la profondeur un peu plus au large (la vague garde son élan), puis la vague
+    // s'écrase sur les 30 derniers centimètres d'eau.
+    let h_amont = h.max(profondeur + e.fond - e.fond_amont);
+    // Hauteur inégale le long de la crête : la vague casse par sections, pas d'un bloc.
+    let section = 0.85 + 0.15 * perlin3(Vec3::new(p.x * 0.07, 7.1, p.y * 0.07), 0);
+    a = a.min(0.39 * h_amont + 0.03) * section * lisse(0.0, 0.3, profondeur) * enveloppe;
+    // Rouleau : crête pointue et creux plat en eau peu profonde, face dressée vers la plage quand la vague
+    // déferle (mêmes formules que `vagues_bord` dans `ocean.wesl`, sans le bouillonnement de l'écume).
+    let raide = (1.0 - h / 3.0).clamp(0.0, 1.0);
+    let q = 0.35 + (0.95 - 0.35) * raide;
     let (s, c) = ops::sin_cos(th);
-    let horizontal = -n * (q * a * s);
-    let mut deplacement = Vec3::new(horizontal.x, a * c, horizontal.y);
-    let pente = n * (-a * k * s);
+    let n_p = 1.0 + 3.0 * raide;
+    let base = 0.5 + 0.5 * c;
+    let pc = ops::powf(base, n_p);
+    let dpc = -0.5 * n_p * ops::powf(base, n_p - 1.0) * s;
+    let moyenne2 = ops::powf(n_p, -0.44);
+    let avancee = 0.55 * deferlement * raide * (a / 0.25).clamp(0.0, 1.0) / (k * 0.89);
+    let horizontal = n * (avancee * pc - q * a * s);
+    let mut deplacement = Vec3::new(horizontal.x, a * (2.0 * pc - moyenne2), horizontal.y);
+    let etirement = (1.0 + k * (avancee * dpc - q * a * c)).max(0.12);
+    let pente = n * (2.0 * a * k * dpc / etirement);
     // Jet de rive : tout le bord monte et descend au rythme des vagues qui arrivent.
     let th_rive = phase_bord(p, 0.0, b, t);
     let ressac = ops::powf((0.5 + 0.5 * ops::cos(th_rive)).clamp(0.0, 1.0), 1.5);
     deplacement.y += b.jet * ressac * lisse(-70.0, -20.0, d);
-    // Écume : sur la crête qui déferle, puis une traînée qui s'efface derrière elle.
+    // Écume : la crête qui déferle, la face avant du rouleau, puis une traînée qui s'efface derrière.
     let crete = ops::powf(c.clamp(0.0, 1.0), 6.0);
+    let face = if s >= 0.0 {
+        let ecrase = 1.0 - lisse(0.35, 1.0, profondeur);
+        lisse(0.3 - 0.28 * ecrase, 0.62 - 0.42 * ecrase, pc) * deferlement
+    } else {
+        0.0
+    };
     let derriere = (-th / std::f32::consts::TAU).rem_euclid(1.0);
-    let trainee = ops::exp(-derriere * 5.0);
+    let trainee = ops::exp(-derriere * 7.0);
     InfoBord {
         deplacement,
         pente,
-        ecume: deferlement * crete.max(trainee * 0.85) * enveloppe,
+        ecume: deferlement * crete.max(face).max(trainee * 0.8) * enveloppe,
+        // Comme la masse d'écume du shader : seulement là où la vague a encore de la hauteur.
+        crete: deferlement * crete * enveloppe * lisse(0.1, 0.3, a),
     }
 }
 
