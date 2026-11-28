@@ -132,3 +132,32 @@ Constats :
   (colonnes `focus` et `masquee` de `frames.csv`, totaux `images_sans_focus` et `images_fenetre_masquee` du
   résumé) : à la prochaine mesure, on saura si ces blocs coïncident avec une perte de focus.
 - Pire image de base : 110 ms (une seule au-dessus de 33 ms), probablement au début de la mesure.
+
+### 2026-11-28 (2) — module météo, fenêtre au premier plan vérifiée
+
+- Branche `bench/focus-fenetre` (commit `a2984b47b`, même code de rendu que la mesure précédente ; le banc note
+  en plus le focus de la fenêtre). Même machine, mêmes réglages. `images_sans_focus = 0` et
+  `images_fenetre_masquee = 0` pour les 4 lignes.
+
+| Variante | Images | FPS moyen | FPS 1 % low | ms moyen | ms p50 | ms p99 | ms pire | GPU moyen | GPU p99 | GPU pic |
+|---|---|---|---|---|---|---|---|---|---|---|
+| base | 21 818 | 545,4 | 350,9 | 1,833 | 1,715 | 2,694 | 3,343 | 1,431 | 1,973 | 2,580 |
+| ocean | 18 268 | 456,7 | 140,2 | 2,190 | 2,014 | 4,382 | 16,614 | 1,721 | 3,432 | 4,878 |
+| nuages | 13 988 | 349,7 | 124,9 | 2,860 | 2,691 | 4,997 | 16,767 | 2,285 | 3,961 | 5,200 |
+| complet | 13 661 | 341,5 | 118,6 | 2,928 | 2,756 | 5,125 | 16,496 | 2,333 | 4,063 | 5,498 |
+
+Passes rejetées : un passage nuages entièrement sans focus (2 401 images sur 2 401, 60,0 FPS pile), un autre qui
+perd le focus à 6 s (117 FPS). Le passage gardé est le troisième (06:59 UTC).
+
+Constats :
+- **Les blocs calés à 60 Hz de la première mesure venaient de la perte de focus** : 100 % des images du passage
+  rejeté sont à `focus = 0`, aucune n'est « masquée ». Fenêtre au premier plan, base n'a plus aucune image
+  au-dessus de 10 ms. Les FPS de la première mesure sont à oublier ; ses temps GPU étaient justes.
+- Coût GPU moyen par rapport à la base : océan +0,29 ms, nuages (avec l'océan) +0,85 ms, complet +0,90 ms.
+- **À-coup réel, variantes avec océan** : 44 à 45 images de 13 à 16,6 ms, focus présent, GPU à 1,6–2,5 ms, aux
+  mêmes instants dans ocean, nuages et complet (7,02 / 9,23 / 10,77 / 12,08 s…), aucune dans base. Cause : la
+  reconstruction de la grille du rivage, faite dans l'image à chaque quart de grille (128 m) parcouru par la
+  caméra. Le parcours du banc rejoué hors rendu donne 45 reconstructions aux mêmes instants (7,00 / 9,21 /
+  10,75 / 12,06 s…), 17,5 à 23,6 ms chacune sur la machine de développement (le fond du banc appelle un bruit de
+  Perlin par case ; l'étape 6 annonçait 2,8 ms pour un fond simple). Corrigé à l'étape 19 de `meteo.md`
+  (construction en tâche de fond) : **à remesurer**.

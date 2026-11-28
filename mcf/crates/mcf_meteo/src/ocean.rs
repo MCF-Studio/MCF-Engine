@@ -18,12 +18,16 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderType};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::shader::ShaderRef;
+use bevy::tasks::futures::check_ready;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use crate::MiseAJourMeteo;
 use crate::etat::EtatMeteo;
 use crate::houle::Ocean;
 use crate::ocean_fft::{McfOceanFftPlugin, ReglagesFft, TexturesOcean};
-use crate::rivage::{CarteRivage, ParametresRivage, SourceFond, amplitude_houle, params_bord};
+use crate::rivage::{
+    CarteRivage, DemandeGrille, GrilleRivage, ParametresRivage, SourceFond, amplitude_houle, params_bord,
+};
 
 /// Matériau de l'océan : `StandardMaterial` (couleur de l'eau profonde, réflectance) + extension.
 pub type MateriauOcean = ExtendedMaterial<StandardMaterial, ExtensionOcean>;
@@ -171,6 +175,7 @@ impl Plugin for McfOceanPlugin {
         app.add_plugins((MaterialPlugin::<MateriauOcean>::default(), McfOceanFftPlugin))
             .register_type::<ReglagesOcean>()
             .init_resource::<ReglagesOcean>()
+            .init_resource::<ConstructionRivage>()
             .add_systems(Startup, creer_ocean)
             .add_systems(
                 Update,
@@ -246,7 +251,16 @@ fn image_rivage(n: u32, donnees: Vec<[f32; 4]>) -> Image {
     )
 }
 
+/// Grille du rivage en cours de construction en tâche de fond.
+#[derive(Resource, Default)]
+struct ConstructionRivage(Option<(DemandeGrille, Task<GrilleRivage>)>);
+
 /// Suit la caméra (la première `Camera3d`) et renvoie la grille au GPU quand elle est reconstruite.
+///
+/// Une reconstruction coûte ~15 ms (256 × 256 appels au fond + transformée de distance) : faite dans l'image,
+/// elle faisait un à-coup tous les 128 m de caméra (mesuré au banc, RTX 3070). Elle tourne maintenant en tâche
+/// de fond ; l'ancienne grille, qui couvre encore la caméra (décalage d'un quart de grille), reste en place
+/// jusqu'à la fin. Première grille et changement de source ou de réglages : construites tout de suite.
 fn mettre_a_jour_rivage(
     source: Option<Res<SourceFond>>,
     parametres: Res<ParametresRivage>,
@@ -254,6 +268,7 @@ fn mettre_a_jour_rivage(
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     texture: Option<Res<TextureRivage>>,
     mut carte: ResMut<CarteRivage>,
+    mut construction: ResMut<ConstructionRivage>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let centre = cameras
@@ -262,7 +277,33 @@ fn mettre_a_jour_rivage(
         .map(|t| t.translation().xz())
         .unwrap_or(Vec2::ZERO);
     let forcer = source.as_ref().is_some_and(|s| s.is_changed()) || parametres.is_changed();
-    if !carte.mettre_a_jour(source.as_deref(), centre, ocean.niveau, &parametres, forcer) {
+    let mut change = false;
+    match source.as_deref() {
+        None => {
+            construction.0 = None;
+            change = carte.installer(None);
+        }
+        Some(source) => {
+            if let Some((_, tache)) = construction.0.as_mut()
+                && let Some(g) = check_ready(tache)
+            {
+                construction.0 = None;
+                change |= carte.installer(Some(g));
+            }
+            if let Some(d) = carte.demande(centre, ocean.niveau, &parametres, forcer) {
+                if forcer || carte.grille().is_none() {
+                    construction.0 = None;
+                    change |= carte.installer(Some(d.construire(source.0.as_ref())));
+                } else if !construction.0.as_ref().is_some_and(|(e, _)| e.meme_grille(&d)) {
+                    // Nouvelle demande (la précédente, périmée, est abandonnée).
+                    let fond = source.0.clone();
+                    let tache = AsyncComputeTaskPool::get().spawn(async move { d.construire(fond.as_ref()) });
+                    construction.0 = Some((d, tache));
+                }
+            }
+        }
+    }
+    if !change {
         return;
     }
     let Some(texture) = texture else {
@@ -330,5 +371,58 @@ fn mettre_a_jour_ocean(
         if let Some(mut mat) = materiaux.get_mut(&m.0) {
             mat.extension.uniformes = u;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// La première grille est construite tout de suite ; quand la caméra s'éloigne, l'ancienne reste en place
+    /// pendant que la nouvelle se construit en tâche de fond, puis elle est remplacée.
+    #[test]
+    fn rivage_reconstruit_en_tache_de_fond() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Image>()
+            .insert_resource(SourceFond::new(|x, _| x * 0.05))
+            .insert_resource(ParametresRivage {
+                taille: 64,
+                ..default()
+            })
+            .init_resource::<Ocean>()
+            .init_resource::<CarteRivage>()
+            .init_resource::<ConstructionRivage>()
+            .add_systems(Update, mettre_a_jour_rivage);
+        let camera = app
+            .world_mut()
+            .spawn((Camera3d::default(), GlobalTransform::IDENTITY))
+            .id();
+        app.update();
+        let carte = app.world().resource::<CarteRivage>();
+        let o0 = carte.grille().expect("première grille tout de suite").origine();
+        let g0 = carte.generation();
+
+        app.world_mut()
+            .entity_mut(camera)
+            .insert(GlobalTransform::from_translation(Vec3::new(300.0, 0.0, 0.0)));
+        app.update();
+        let mut images = 1;
+        loop {
+            let carte = app.world().resource::<CarteRivage>();
+            if carte.generation() != g0 {
+                break;
+            }
+            // Ancienne grille gardée en attendant.
+            assert_eq!(carte.grille().expect("grille gardée").origine(), o0);
+            assert!(images < 500, "grille jamais reconstruite");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            app.update();
+            images += 1;
+        }
+        let carte = app.world().resource::<CarteRivage>();
+        assert_eq!(carte.generation(), g0 + 1);
+        assert!(carte.echantillonner(Vec2::new(300.0, 0.0)).is_some());
+        assert!(app.world().resource::<ConstructionRivage>().0.is_none());
     }
 }

@@ -251,6 +251,15 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   image 210 / 208 contre 197 / 202 ms. Captures : bords de la bouée lissés, nuages identiques à l'œil.
   Attention pour comparer avec les mesures précédentes : avant cette étape, les variantes `nuages` et `complet`
   du banc tournaient sans MSAA (coupé par les nuages), `base` et `ocean` avec.
+- ✅ Étape 19 : grille du rivage reconstruite en tâche de fond. Mesure sur RTX 3070 (`bancs-essai.md`,
+  2026-11-28 (2)) : 45 images de 13 à 16,6 ms en 40 s dans toutes les variantes avec océan, une à chaque
+  reconstruction de la grille (256 × 256 appels au fond + transformée de distance, dans l'image). Le rendu
+  demande maintenant la grille (`CarteRivage::demande`), la construit sur l'`AsyncComputeTaskPool` et garde
+  l'ancienne, qui couvre encore la caméra, jusqu'à la fin (`CarteRivage::installer`). Première grille et
+  changement de source ou de réglages : toujours construites tout de suite. `CarteRivage::mettre_a_jour`
+  (calcul sur place) est inchangé pour le serveur et les tests. 1 test. **Effet non encore mesuré sur vrai GPU.**
+  Limite : à plus de ~100 m/s près d'une côte, la nouvelle grille arrive une ou deux images après le passage
+  du quart de grille (sans effet visible attendu : l'ancienne couvre encore 128 m de marge).
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
