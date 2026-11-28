@@ -90,7 +90,8 @@ conclusion.
 | Variante | Images | FPS moyen | FPS 1 % low | ms moyen | ms p50 | ms p99 | ms pire | GPU moyen | GPU p99 | GPU pic |
 |---|---|---|---|---|---|---|---|---|---|---|
 | base | 19 819 | 495,5 | 57,5 | 2,018 | 1,677 | 16,469 | 110,573 | 1,409 | 2,336 | 6,921 |
-| ocean | 2 655 | 66,4 | 31,8 | 15,066 | 16,585 | 30,921 | 32,526 | 2,954 | 6,614 | 7,520 |
+| ocean (1er passage, faussé) | 2 655 | 66,4 | 31,8 | 15,066 | 16,585 | 30,921 | 32,526 | 2,954 | 6,614 | 7,520 |
+| ocean (relance) | 14 407 | 360,2 | 52,4 | 2,776 | 1,941 | 16,962 | 32,285 | 1,738 | 5,276 | 8,264 |
 | nuages | 9 696 | 242,3 | 48,2 | 4,127 | 2,689 | 17,097 | 31,870 | 2,355 | 5,061 | 8,481 |
 | complet | 10 818 | 270,4 | 56,2 | 3,698 | 2,734 | 17,032 | 31,660 | 2,416 | 4,600 | 9,176 |
 
@@ -115,10 +116,11 @@ Constats :
   budget de 4 ms. Le filtrage de la carte d'environnement par Bevy (0,76 ms) coûte presque autant que tout le
   module.
 - Les mesures sur llvmpipe (étapes 9 à 18) étaient 50 à 100 fois plus lentes et ne disent rien du coût réel.
-- **Anomalie, variante ocean** : 66 FPS, p50 à 16,6 ms (cadence de 60 Hz) alors que le GPU ne travaille que
-  2,95 ms par image, et que les variantes nuages et complet, plus lourdes, tournent à 240–270 FPS. Ce n'est pas
-  le coût de l'océan ; cause probable : fenêtre non au premier plan ou cadence imposée pendant ce passage. À
-  relancer.
-- Toutes les variantes, base comprise, ont un p99 vers 16–17 ms et un 1 % low de 48–57 FPS : des images
+- **Variante ocean, 1er passage faussé** : 66 FPS, p50 à 16,6 ms (cadence de 60 Hz) pour 2,95 ms de GPU.
+  Relancée seule à 06:20 UTC, fenêtre au premier plan sans y toucher : **360 FPS**, p50 1,94 ms, GPU 1,74 ms.
+  Le premier passage était donc un accident de mesure (cause exacte non établie : focus de la fenêtre le plus
+  probable). L'océan coûte ~0,33 ms GPU de plus que la base (1,74 contre 1,41 ms en moyenne). On garde la ligne
+  faussée dans le tableau pour la traçabilité.
+- Toutes les variantes, base et relance ocean comprises, ont un p99 vers 16–17 ms et un 1 % low de 48–57 FPS : des images
   ponctuelles à la cadence de 60 Hz, indépendantes du module météo. À comprendre (présentation Windows ?).
 - Pire image de base : 110 ms (une seule au-dessus de 33 ms), probablement au début de la mesure.
