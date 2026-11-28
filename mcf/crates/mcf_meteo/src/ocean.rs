@@ -33,6 +33,19 @@ use crate::rivage::{
 pub type MateriauOcean = ExtendedMaterial<StandardMaterial, ExtensionOcean>;
 
 /// Réglages du maillage et de l'aspect.
+/// Luminance minimale de l'écume (cd/m²) : un blanc d'albédo 0,9 éclairé par le ciel seul, de 5 000 lux sous
+/// couverture totale à 25 000 lux par ciel dégagé (mêmes valeurs que les embruns).
+pub fn lueur_ecume(etat: &EtatMeteo) -> f32 {
+    let couverture = etat.couverture_nuageuse;
+    let degage = if couverture.is_finite() {
+        1.0 - couverture.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    // × 1,5, réglé à l'œil : à 1,0 l'écume restait gris-lilas sous la pluie (l'horizon clair éclaire aussi).
+    1.5 * 0.9 * (5_000.0 + 20_000.0 * degage) / std::f32::consts::PI
+}
+
 #[derive(Resource, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Resource, Default)]
 pub struct ReglagesOcean {
@@ -86,7 +99,8 @@ pub struct UniformesOcean {
     lod_loin: f32,
     /// Intensité de la pluie, `[0, 1]` : ronds d'impact près de la caméra, mer plus mate.
     pluie: f32,
-    remplissage2: f32,
+    /// Luminance minimale de l'écume (cd/m²), voir [`lueur_ecume`].
+    lueur_ecume: f32,
     /// Grille du rivage : origine x, origine z, côté (m), 1 si active.
     rivage: Vec4,
     /// Vagues de bord : amplitude (m), longueur d'onde (m), jet de rive (m), pulsation (rad/s).
@@ -352,7 +366,7 @@ pub fn calculer_uniformes(
         lod_proche: reglages.lod_proche,
         lod_loin: reglages.lod_loin,
         pluie: etat.pluie().clamp(0.0, 1.0),
-        remplissage2: 0.0,
+        lueur_ecume: lueur_ecume(etat),
         rivage: grille,
         bord: Vec4::new(b.amplitude, b.longueur, b.jet, b.omega),
         couleur_fond: Vec4::new(fond.red, fond.green, fond.blue, 1.0),

@@ -264,7 +264,8 @@ fn capture(mut commandes: Commands, mut images: Local<u32>, mut sortie: MessageW
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(chemin));
     }
-    if *images == cible + 20 {
+    // Marge large : sur une vraie carte, 20 images ne laissaient pas le temps d'écrire le fichier (PNG vide).
+    if *images == cible + 90 {
         sortie.write(AppExit::Success);
     }
 }

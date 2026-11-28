@@ -399,6 +399,15 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
     Captures llvmpipe, beau temps : mur sombre d'environ 1 m avec crête blanche bosselée, visible. Tempête : mur
     vert de 2 m visible, mais l'écume reste grise et se distingue mal. **Coût non mesuré** (maillage ×4, 8
     lectures de texture en plus par sommet et par pixel près du bord). 95 tests.
+  - **Deuxième contrôle sur GPU réel (7e72122, vue de face)** : mur d'eau visible dans les trois météos (le
+    progrès attendu), mais écume du rouleau en « peau de vache » (taches bleues et blanches), aucun embrun
+    visible, nappe du premier plan trop pleine avec des trous à bords nets, écume grise sous la pluie et en
+    tempête, crête qui ne bascule pas, 5 captures sur 9 vides (la démo quittait avant la fin de l'écriture).
+    Corrections : bosses de la masse d'écume adoucies (0,45 → 0,25) ; luminance minimale de l'écume
+    (`lueur_ecume`, ciel seul, 5 000 à 25 000 lux × 1,5 réglé à l'œil) ; nappe mince plafonnée à 0,52 de
+    couverture, bords des trous deux fois plus doux ; embruns : 3 à 9 bouffées par point (au lieu de 1 à 3),
+    jets de 1,6 à 4,2 m/s quelle que soit la météo ; capture : 90 images de marge avant de quitter.
+    **La crête ne bascule toujours pas** (le maillage ne se replie pas) : limite connue. À recontrôler sur GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

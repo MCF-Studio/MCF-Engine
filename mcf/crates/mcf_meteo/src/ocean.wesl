@@ -40,7 +40,7 @@ struct ExtensionOcean {
     lod_proche: f32,
     lod_loin: f32,
     pluie: f32,          // intensité de la pluie [0, 1]
-    _r2: f32,
+    lueur_ecume: f32,    // luminance minimale de l'écume (cd/m²) : la lumière du ciel diffusée par les bulles
     rivage: vec4<f32>,      // grille du rivage : origine x, origine z, côté (m), 1 si active
     bord: vec4<f32>,        // vagues de bord : amplitude, longueur d'onde, jet de rive, pulsation
     couleur_fond: vec4<f32>,
@@ -244,7 +244,7 @@ fn rubans(d: vec2<f32>, couverture: f32, ondulation: f32) -> f32 {
     let rayon = mix(0.66, 0.0, couverture) + ondulation;
     // Un peu de l'écart entre les deux germes : les rubans suivent les frontières entre les trous.
     let v = d.x - 0.35 * (d.y - d.x);
-    return smoothstep(rayon - 0.035, rayon + 0.035, v + 0.12);
+    return smoothstep(rayon - 0.07, rayon + 0.07, v + 0.12);
 }
 
 // Réseau d'écume : rubans blancs autour de trous (mailles de ~70 cm et ~25 cm), étirés dans le sens du
@@ -479,7 +479,7 @@ fn fragment(
             let h0 = bruit_valeur(q0) + 0.5 * bruit_valeur(q0 * 2.7);
             let hx = bruit_valeur(q0 + vec2<f32>(pas, 0.0)) + 0.5 * bruit_valeur((q0 + vec2<f32>(pas, 0.0)) * 2.7);
             let hz = bruit_valeur(q0 + vec2<f32>(0.0, pas)) + 0.5 * bruit_valeur((q0 + vec2<f32>(0.0, pas)) * 2.7);
-            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.45 * b.crete;
+            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.25 * b.crete;
             creux = (1.0 - saturate(h0 / 1.5)) * smoothstep(0.3, 0.55, b.crete);
         }
         // Hauteur d'eau au-dessus du fond, sous ce pixel.
@@ -498,8 +498,8 @@ fn fragment(
         // crête et le haut de la face du rouleau sont blancs pleins.
         // Par plaques : la nappe d'eau mince qui couvre le sable n'est pas uniformément couverte d'écume.
         let plaques = mix(0.2, 1.0, smoothstep(0.3, 0.7, perlin3(vec3<f32>(repos.x * 0.22, ocean.temps * 0.05, repos.y * 0.22), 0) * 0.5 + 0.5));
-        let residu = max(max(mince * 0.66 * plaques, surf * respiration * 0.35), max(b.ecume * (0.6 + 0.14 * lace), b.zone * 0.3));
-        let couverture = saturate(min(residu, 0.66));
+        let residu = max(max(mince * 0.52 * plaques, surf * respiration * 0.35), max(b.ecume * (0.6 + 0.14 * lace), b.zone * 0.3));
+        let couverture = saturate(min(residu, 0.52));
         // Masse blanche du rouleau : pleine, sans trous, avec un bord déchiqueté.
         let masse = smoothstep(0.3, 0.55, b.crete + (lace - 0.5) * 0.3);
         let bourrelet = 1.0 - smoothstep(0.004, 0.012 + 0.01 * lace, eau);
@@ -540,7 +540,7 @@ fn fragment(
     if (ecume > 0.0) {
         pbr_input.material.base_color = vec4<f32>(
             // Les creux de la masse d'écume du rouleau sont un peu plus sombres : c'est ce qui lui donne du volume.
-            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.93, 0.95, 0.96) * (1.0 - 0.3 * creux), ecume),
+            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.93, 0.95, 0.96) * (1.0 - 0.18 * creux), ecume),
             1.0,
         );
         pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.8, ecume);
@@ -551,6 +551,10 @@ fn fragment(
     out = deferred_output(in, pbr_input);
 } @else {
     out.color = apply_pbr_lighting(pbr_input);
+    // L'écume est un amas de bulles qui diffuse la lumière de tout le ciel : elle ne descend pas sous cette
+    // luminance, même à l'ombre ou sous un ciel d'orage (sinon elle se confond avec l'eau grise).
+    let plancher = vec3<f32>(0.93, 0.95, 0.96) * (ocean.lueur_ecume * view.exposure) * (1.0 - 0.18 * creux);
+    out.color = vec4<f32>(mix(out.color.rgb, max(out.color.rgb, plancher), ecume), out.color.a);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 }
     return out;

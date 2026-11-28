@@ -191,7 +191,7 @@ impl Embruns {
         // La crête avance vers la terre à la célérité de la vague.
         let celerite = bord.omega * bord.longueur / std::f32::consts::TAU;
         let avant = Vec3::new(e.normale.x, 0.0, e.normale.y);
-        let nombre = 1 + (self.hasard() * 2.0 * force_vagues) as u32;
+        let nombre = 3 + (self.hasard() * 4.0 * (0.5 + force_vagues)) as u32;
         let mut nes = 0;
         for _ in 0..nombre {
             if self.bouffees.len() >= MAX_EMBRUNS {
@@ -201,15 +201,16 @@ impl Embruns {
             let cote = Vec3::new(-avant.z, 0.0, avant.x) * (a * 2.0 - 1.0) * 0.9;
             let vitesse = avant * celerite * (0.35 + 0.4 * b)
                 + cote
-                + Vec3::Y * (0.8 + 1.8 * c * (0.4 + 0.6 * force_vagues)) * bord.amplitude.clamp(0.4, 1.4)
+                // Jets de 0,2 à 1 m de haut, même par beau temps : le rouleau y fait déjà 1 m.
+                + Vec3::Y * (1.6 + 2.6 * c) * (0.6 + 0.4 * force_vagues)
                 + vent * 0.15;
             self.bouffees.push(Bouffee {
                 position: origine + cote * 0.4 + Vec3::Y * 0.05,
                 vitesse,
                 age: 0.0,
                 vie: 0.45 + 0.55 * g,
-                taille: reglages.taille.max(0.01) * bord.amplitude.clamp(0.4, 1.4) * (0.7 + 0.6 * a),
-                force: (crete * (0.45 + 0.55 * force_vagues)).clamp(0.0, 1.0),
+                taille: reglages.taille.max(0.01) * bord.amplitude.clamp(0.8, 1.4) * (0.7 + 0.6 * a),
+                force: (crete * (0.7 + 0.3 * force_vagues)).clamp(0.0, 1.0),
                 graine: g,
             });
             nes += 1;
