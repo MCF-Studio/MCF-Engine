@@ -456,6 +456,8 @@ pub struct InfoBord {
     pub pente: Vec2,
     /// Écume de déferlement (0..1).
     pub ecume: f32,
+    /// Crête en train de déferler (0..1) : là où naissent les embruns.
+    pub crete: f32,
 }
 
 /// Ondulation des crêtes le long du rivage (rad), même bruit que le shader.
@@ -509,6 +511,7 @@ pub fn vagues_bord(p: Vec2, e: &EchantillonRivage, profondeur: f32, b: &ParamsBo
         deplacement,
         pente,
         ecume: deferlement * crete.max(trainee * 0.85) * enveloppe,
+        crete: deferlement * crete * enveloppe,
     }
 }
 

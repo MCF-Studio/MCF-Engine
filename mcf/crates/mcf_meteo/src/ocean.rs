@@ -173,6 +173,7 @@ impl Plugin for McfOceanPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "ocean.wesl");
         crate::charger_bruit_wesl(app);
+        crate::embruns::construire(app);
         app.add_plugins((MaterialPlugin::<MateriauOcean>::default(), McfOceanFftPlugin))
             .register_type::<ReglagesOcean>()
             .init_resource::<ReglagesOcean>()

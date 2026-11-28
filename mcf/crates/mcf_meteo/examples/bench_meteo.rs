@@ -32,8 +32,8 @@ use bevy::window::{PresentMode, WindowResolution};
 use mcf_bench::{BenchCamera, BenchPlugin, BenchSettings, CameraKey, CameraPath};
 use mcf_meteo::bruit::perlin3;
 use mcf_meteo::{
-    AuditeurMeteo, ChangerMeteo, EclaboussuresPluie, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
-    McfPrecipitationsPlugin, McfSonPlugin, NuagesVolumetriques, PresetMeteo, SourceFond,
+    AuditeurMeteo, ChangerMeteo, EclaboussuresPluie, EmbrunsVagues, McfMeteoPlugin, McfNuagesPlugin,
+    McfOceanPlugin, McfPrecipitationsPlugin, McfSonPlugin, NuagesVolumetriques, PresetMeteo, SourceFond,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -310,6 +310,10 @@ fn scene(
     // `MCF_ECLABOUSSURES=0` : pluie sans éclaboussures, pour mesurer leur coût (variante complet seulement).
     if args.variante >= Variante::Complet && std::env::var("MCF_ECLABOUSSURES").as_deref() != Ok("0") {
         camera.insert(EclaboussuresPluie);
+    }
+    // `MCF_EMBRUNS=0` : sans les embruns des vagues qui cassent, pour mesurer leur coût (variantes avec océan).
+    if args.variante >= Variante::Ocean && std::env::var("MCF_EMBRUNS").as_deref() != Ok("0") {
+        camera.insert(EmbrunsVagues);
     }
     demandes.write(ChangerMeteo {
         cible: args.preset.etat(),

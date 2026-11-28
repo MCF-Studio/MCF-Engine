@@ -28,7 +28,9 @@ use mcf_meteo::{
     McfPrecipitationsPlugin, McfSonPlugin, MerDuVent, NuagesVolumetriques, Ocean, Orage, ParametresRivage,
     PresetMeteo, ReglagesOmbreNuages, SourceFond,
 };
-use mcf_meteo::{CarteAbris, EclaboussuresPluie, MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo};
+use mcf_meteo::{
+    CarteAbris, EclaboussuresPluie, EmbrunsVagues, MateriauMeteo, McfMateriauMeteoPlugin, materiau_meteo,
+};
 
 fn main() {
     App::new()
@@ -145,6 +147,7 @@ fn scene(
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
         EclaboussuresPluie,
+        EmbrunsVagues,
     ));
     let sable = StandardMaterial {
         base_color: Color::srgb(0.78, 0.70, 0.52),

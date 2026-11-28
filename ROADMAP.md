@@ -280,6 +280,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 23 : son d'ambiance moins fort (×0,2) et limiteur transparent sous 0,6 : plus de saturation mesurée, validé à l'écoute.
 - ✅ Étape 24 : écume du rivage en réseau de rubans blancs + bourrelet au front, exposition adaptée au ciel couvert (RTX 3070 : coût moyen dans le bruit, complet 2,39 → 2,42 ms).
 - ✅ Étape 25 : sable mouillé moins sombre, écume du large recalée sur la mesure RTX 3070 (remesurée : −16 % à +22 % de la cible, contre +13 à +43 % avant).
+- ✅ Étape 26 : embruns des vagues qui cassent au rivage (aspect et coût à mesurer sur GPU réel).
 
 ---
 

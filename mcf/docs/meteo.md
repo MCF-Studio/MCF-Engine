@@ -343,5 +343,17 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
      −16 % (nuageux), −8 % (pluie), −6 % (tempête) et +22 % (clair, sur une couverture minuscule) : la
      correction au premier ordre dépasse un peu la cible. Non réitéré.
 
+- ✅ Étape 26 : embruns des vagues qui cassent (`embruns.rs`, `embruns.wesl`). Là où une vague de bord déferle
+  (`InfoBord::crete`, nouveau champ de `vagues_bord`), des bouffées de gouttelettes naissent, montent, sont
+  emportées par le vent et s'effacent en 0,9 à 1,8 s. Simulation sur le CPU (`Embruns` : points tirés au hasard
+  dans un disque de 110 m autour de la caméra marquée `EmbrunsVagues`, 9 000 essais par seconde, au plus 256 par
+  image ; gravité réduite, traînée vers le vent), au plus 2 048 bouffées ; rendu en quads face caméra dans un
+  maillage réécrit à chaque image, mélange prémultiplié. Force nulle sous 30 cm d'amplitude de vague de bord,
+  pleine à 1 m : rien par temps clair, beaucoup en tempête. Branchés dans `McfOceanPlugin` ; `demo_plage`,
+  `demo_ocean` et `bench_meteo` (variantes avec océan, `MCF_EMBRUNS=0` pour comparer). 5 tests.
+  Limites : pas d'embruns au large (crêtes FFT), pas de fondu contre la géométrie (le tampon de profondeur
+  n'est pas lisible dans la passe transparente). Sur llvmpipe la cadence est si basse que le plafond d'essais
+  par image réduit la densité : **aspect et coût à juger sur GPU réel**.
+
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
