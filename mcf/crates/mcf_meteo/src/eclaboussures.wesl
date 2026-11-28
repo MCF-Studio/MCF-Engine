@@ -82,7 +82,8 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
     let aplati = max(i.elevation, 0.12);
     let rayon = 0.15 + 0.75 * t;
     let d = length(vec2<f32>(x, h / aplati));
-    let rond = exp(-pow((d - rayon) / 0.07, 2.0)) * (1.0 - t);
+    let ecart = (d - rayon) / 0.07;
+    let rond = exp(-ecart * ecart) * (1.0 - t);
 
     // Couronne : un voile d'eau qui s'évase, monte vite puis retombe (60 % de la vie). Vue de côté, ses bords
     // sont plus lumineux que sa face, et son sommet est dentelé.
@@ -96,7 +97,7 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
         let angle = asin(clamp(x / r_y, -1.0, 1.0));
         let sommet = hc * (0.72 + 0.28 * cos(angle * 5.0 + graine));
         let dedans = (1.0 - smoothstep(0.85, 1.0, cote)) * (1.0 - smoothstep(sommet * 0.75, sommet, h));
-        couronne = dedans * (0.22 + 0.78 * pow(cote, 4.0)) * (1.0 - tc);
+        couronne = dedans * (0.22 + 0.78 * cote * cote * cote * cote) * (1.0 - tc);
     }
 
     // Gouttelettes projetées depuis le bord de la couronne (trajectoires balistiques).
@@ -112,5 +113,8 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
 
     let eau = saturate(rond * 0.55 + couronne * 0.8 + gouttes * (1.0 - t * t));
     let lumiere = u.couleur * view.exposure * 1.3;
-    return vec4<f32>(lumiere, eau * i.alpha);
+    // Alpha prémultiplié : l'eau ajoute sa lumière et ne cache qu'un peu ce qui est derrière (jamais de point
+    // sombre devant une surface plus lumineuse qu'elle).
+    let a = eau * i.alpha;
+    return vec4<f32>(lumiere * a, a * 0.3);
 }

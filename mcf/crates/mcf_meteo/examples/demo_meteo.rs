@@ -7,6 +7,7 @@
 //! - `MCF_CAPTURE=fichier.png` : enregistre une capture après quelques secondes puis quitte ;
 //! - `MCF_PRESET=pluie|neige` (tempête par défaut) ;
 //! - `MCF_CAMERA=abri` : caméra sous l'auvent ; `MCF_CAMERA=sol` : caméra basse, tournée vers le sol et un bloc ;
+//!   `MCF_CAMERA=mur` : devant un bloc (ruissellement) ;
 //! - `MCF_ECLABOUSSURES=0` : sans les éclaboussures de la pluie (comparaison) ;
 //! - `MCF_SOL=1` : sol déjà détrempé (ou enneigé) au démarrage.
 
@@ -102,6 +103,8 @@ fn scene(
     let camera = match std::env::var("MCF_CAMERA").as_deref() {
         Ok("abri") => Transform::from_xyz(-3.0, 1.6, -1.5).looking_at(Vec3::new(-3.0, 1.8, 10.0), Vec3::Y),
         // Près du sol, devant un poteau et le bord du toit : les éclaboussures se voient de près.
+        // Devant un bloc : le ruissellement sur ses faces.
+        Ok("mur") => Transform::from_xyz(-6.0, 1.7, -14.5).looking_at(Vec3::new(-9.0, 2.2, -18.0), Vec3::Y),
         Ok("sol") => Transform::from_xyz(2.5, 0.6, 5.5).looking_at(Vec3::new(0.3, 0.3, 2.3), Vec3::Y),
         _ => Transform::from_xyz(4.0, 1.7, 9.0).looking_at(Vec3::new(-3.0, 2.0, 0.0), Vec3::Y),
     };

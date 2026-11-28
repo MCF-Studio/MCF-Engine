@@ -84,7 +84,8 @@ pub struct UniformesOcean {
     tailles: Vec4,
     lod_proche: f32,
     lod_loin: f32,
-    remplissage1: f32,
+    /// Intensité de la pluie, `[0, 1]` : ronds d'impact près de la caméra, mer plus mate.
+    pluie: f32,
     remplissage2: f32,
     /// Grille du rivage : origine x, origine z, côté (m), 1 si active.
     rivage: Vec4,
@@ -348,7 +349,7 @@ pub fn calculer_uniformes(
         tailles: Vec4::new(fft.tailles[0], fft.tailles[1], fft.tailles[2], 1.0),
         lod_proche: reglages.lod_proche,
         lod_loin: reglages.lod_loin,
-        remplissage1: 0.0,
+        pluie: etat.pluie().clamp(0.0, 1.0),
         remplissage2: 0.0,
         rivage: grille,
         bord: Vec4::new(b.amplitude, b.longueur, b.jet, b.omega),

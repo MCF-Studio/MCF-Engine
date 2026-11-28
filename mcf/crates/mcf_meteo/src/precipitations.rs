@@ -104,8 +104,9 @@ impl Material for MateriauPrecipitations {
         chemin_shader()
     }
 
+    // Prémultiplié : le shader choisit par particule entre ajouter de la lumière (goutte) et cacher (flocon).
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        AlphaMode::Premultiplied
     }
 
     fn enable_prepass() -> bool {

@@ -279,6 +279,26 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Limites : seuls les impacts à l'écran existent (voulu) ; caméra en perspective seulement ; une seule caméra
   servie ; un toit non déclaré et hors de l'écran laisse passer des éclaboussures dessous ; forme identique sur
   toutes les surfaces (pas d'orientation selon la normale) ; **coût GPU non mesuré**.
+- ✅ Étape 21 : ronds d'impact et ruissellement. Océan : la pluie ajoute à la pente des ronds qui s'élargissent
+  (jusqu'à ~35 cm, à moins de 40 m de la caméra) et dépolit la surface (rugosité + 0,07 × pluie : la mer devient
+  plus mate) ; uniforme `pluie` dans `UniformesOcean`. Matériau météo : les ronds, jusque-là réservés aux
+  flaques, apparaissent aussi (à 40 %) sur tout sol mouillé exposé à la pluie, à moins de 35 m ; sur les faces
+  raides exposées (murs, poteaux, carrosseries), des filets d'eau verticaux tous les ~4,5 cm, légèrement
+  sinueux, parcourus par des gouttes qui descendent (plus sombres, plus lisses, bombés), tant qu'il pleut ou
+  que la surface est encore mouillée, moins marqués sur un matériau poreux. `demo_meteo` : `MCF_CAMERA=mur`.
+  Rendu vérifié par captures. Limites : filets identiques quelle que soit la pente (pas d'écoulement suivant
+  le relief), pas de gouttes qui tombent du bord des toits, **coût non mesuré** (une boucle de 18 cellules par
+  pixel proche pour les ronds).
+- ✅ Étape 22 : gouttes de pluie. Les gouttes étaient des traits de 12 mm de large à l'alpha uniforme : barres
+  blanches près de la caméra, pointillés au loin. Elles ont maintenant un diamètre de 2,5 à 4,5 mm, des bords
+  doux, une tête nette et une traînée qui s'efface, un filet de lumière au centre (effet de lentille) ; au
+  loin elles gardent ~1,5 pixel de large en s'éclaircissant d'autant (plus de pointillés) ; elles s'effacent
+  entre 2,5 et 0,6 m de la caméra. Mélange en alpha prémultiplié : une goutte **ajoute** sa lumière sans rien
+  cacher, un flocon cache toujours (mélangée normalement, une goutte moins lumineuse que le ciel y faisait une
+  tache sombre). Les éclaboussures passent au même mélange.
+  Défaut trouvé au passage et corrigé : avec le MSAA, les coordonnées du quad débordent un peu aux bords et un
+  `pow` d'un nombre négatif donnait des pixels noirs (NaN) au bout de chaque goutte (712 pixels noirs sur une
+  capture 1280 × 300 du ciel, 0 après correction).
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

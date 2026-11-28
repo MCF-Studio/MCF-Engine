@@ -185,8 +185,9 @@ impl Material for MateriauEclaboussures {
         chemin_shader()
     }
 
+    // Prémultiplié : l'eau projetée ajoute surtout de la lumière et cache peu ce qui est derrière.
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        AlphaMode::Premultiplied
     }
 
     fn enable_prepass() -> bool {
