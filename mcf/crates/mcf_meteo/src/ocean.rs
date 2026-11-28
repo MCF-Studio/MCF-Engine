@@ -32,7 +32,6 @@ use crate::rivage::{
 /// Matériau de l'océan : `StandardMaterial` (couleur de l'eau profonde, réflectance) + extension.
 pub type MateriauOcean = ExtendedMaterial<StandardMaterial, ExtensionOcean>;
 
-/// Réglages du maillage et de l'aspect.
 /// Luminance minimale de l'écume (cd/m²) : un blanc d'albédo 0,9 éclairé par le ciel seul, de 5 000 lux sous
 /// couverture totale à 25 000 lux par ciel dégagé (mêmes valeurs que les embruns).
 pub fn lueur_ecume(etat: &EtatMeteo) -> f32 {
@@ -46,6 +45,7 @@ pub fn lueur_ecume(etat: &EtatMeteo) -> f32 {
     1.5 * 0.9 * (5_000.0 + 20_000.0 * degage) / std::f32::consts::PI
 }
 
+/// Réglages du maillage et de l'aspect.
 #[derive(Resource, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Resource, Default)]
 pub struct ReglagesOcean {
