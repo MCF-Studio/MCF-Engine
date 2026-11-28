@@ -76,4 +76,56 @@ en ville dense, et meilleur que la solution réseau actuelle du jeu sous Godot s
 
 ## Résultats
 
-Rien n'a encore été mesuré. Chaque campagne ajoute ici : date, commit, matériel, tableau brut, conclusion.
+Les tests A et B n'ont pas encore été mesurés. Chaque campagne ajoute ici : date, commit, matériel, tableau brut,
+conclusion.
+
+### 2026-11-28 — module météo (`cargo bench-meteo`), hors tests A / B
+
+- Commit `ed04e3832` (branche `meteo/nuages-msaa`) ; le résumé indique `commit = ?` car git n'est pas dans le
+  PATH de la machine.
+- Matériel : PC de Panic_xXx_, NVIDIA GeForce RTX 3070 (pilote 610.88, Vulkan), AMD Ryzen 7 9800X3D, 31 Go,
+  Windows 11 Home. Profil `bench-release`, `AutoNoVsync`, MSAA ×4, préréglage tempête, parcours caméra de 40 s
+  après 8 s de chauffe. Fenêtre demandée 1920 × 1080, réelle 1920 × 1009 (barre des tâches).
+
+| Variante | Images | FPS moyen | FPS 1 % low | ms moyen | ms p50 | ms p99 | ms pire | GPU moyen | GPU p99 | GPU pic |
+|---|---|---|---|---|---|---|---|---|---|---|
+| base | 19 819 | 495,5 | 57,5 | 2,018 | 1,677 | 16,469 | 110,573 | 1,409 | 2,336 | 6,921 |
+| ocean (1er passage, faussé) | 2 655 | 66,4 | 31,8 | 15,066 | 16,585 | 30,921 | 32,526 | 2,954 | 6,614 | 7,520 |
+| ocean (relance) | 14 407 | 360,2 | 52,4 | 2,776 | 1,941 | 16,962 | 32,285 | 1,738 | 5,276 | 8,264 |
+| nuages | 9 696 | 242,3 | 48,2 | 4,127 | 2,689 | 17,097 | 31,870 | 2,355 | 5,061 | 8,481 |
+| complet | 10 818 | 270,4 | 56,2 | 3,698 | 2,734 | 17,032 | 31,660 | 2,416 | 4,600 | 9,176 |
+
+Passes du module météo, variante complet (ms GPU, moyenne / p50 / p99 / pic) :
+
+| Passe | Moyenne | p50 | p99 | Pic |
+|---|---|---|---|---|
+| `nuages_marche` | 0,3357 | 0,2683 | 0,9615 | 1,8217 |
+| `nuages_ciel` | 0,1970 | 0,2068 | 0,5939 | 1,3568 |
+| `ocean_fft` | 0,1473 | 0,1413 | 0,2294 | 0,9861 |
+| `main_transparent_pass_3d` (pluie + composition des nuages) | 0,0787 | 0,0778 | 0,1167 | 0,9236 |
+| `nuages_reconstruction` | 0,0358 | 0,0338 | 0,0604 | 0,6758 |
+| `nuages_ombre` | 0,0257 | 0,0236 | 0,0369 | 0,5161 |
+| `nuages_ciel_composition` | 0,0136 | 0,0133 | 0,0215 | 0,5028 |
+| **Somme des moyennes** | **0,835** | | | |
+
+Passes de Bevy les plus lourdes, même variante : `lightprobe_irradiance_map` 0,49 ms, `atmosphere_luts`
+0,38 ms, `lightprobe_radiance_map` 0,27 ms, `main_opaque_pass_3d` 0,13 ms (p99 1,68 ms, océan compris).
+
+Constats :
+- Le module météo coûte **~0,8 ms GPU** en moyenne (pire passe au p99 : `nuages_marche` 0,96 ms), sous le
+  budget de 4 ms. Le filtrage de la carte d'environnement par Bevy (0,76 ms) coûte presque autant que tout le
+  module.
+- Les mesures sur llvmpipe (étapes 9 à 18) étaient 50 à 100 fois plus lentes et ne disent rien du coût réel.
+- **Variante ocean, 1er passage faussé** : 66 FPS, p50 à 16,6 ms (cadence de 60 Hz) pour 2,95 ms de GPU.
+  Relancée seule à 06:20 UTC, fenêtre au premier plan sans y toucher : **360 FPS**, p50 1,94 ms, GPU 1,74 ms.
+  Le premier passage était donc un accident de mesure (cause exacte non établie : focus de la fenêtre le plus
+  probable). L'océan coûte ~0,33 ms GPU de plus que la base (1,74 contre 1,41 ms en moyenne). On garde la ligne
+  faussée dans le tableau pour la traçabilité.
+- Toutes les variantes ont un p99 vers 16–17 ms et un 1 % low de 48–57 FPS. Lecture de `frames.csv` image par
+  image : ce ne sont pas des à-coups isolés mais des **blocs de plusieurs secondes calés à 60 Hz** (chaque image
+  16,2–17,1 ms, GPU 1,6–4 ms) : base 284 images > 10 ms, presque toutes entre 19 et 25 s ; ocean (relance) 703,
+  entre 0–5 s et 30–40 s ; complet 688, presque toutes entre 0 et 15 s. Même phénomène que le 1er passage ocean,
+  en plus court, extérieur au rendu (présentation Windows, focus ou fenêtre recouverte : non établi). Les temps
+  GPU restent valables ; **FPS moyens, p99 d'image et 1 % low sont pollués et ne se comparent pas entre
+  variantes**.
+- Pire image de base : 110 ms (une seule au-dessus de 33 ms), probablement au début de la mesure.

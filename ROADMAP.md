@@ -262,7 +262,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 6 : vagues de bord (levée, déferlement, jet de rive, écume), démo `demo_plage`.
 - ✅ Étape 7 : nuages volumétriques traversables (coût GPU pas encore mesuré).
 - ✅ Étape 8 : ambiance sonore synthétisée (mer, ressac, vent, pluie, tonnerre) et éclairs.
-- ✅ Étape 9 : banc d'essai GPU `bench_meteo` + temps GPU par passe (`passes.csv`). Mesure sur vrai GPU à faire.
+- ✅ Étape 9 : banc d'essai GPU `bench_meteo` + temps GPU par passe (`passes.csv`). Mesuré sur RTX 3070 le 2026-11-28 (voir plus bas).
 - ✅ Étape 10 : flottaison sur la mer du vent (réplique CPU des cascades FFT, vérifiée contre le GPU).
 - ✅ Étape 11 : hauteur des vagues calée sur la météo (Hs à ±5 %, au lieu de ×2,2 en tempête).
 - ✅ Étape 12 : pluie et neige éclairées par la scène (elles sortaient noires sous un soleil physique).
@@ -272,6 +272,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 16 : nuages dans les reflets et la lumière ambiante (mer de tempête grise au lieu de bleue, 2,2 ms sur llvmpipe).
 - ✅ Étape 17 : sable mouillé par les vagues de bord (bande sous la hauteur du jet de rive, matériau météo).
 - ✅ Étape 18 : nuages compatibles avec le MSAA (il n'est plus coupé sur la caméra ; marche des nuages inchangée).
+- 📏 Mesure sur vrai GPU (RTX 3070, 1080p, tempête) : module météo ~0,8 ms GPU sur 4 ms de budget (détail dans `mcf/docs/bancs-essai.md`).
 
 ---
 
