@@ -7,7 +7,7 @@ use bevy::diagnostic::{DiagnosticsStore, SystemInfo, SystemInformationDiagnostic
 use bevy::prelude::*;
 use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 use bevy::render::renderer::RenderAdapterInfo;
-use bevy::window::PrimaryWindow;
+use bevy::window::{PrimaryWindow, WindowOccluded};
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -89,6 +89,8 @@ struct Recording {
     /// image (cuisson unique d'une texture…) laisse sa dernière valeur dans le `DiagnosticsStore` ; sans ce
     /// suivi, elle serait recomptée à chaque image.
     vus: HashMap<String, Instant>,
+    /// Dernier état « recouverte » signalé par le système pour la fenêtre principale.
+    masquee: bool,
     done: bool,
 }
 
@@ -154,7 +156,8 @@ fn record(
     mut rec: ResMut<Recording>,
     cams: Query<&BenchCamera>,
     meshes: Query<(), With<Mesh3d>>,
-    windows: Query<&Window, With<PrimaryWindow>>,
+    windows: Query<(Entity, &Window), With<PrimaryWindow>>,
+    mut occlusion: MessageReader<WindowOccluded>,
     sys: Option<Res<SystemInfo>>,
     gpu: Option<Res<RenderAdapterInfo>>,
     store: Option<Res<DiagnosticsStore>>,
@@ -162,6 +165,12 @@ fn record(
 ) {
     if rec.done {
         return;
+    }
+    let fenetre = windows.single().ok();
+    for o in occlusion.read() {
+        if fenetre.is_some_and(|(e, _)| e == o.window) {
+            rec.masquee = o.occluded;
+        }
     }
     let now = time.elapsed_secs_f64();
     // Mesures de rendu nouvelles depuis l'image précédente (lues aussi pendant la chauffe, pour que les valeurs
@@ -189,6 +198,7 @@ fn record(
         serie.resize(n, None);
         serie.push(Some(v));
     }
+    let masquee = fenetre.map(|_| rec.masquee);
     rec.frames.push(FrameSample {
         t_s: t,
         frame_ms: time.delta_secs_f64() * 1000.0,
@@ -197,6 +207,8 @@ fn record(
         system_mem_pct: latest(store, &SystemInformationDiagnosticsPlugin::SYSTEM_MEM_USAGE),
         process_cpu_pct: latest(store, &SystemInformationDiagnosticsPlugin::PROCESS_CPU_USAGE),
         system_cpu_pct: latest(store, &SystemInformationDiagnosticsPlugin::SYSTEM_CPU_USAGE),
+        focus: fenetre.map(|(_, w)| w.focused),
+        masquee,
     });
     if t < measure_duration(&settings, &cams) {
         return;
@@ -225,7 +237,7 @@ fn record(
         info.push(("api".into(), format!("{:?}", g.backend)));
         info.push(("pilote".into(), format!("{} {}", g.driver, g.driver_info)));
     }
-    if let Ok(w) = windows.single() {
+    if let Some((_, w)) = fenetre {
         info.push((
             "resolution".into(),
             format!("{}x{}", w.physical_width(), w.physical_height()),
@@ -254,6 +266,22 @@ fn record(
         ("ms_pire", format!("{:.3}", s.worst_ms)),
         ("images_sup_33ms", s.over_33ms.to_string()),
         ("images_sup_50ms", s.over_50ms.to_string()),
+        (
+            "images_sans_focus",
+            rec.frames
+                .iter()
+                .filter(|f| f.focus == Some(false))
+                .count()
+                .to_string(),
+        ),
+        (
+            "images_fenetre_masquee",
+            rec.frames
+                .iter()
+                .filter(|f| f.masquee == Some(true))
+                .count()
+                .to_string(),
+        ),
     ];
     info.extend(results.iter().map(|(k, v)| ((*k).to_owned(), v.clone())));
     // Séries supplémentaires : moyenne, p99, pic.
@@ -337,12 +365,15 @@ fn write_results(
         let _ = writeln!(summary, "{k} = {v}");
     }
     fs::write(dir.join("summary.txt"), summary)?;
-    // Une ligne par mesure dans summary.csv (en-tête écrit si le fichier est nouveau).
+    // Une ligne par mesure dans summary.csv. En-tête écrit si le fichier est nouveau, ou réécrit si les
+    // colonnes ont changé depuis la dernière ligne (nouvelle version du banc) : les lignes suivent toujours
+    // l'en-tête qui les précède.
     let all = settings.out_dir.join("summary.csv");
     let cell = |v: &str| format!("\"{}\"", v.replace('"', "'"));
+    let entete = info.iter().map(|(k, _)| cell(k)).collect::<Vec<_>>().join(";");
     let mut line = String::new();
-    if !all.exists() {
-        line += &info.iter().map(|(k, _)| cell(k)).collect::<Vec<_>>().join(";");
+    if dernier_entete(&fs::read_to_string(&all).unwrap_or_default()) != Some(entete.as_str()) {
+        line += &entete;
         line.push('\n');
     }
     line += &info.iter().map(|(_, v)| cell(v)).collect::<Vec<_>>().join(";");
@@ -354,6 +385,11 @@ fn write_results(
         .open(all)?
         .write_all(line.as_bytes())?;
     Ok(dir)
+}
+
+/// Dernier en-tête de `summary.csv` : la dernière ligne qui commence par `"mesure"`.
+fn dernier_entete(csv: &str) -> Option<&str> {
+    csv.lines().rev().find(|l| l.starts_with("\"mesure\";"))
 }
 
 fn git_commit() -> String {
@@ -392,7 +428,14 @@ fn utc_date(unix: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::utc_date;
+    use super::{dernier_entete, utc_date};
+
+    #[test]
+    fn entete_repris_si_colonnes_changees() {
+        let csv = "\"mesure\";\"a\"\n\"x\";\"1\"\n\"mesure\";\"a\";\"b\"\n\"y\";\"1\";\"2\"\n";
+        assert_eq!(dernier_entete(csv), Some("\"mesure\";\"a\";\"b\""));
+        assert_eq!(dernier_entete(""), None);
+    }
 
     #[test]
     fn dates() {
