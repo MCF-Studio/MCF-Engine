@@ -330,6 +330,44 @@ impl GrilleRivage {
     }
 }
 
+/// Paramètres d'une grille à construire (voir [`CarteRivage::demande`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DemandeGrille {
+    /// Coin −X −Z de la grille (m), aligné sur un quart de grille.
+    pub origine: Vec2,
+    /// Centre demandé (position de la caméra).
+    pub centre: Vec2,
+    /// Niveau de la mer (m).
+    pub niveau: f32,
+    /// Taille d'une case (m).
+    pub cellule: f32,
+    /// Cases par côté.
+    pub n: u32,
+}
+
+impl DemandeGrille {
+    /// Construit la grille demandée (coûteux : à faire hors de l'image si possible).
+    pub fn construire(&self, fond: &dyn Fn(f32, f32) -> f32) -> GrilleRivage {
+        GrilleRivage::construire(fond, self.centre, self.niveau, self.cellule, self.n)
+    }
+
+    /// Vrai si la grille `g` répond à cette demande.
+    pub fn correspond(&self, g: &GrilleRivage) -> bool {
+        g.n == self.n
+            && g.cellule == self.cellule
+            && (g.niveau - self.niveau).abs() < 0.01
+            && g.origine == self.origine
+    }
+
+    /// Vrai si deux demandes donnent la même grille.
+    pub fn meme_grille(&self, autre: &Self) -> bool {
+        self.n == autre.n
+            && self.cellule == autre.cellule
+            && (self.niveau - autre.niveau).abs() < 0.01
+            && self.origine == autre.origine
+    }
+}
+
 /// Grille courante (reconstruite par [`CarteRivage::mettre_a_jour`]).
 #[derive(Resource, Debug, Clone, Default)]
 pub struct CarteRivage {
@@ -349,7 +387,8 @@ impl CarteRivage {
     }
 
     /// Reconstruit la grille si le centre a changé de pas, si le niveau ou les réglages ont changé, ou si
-    /// `forcer` (nouvelle source). Renvoie vrai en cas de reconstruction.
+    /// `forcer` (nouvelle source). Renvoie vrai en cas de reconstruction. Calcul sur place : pour ne pas
+    /// bloquer l'image, le rendu passe par [`CarteRivage::demande`] et construit la grille en tâche de fond.
     pub fn mettre_a_jour(
         &mut self,
         source: Option<&SourceFond>,
@@ -359,34 +398,45 @@ impl CarteRivage {
         forcer: bool,
     ) -> bool {
         let Some(source) = source else {
-            if self.grille.take().is_some() {
-                self.generation = self.generation.wrapping_add(1);
-                return true;
-            }
-            return false;
+            return self.installer(None);
         };
+        match self.demande(centre, niveau, p, forcer) {
+            Some(d) => self.installer(Some(d.construire(source.0.as_ref()))),
+            None => false,
+        }
+    }
+
+    /// Grille à construire pour ce centre, `None` si la grille actuelle convient (et pas `forcer`).
+    pub fn demande(
+        &self,
+        centre: Vec2,
+        niveau: f32,
+        p: &ParametresRivage,
+        forcer: bool,
+    ) -> Option<DemandeGrille> {
         let n = p.taille.clamp(4, 1024);
         let cellule = if p.cellule.is_finite() {
             p.cellule.max(0.1)
         } else {
             2.0
         };
-        let a_jour = self.grille.as_ref().is_some_and(|g| {
-            g.n == n
-                && g.cellule == cellule
-                && (g.niveau - niveau).abs() < 0.01
-                && g.origine == GrilleRivage::origine_pour(centre, cellule, n)
-        });
-        if a_jour && !forcer {
-            return false;
-        }
-        self.grille = Some(GrilleRivage::construire(
-            source.0.as_ref(),
+        let d = DemandeGrille {
+            origine: GrilleRivage::origine_pour(centre, cellule, n),
             centre,
             niveau,
             cellule,
             n,
-        ));
+        };
+        let a_jour = self.grille.as_ref().is_some_and(|g| d.correspond(g));
+        (forcer || !a_jour).then_some(d)
+    }
+
+    /// Remplace la grille (`None` : plus de rivage). Renvoie vrai si quelque chose a changé.
+    pub fn installer(&mut self, grille: Option<GrilleRivage>) -> bool {
+        if grille.is_none() && self.grille.is_none() {
+            return false;
+        }
+        self.grille = grille;
         self.generation = self.generation.wrapping_add(1);
         true
     }
