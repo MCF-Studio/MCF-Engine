@@ -121,6 +121,11 @@ Constats :
   Le premier passage était donc un accident de mesure (cause exacte non établie : focus de la fenêtre le plus
   probable). L'océan coûte ~0,33 ms GPU de plus que la base (1,74 contre 1,41 ms en moyenne). On garde la ligne
   faussée dans le tableau pour la traçabilité.
-- Toutes les variantes, base et relance ocean comprises, ont un p99 vers 16–17 ms et un 1 % low de 48–57 FPS : des images
-  ponctuelles à la cadence de 60 Hz, indépendantes du module météo. À comprendre (présentation Windows ?).
+- Toutes les variantes ont un p99 vers 16–17 ms et un 1 % low de 48–57 FPS. Lecture de `frames.csv` image par
+  image : ce ne sont pas des à-coups isolés mais des **blocs de plusieurs secondes calés à 60 Hz** (chaque image
+  16,2–17,1 ms, GPU 1,6–4 ms) : base 284 images > 10 ms, presque toutes entre 19 et 25 s ; ocean (relance) 703,
+  entre 0–5 s et 30–40 s ; complet 688, presque toutes entre 0 et 15 s. Même phénomène que le 1er passage ocean,
+  en plus court, extérieur au rendu (présentation Windows, focus ou fenêtre recouverte : non établi). Les temps
+  GPU restent valables ; **FPS moyens, p99 d'image et 1 % low sont pollués et ne se comparent pas entre
+  variantes**.
 - Pire image de base : 110 ms (une seule au-dessus de 33 ms), probablement au début de la mesure.
