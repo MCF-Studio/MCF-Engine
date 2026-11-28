@@ -6,14 +6,15 @@
 //! Variables d'environnement (captures sans écran) :
 //! - `MCF_CAPTURE=fichier.png` : enregistre une capture après quelques secondes puis quitte ;
 //! - `MCF_PRESET=pluie|neige` (tempête par défaut) ;
-//! - `MCF_CAMERA=abri` : caméra sous l'auvent ;
+//! - `MCF_CAMERA=abri` : caméra sous l'auvent ; `MCF_CAMERA=sol` : caméra basse, tournée vers le sol et un bloc ;
+//! - `MCF_ECLABOUSSURES=0` : sans les éclaboussures de la pluie (comparaison) ;
 //! - `MCF_SOL=1` : sol déjà détrempé (ou enneigé) au démarrage.
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use mcf_meteo::{
-    AbriPrecipitations, CarteAbris, ChangerMeteo, MateriauMeteo, McfMateriauMeteoPlugin, McfMeteoPlugin,
-    McfPrecipitationsPlugin, PresetMeteo, SurfacesMeteo, materiau_meteo,
+    AbriPrecipitations, CarteAbris, ChangerMeteo, EclaboussuresPluie, MateriauMeteo, McfMateriauMeteoPlugin,
+    McfMeteoPlugin, McfPrecipitationsPlugin, PresetMeteo, SurfacesMeteo, materiau_meteo,
 };
 
 fn main() {
@@ -98,12 +99,16 @@ fn scene(
         },
         Transform::from_xyz(30.0, 50.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    let camera = if std::env::var("MCF_CAMERA").as_deref() == Ok("abri") {
-        Transform::from_xyz(-3.0, 1.6, -1.5).looking_at(Vec3::new(-3.0, 1.8, 10.0), Vec3::Y)
-    } else {
-        Transform::from_xyz(4.0, 1.7, 9.0).looking_at(Vec3::new(-3.0, 2.0, 0.0), Vec3::Y)
+    let camera = match std::env::var("MCF_CAMERA").as_deref() {
+        Ok("abri") => Transform::from_xyz(-3.0, 1.6, -1.5).looking_at(Vec3::new(-3.0, 1.8, 10.0), Vec3::Y),
+        // Près du sol, devant un poteau et le bord du toit : les éclaboussures se voient de près.
+        Ok("sol") => Transform::from_xyz(2.5, 0.6, 5.5).looking_at(Vec3::new(0.3, 0.3, 2.3), Vec3::Y),
+        _ => Transform::from_xyz(4.0, 1.7, 9.0).looking_at(Vec3::new(-3.0, 2.0, 0.0), Vec3::Y),
     };
-    commandes.spawn((Camera3d::default(), camera));
+    let vue = commandes.spawn((Camera3d::default(), camera)).id();
+    if std::env::var("MCF_ECLABOUSSURES").as_deref() != Ok("0") {
+        commandes.entity(vue).insert(EclaboussuresPluie);
+    }
     let preset = match std::env::var("MCF_PRESET").as_deref() {
         Ok("neige") => PresetMeteo::Neige,
         Ok("pluie") => PresetMeteo::Pluie,

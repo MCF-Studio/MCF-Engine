@@ -274,6 +274,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 18 : nuages compatibles avec le MSAA (il n'est plus coupé sur la caméra ; marche des nuages inchangée).
 - 📏 Mesure sur vrai GPU (RTX 3070, 1080p, tempête) : module météo ~0,9 ms GPU sur 4 ms de budget, 341 FPS tout allumé (détail dans `mcf/docs/bancs-essai.md`).
 - ✅ Étape 19 : grille du rivage reconstruite en tâche de fond (à-coups de 13–16 ms tous les 128 m mesurés au banc ; après correction, pire image 6,8 ms tout allumé).
+- ✅ Étape 20 : éclaboussures de la pluie là où les gouttes touchent (sol, objets, mer), trouvées dans le tampon de profondeur ; coût à mesurer.
 
 ---
 

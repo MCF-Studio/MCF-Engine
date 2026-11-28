@@ -183,9 +183,11 @@ impl Plugin for McfPrecipitationsPlugin {
                     .chain()
                     .after(MiseAJourMeteo),
             );
+        crate::eclaboussures::construire(app);
     }
 
     fn finish(&self, app: &mut App) {
+        crate::eclaboussures::finir(app);
         abris::creer_carte_abris(app.world_mut());
     }
 }
@@ -282,7 +284,7 @@ impl EtatPrecipitations {
     }
 }
 
-fn mettre_a_jour_precipitations(
+pub(crate) fn mettre_a_jour_precipitations(
     meteo: Res<EtatMeteo>,
     champ: Res<ChampVent>,
     reglages: Res<ReglagesPrecipitations>,
