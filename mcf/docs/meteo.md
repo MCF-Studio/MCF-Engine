@@ -338,7 +338,10 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
      sable de la capture tempête (llvmpipe) : 76/74/67 → 86/83/74 sur 255.
   2. Écume du large : table `persistance_ecume` recalée sur la mesure RTX 3070 (0,99 / 1,78 / 16,6 % mesurés pour
      0,69 / 1,37 / 14,5 % visés à 9 / 11 / 22 m/s). Correction au premier ordre, le point à 5 m/s est extrapolé :
-     **à remesurer sur GPU réel** avec `mesurer_ecume`.
+     Remesuré sur RTX 3070 (`mesurer_ecume`, release, 25 s, seuil 0,5) : 0,11 / 0,58 / 1,26 / 13,63 % pour
+     0,09 / 0,69 / 1,37 / 14,52 % visés (clair / nuageux / pluie / tempête). L'écart passe de +13 à +43 % à
+     −16 % (nuageux), −8 % (pluie), −6 % (tempête) et +22 % (clair, sur une couverture minuscule) : la
+     correction au premier ordre dépasse un peu la cible. Non réitéré.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
