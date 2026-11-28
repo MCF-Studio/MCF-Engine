@@ -128,4 +128,7 @@ Constats :
   en plus court, extérieur au rendu (présentation Windows, focus ou fenêtre recouverte : non établi). Les temps
   GPU restent valables ; **FPS moyens, p99 d'image et 1 % low sont pollués et ne se comparent pas entre
   variantes**.
+  Le banc note maintenant, pour chaque image, si la fenêtre a le focus et si le système la dit recouverte
+  (colonnes `focus` et `masquee` de `frames.csv`, totaux `images_sans_focus` et `images_fenetre_masquee` du
+  résumé) : à la prochaine mesure, on saura si ces blocs coïncident avec une perte de focus.
 - Pire image de base : 110 ms (une seule au-dessus de 33 ms), probablement au début de la mesure.

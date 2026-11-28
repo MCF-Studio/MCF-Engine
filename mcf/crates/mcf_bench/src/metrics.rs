@@ -94,20 +94,25 @@ pub struct FrameSample {
     pub process_cpu_pct: Option<f64>,
     /// CPU du système (%).
     pub system_cpu_pct: Option<f64>,
+    /// Fenêtre au premier plan (focus clavier). `None` : pas de fenêtre principale.
+    pub focus: Option<bool>,
+    /// Fenêtre recouverte ou réduite, selon le système (`WindowOccluded`). `None` : pas de fenêtre principale.
+    pub masquee: Option<bool>,
 }
 
 /// En-tête de `frames.csv`.
-pub const FRAMES_CSV_HEADER: &str = "t_s,frame_ms,render_cpu_ms,render_gpu_ms,triangles,process_mem_gib,system_mem_pct,process_cpu_pct,system_cpu_pct";
+pub const FRAMES_CSV_HEADER: &str = "t_s,frame_ms,render_cpu_ms,render_gpu_ms,triangles,process_mem_gib,system_mem_pct,process_cpu_pct,system_cpu_pct,focus,masquee";
 
 /// Contenu de `frames.csv` : une ligne par image, cellule vide si la mesure n'est pas disponible.
 pub fn frames_csv(frames: &[FrameSample]) -> String {
     let cell = |v: Option<f64>, prec: usize| v.map_or_else(String::new, |x| format!("{x:.prec$}"));
+    let bit = |v: Option<bool>| v.map_or("", |b| if b { "1" } else { "0" });
     let mut csv = String::from(FRAMES_CSV_HEADER);
     csv.push('\n');
     for f in frames {
         let _ = writeln!(
             csv,
-            "{:.4},{:.4},{},{},{},{},{},{},{}",
+            "{:.4},{:.4},{},{},{},{},{},{},{},{},{}",
             f.t_s,
             f.frame_ms,
             cell(f.render.cpu_ms, 4),
@@ -117,6 +122,8 @@ pub fn frames_csv(frames: &[FrameSample]) -> String {
             cell(f.system_mem_pct, 2),
             cell(f.process_cpu_pct, 2),
             cell(f.system_cpu_pct, 2),
+            bit(f.focus),
+            bit(f.masquee),
         );
     }
     csv
@@ -182,14 +189,15 @@ mod tests {
             t_s: 1.0,
             frame_ms: 16.5,
             process_mem_gib: Some(1.25),
+            focus: Some(false),
             ..Default::default()
         };
         let csv = frames_csv(&[f]);
         let mut lines = csv.lines();
         assert_eq!(lines.next(), Some(FRAMES_CSV_HEADER));
-        assert_eq!(lines.next(), Some("1.0000,16.5000,,,,1.2500,,,"));
+        assert_eq!(lines.next(), Some("1.0000,16.5000,,,,1.2500,,,,0,"));
         assert_eq!(lines.next(), None);
         // Autant de colonnes dans l'en-tête que dans les lignes.
-        assert_eq!(FRAMES_CSV_HEADER.split(',').count(), 9);
+        assert_eq!(FRAMES_CSV_HEADER.split(',').count(), 11);
     }
 }
