@@ -302,6 +302,13 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Défaut trouvé au passage et corrigé : avec le MSAA, les coordonnées du quad débordent un peu aux bords et un
   `pow` d'un nombre négatif donnait des pixels noirs (NaN) au bout de chaque goutte (712 pixels noirs sur une
   capture 1280 × 300 du ciel, 0 après correction).
+- ✅ Étape 23 : niveau du son. À l'écoute sur le PC de test : son trop fort, saturé. Mesure (plage, 14 m du
+  rivage, volume général 0,8, 18 s) du mélange avant limiteur : niveau efficace 0,30 / 0,39 / 0,44 / 0,70 de la
+  pleine échelle (clair / nuageux / pluie / tempête), 0,2 / 1,3 / 2,4 / 14,8 % des échantillons au-dessus de 1 ;
+  et le limiteur `m / (1 + |m|)` déformait à tous les niveaux (gain 0,67 dès 0,5). Correction : gain de sortie
+  `NIVEAU_SORTIE` = 0,3 et limiteur transparent jusqu'à 0,5 puis genou en `tanh` vers 0,98 (`son::limiter`).
+  Après : niveau efficace 0,09 / 0,12 / 0,13 / 0,21, crête 0,48 / 0,62 / 0,64 / 0,92, 0 / 0 / 0 / 2,0 % des
+  échantillons touchés par le limiteur. 2 tests. Jugé seulement par la mesure : à réécouter.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

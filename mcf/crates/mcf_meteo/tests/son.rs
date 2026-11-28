@@ -4,7 +4,9 @@ use bevy::prelude::*;
 use mcf_meteo::houle::PERIODE_HOULE_S;
 use mcf_meteo::orage::{Eclair, VITESSE_SON};
 use mcf_meteo::rivage::params_bord;
-use mcf_meteo::son::{EntreesSon, FREQUENCE, SynthAmbiance, calculer_entrees};
+use mcf_meteo::son::{
+    EntreesSon, FREQUENCE, PLAFOND_SORTIE, SEUIL_LIMITEUR, SynthAmbiance, calculer_entrees, limiter,
+};
 use mcf_meteo::{CarteRivage, Ocean, Orage, ParametresRivage, PresetMeteo, ReglagesSon, SourceFond};
 
 /// Rend `secondes` de son par blocs de 10 ms.
@@ -265,4 +267,47 @@ fn entrees_depuis_le_monde() {
         false,
     );
     assert!(loin.distance_rivage > 5000.0 && loin.abrite);
+}
+
+/// Sur une plage, le son reste à un niveau d'ambiance et le limiteur ne travaille presque pas, même en tempête
+/// (avant correction : niveau efficace de 0,70 avant limiteur et 15 % des échantillons au-dessus de 1).
+#[test]
+fn niveau_d_ambiance_sans_saturation() {
+    let mut precedent = 0.0;
+    for (vent, precip) in [(5.0f32, 0.0), (9.0, 0.0), (11.0, 0.6), (22.0, 1.0)] {
+        let e = EntreesSon {
+            vent_vitesse: vent,
+            precipitations: precip,
+            amplitude_bord: (0.25 + vent * 0.035).clamp(0.2, 1.4),
+            distance_rivage: 14.0,
+            ..default()
+        };
+        let y = rendre(&mut SynthAmbiance::default(), &e, &ReglagesSon::default(), 20.0);
+        let y = &y[96_000 * 2..];
+        let niveau = rms(y);
+        let limites = y.iter().filter(|v| v.abs() > SEUIL_LIMITEUR).count() as f32 / y.len() as f32;
+        assert!((0.05..0.25).contains(&niveau), "vent {vent} : niveau {niveau}");
+        assert!(limites < 0.05, "vent {vent} : {limites} des échantillons limités");
+        // Plus de vent et de pluie : plus fort.
+        assert!(niveau > precedent);
+        precedent = niveau;
+    }
+}
+
+#[test]
+fn limiteur_transparent_puis_doux() {
+    // Sous le seuil : inchangé. Au-dessus : croissant, impair, jamais au plafond.
+    for m in [0.0f32, 0.1, -0.3, 0.5, -0.5] {
+        assert_eq!(limiter(m), m);
+    }
+    let mut avant = SEUIL_LIMITEUR;
+    for i in 1..200 {
+        let m = SEUIL_LIMITEUR + i as f32 * 0.05;
+        let y = limiter(m);
+        assert!(y >= avant && y < PLAFOND_SORTIE + 1e-6 && y < 1.0, "{m} -> {y}");
+        assert_eq!(limiter(-m), -y);
+        avant = y;
+    }
+    // Pas de marche au seuil.
+    assert!((limiter(SEUIL_LIMITEUR + 1e-3) - SEUIL_LIMITEUR - 1e-3).abs() < 1e-4);
 }
