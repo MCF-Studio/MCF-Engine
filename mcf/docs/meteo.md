@@ -261,6 +261,47 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   image 16,6 → 5,9 ms (ocean) et 16,5 → 6,8 ms (complet), coût GPU inchangé.
   Limite : à plus de ~100 m/s près d'une côte, la nouvelle grille arrive une ou deux images après le passage
   du quart de grille (sans effet visible attendu : l'ancienne couvre encore 128 m de marge).
+- ✅ Étape 20 : éclaboussures de la pluie (`eclaboussures`, dans `McfPrecipitationsPlugin`, composant
+  `EclaboussuresPluie` sur la caméra). Les gouttes ne touchaient rien : pas d'impact au sol, sur les objets ni
+  sur la mer (seulement des ronds dans les flaques du matériau météo). Une passe de calcul `pluie_impacts`,
+  entre la passe opaque et la passe transparente, descend la verticale de chaque éclaboussure (jusqu'à 9 216,
+  proportionnel à la pluie, aucune pour la neige ; zone de 24 m autour de la caméra, vie de 0,3 s) et la compare
+  au tampon de profondeur de la vue : le premier passage derrière la géométrie est l'impact (40 pas de 60 cm +
+  6 dichotomies, soit ~1 cm). Elle fonctionne donc sur **tout ce qui est visible** — terrain, objets, mer avec
+  ses vagues — sans rien déclarer dans la scène, avec ou sans MSAA. Les points vont dans une texture 96 × 96 lue
+  par un matériau transparent ordinaire qui dessine un rond à la surface, une couronne et 6 gouttelettes.
+  Pas d'impact sous un abri déclaré (`AbriPrecipitations`), ni quand la verticale arrive de derrière un objet
+  (toit vu d'en dessous) ; un passage derrière une silhouette est écarté par l'écart de profondeur.
+  Réglages `ReglagesEclaboussures` (active, demi-largeur, taille, luminosité). Démos : `demo_meteo`
+  (`MCF_CAMERA=sol`, `MCF_ECLABOUSSURES=0`), `demo_ocean` (`MCF_CAMERA=eau`, `MCF_PRESET=pluie`), `demo_plage`,
+  `bench_meteo` (variante complet, `MCF_ECLABOUSSURES=0` pour comparer). 2 tests CPU, rendu vérifié par
+  captures (llvmpipe : sol, abri, plage, mer, MSAA ×4 et sans).
+  Limites : seuls les impacts à l'écran existent (voulu) ; caméra en perspective seulement ; une seule caméra
+  servie ; un toit non déclaré et hors de l'écran laisse passer des éclaboussures dessous ; forme identique sur
+  toutes les surfaces (pas d'orientation selon la normale).
+  Coût mesuré (RTX 3070, 1080p, tempête, `bancs-essai.md` 2026-11-28 (4)) : `pluie_impacts` 0,024 ms,
+  éclaboussures complètes +0,034 ms de GPU par image (340,5 → 334,9 FPS).
+- ✅ Étape 21 : ronds d'impact et ruissellement. Océan : la pluie ajoute à la pente des ronds qui s'élargissent
+  (jusqu'à ~35 cm, à moins de 40 m de la caméra) et dépolit la surface (rugosité + 0,07 × pluie : la mer devient
+  plus mate) ; uniforme `pluie` dans `UniformesOcean`. Matériau météo : les ronds, jusque-là réservés aux
+  flaques, apparaissent aussi (à 40 %) sur tout sol mouillé exposé à la pluie, à moins de 35 m ; sur les faces
+  raides exposées (murs, poteaux, carrosseries), des filets d'eau verticaux tous les ~4,5 cm, légèrement
+  sinueux, parcourus par des gouttes qui descendent (plus sombres, plus lisses, bombés), tant qu'il pleut ou
+  que la surface est encore mouillée, moins marqués sur un matériau poreux. `demo_meteo` : `MCF_CAMERA=mur`.
+  Rendu vérifié par captures. Limites : filets identiques quelle que soit la pente (pas d'écoulement suivant
+  le relief), pas de gouttes qui tombent du bord des toits. Coût : invisible sur le parcours du banc (RTX 3070,
+  écart de −0,004 ms avec la mesure précédente, dans le bruit), mais ce parcours vole surtout en altitude : le
+  coût au ras d'un sol mouillé (une boucle de 18 cellules par pixel proche) n'est pas isolé.
+- ✅ Étape 22 : gouttes de pluie. Les gouttes étaient des traits de 12 mm de large à l'alpha uniforme : barres
+  blanches près de la caméra, pointillés au loin. Elles ont maintenant un diamètre de 2,5 à 4,5 mm, des bords
+  doux, une tête nette et une traînée qui s'efface, un filet de lumière au centre (effet de lentille) ; au
+  loin elles gardent ~1,5 pixel de large en s'éclaircissant d'autant (plus de pointillés) ; elles s'effacent
+  entre 2,5 et 0,6 m de la caméra. Mélange en alpha prémultiplié : une goutte **ajoute** sa lumière sans rien
+  cacher, un flocon cache toujours (mélangée normalement, une goutte moins lumineuse que le ciel y faisait une
+  tache sombre). Les éclaboussures passent au même mélange.
+  Défaut trouvé au passage et corrigé : avec le MSAA, les coordonnées du quad débordent un peu aux bords et un
+  `pow` d'un nombre négatif donnait des pixels noirs (NaN) au bout de chaque goutte (712 pixels noirs sur une
+  capture 1280 × 300 du ciel, 0 après correction).
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

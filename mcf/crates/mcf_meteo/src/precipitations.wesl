@@ -87,7 +87,10 @@ fn particule(i: u32) -> Particule {
 
     let distance = length(camera - p.position);
     let demi = 0.5 * min(u.boite.x, u.boite.z);
-    p.alpha = saturate(1.0 - distance / demi) * saturate(distance / 0.5) * u.luminosite;
+    // Tout près de la caméra, une goutte floue remplirait l'écran d'une barre : elle s'efface entre 2,5 et 0,6 m
+    // (un flocon, lent et petit, peut passer plus près).
+    let proche = select(saturate((distance - 0.6) / 1.9), saturate(distance / 0.5), p.neige);
+    p.alpha = saturate(1.0 - distance / demi) * proche * u.luminosite;
     if (f32(i) >= u.actives || sous_abri(p.position)) {
         p.alpha = 0.0;
     }
@@ -113,6 +116,7 @@ fn vertex(s: Sommet) -> VersFragment {
     let vers_camera = normalize(view.world_position - p.position);
 
     var monde: vec3<f32>;
+    var couverture = 1.0;
     if (p.neige) {
         // Flocon : petit carré face caméra (rond dans le fragment), légère traînée.
         let h = hachage(u32(s.position.z) ^ 0xB5297A4Du);
@@ -122,9 +126,17 @@ fn vertex(s: Sommet) -> VersFragment {
         let q = vec2<f32>(coin.x, coin.y * 2.0 - 1.0);
         monde = p.position + (droite * q.x + haut * q.y) * taille - p.vitesse * u.trainee * 0.15 * coin.y;
     } else {
-        // Goutte : trait étiré selon la vitesse (flou de mouvement simulé), tourné vers la caméra.
+        // Goutte : étirée selon la vitesse (flou de mouvement simulé), tournée vers la caméra. Diamètre réel de
+        // 2,5 à 4,5 mm ; au loin, elle garde au moins ~1,5 pixel de large et s'éclaircit d'autant (sinon le
+        // trait, plus fin qu'un pixel, se hache en pointillés).
+        let h = hachage(u32(s.position.z) ^ 0xB5297A4Du);
+        let rayon = mix(0.00125, 0.00225, hachage_f(h));
+        let distance = length(view.world_position - p.position);
+        let pixel = 2.0 * distance / (view.clip_from_view[1][1] * view.viewport.w);
+        let demi = max(rayon * 2.0, pixel * 0.75);
+        couverture = rayon * 2.0 / demi;
         let axe = p.vitesse * u.trainee;
-        let cote = normalize(cross(normalize(axe + 1e-5), vers_camera)) * 0.006;
+        let cote = normalize(cross(normalize(axe + 1e-5), vers_camera)) * demi;
         monde = p.position + cote * coin.x - axe * coin.y;
     }
 
@@ -134,7 +146,7 @@ fn vertex(s: Sommet) -> VersFragment {
         o.clip = vec4<f32>(0.0, 0.0, -1.0, 1.0);
     }
     o.uv = coin;
-    o.alpha = p.alpha;
+    o.alpha = p.alpha * couverture;
     o.neige = select(0.0, 1.0, p.neige);
     return o;
 }
@@ -145,8 +157,20 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
     if (i.neige > 0.5) {
         let r = length(vec2<f32>(i.uv.x, i.uv.y * 2.0 - 1.0));
         let flocon = 1.0 - smoothstep(0.4, 1.0, r);
-        return vec4<f32>(lumiere * 1.6, i.alpha * flocon * 0.9);
+        // Alpha prémultiplié : un flocon est opaque, il cache ce qui est derrière lui.
+        let a = i.alpha * flocon * 0.9;
+        return vec4<f32>(lumiere * 1.6 * a, a);
     }
-    let bord = 1.0 - abs(i.uv.x);
-    return vec4<f32>(lumiere, i.alpha * bord * 0.35);
+    // Goutte : bords doux, tête nette en bas (uv.y = 0) et traînée qui s'efface vers le haut. L'eau fait
+    // lentille : un filet de lumière plus vif au centre.
+    // (uv bornés : avec le MSAA, ils débordent un peu aux bords du quad, et pow d'un négatif donne NaN.)
+    let x = clamp(i.uv.x, -1.0, 1.0);
+    let y = saturate(i.uv.y);
+    let travers = exp(-x * x * 3.5);
+    let long = smoothstep(0.0, 0.06, y) * pow(1.0 - y, 1.5);
+    let coeur = exp(-x * x * 24.0);
+    // Une goutte est transparente : elle ajoute la lumière qu'elle renvoie, sans rien cacher (alpha nul en
+    // prémultiplié). Mélangée normalement, elle faisait des points sombres devant un ciel plus lumineux qu'elle.
+    let a = i.alpha * travers * long * 0.6;
+    return vec4<f32>(lumiere * (1.0 + 1.4 * coeur) * a, 0.0);
 }

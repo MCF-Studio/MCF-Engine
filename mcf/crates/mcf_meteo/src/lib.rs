@@ -35,6 +35,8 @@ pub mod audio;
 pub mod bruit;
 #[cfg(feature = "rendu")]
 pub mod ciel_nuages;
+#[cfg(feature = "rendu")]
+pub mod eclaboussures;
 pub mod etat;
 pub mod houle;
 #[cfg(feature = "rendu")]
@@ -61,6 +63,8 @@ pub mod vent;
 pub use abris::{AbriPrecipitations, CarteAbris};
 #[cfg(feature = "son")]
 pub use audio::{AuditeurMeteo, McfSonPlugin};
+#[cfg(feature = "rendu")]
+pub use eclaboussures::{EclaboussuresPluie, ReglagesEclaboussures};
 pub use etat::{EtatMeteo, PresetMeteo};
 pub use houle::Ocean;
 #[cfg(feature = "rendu")]

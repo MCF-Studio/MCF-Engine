@@ -39,7 +39,7 @@ struct ExtensionOcean {
     tailles: vec4<f32>,  // taille du motif de chaque cascade FFT (m), w = 1 si la FFT est active
     lod_proche: f32,
     lod_loin: f32,
-    _r1: f32,
+    pluie: f32,          // intensité de la pluie [0, 1]
     _r2: f32,
     rivage: vec4<f32>,      // grille du rivage : origine x, origine z, côté (m), 1 si active
     bord: vec4<f32>,        // vagues de bord : amplitude, longueur d'onde, jet de rive, pulsation
@@ -281,6 +281,32 @@ fn bruit_valeur(p: vec2<f32>) -> f32 {
     );
 }
 
+// Ronds des impacts de pluie sur l'eau : anneaux qui s'élargissent (jusqu'à ~35 cm), une goutte par cellule et par
+// période. Renvoie la pente ajoutée. Le temps de l'océan boucle sur 200 s : 240 périodes entières, pas de saut.
+fn ronds_pluie(xz: vec2<f32>, temps: f32) -> vec2<f32> {
+    var grad = vec2<f32>(0.0);
+    for (var couche = 0; couche < 2; couche++) {
+        let p = xz * (2.5 + f32(couche) * 1.3) + f32(couche) * 17.0;
+        let cellule = vec2<i32>(floor(p));
+        for (var y = -1; y <= 1; y++) {
+            for (var x = -1; x <= 1; x++) {
+                let c = cellule + vec2<i32>(x, y);
+                let h = hachage(u32(c.x) ^ hachage(u32(c.y) ^ hachage(u32(couche) + 77u)));
+                let hx = f32(h & 0xFFFFu) / 65535.0;
+                let hy = f32((h >> 16u) & 0xFFFFu) / 65535.0;
+                let hz = f32(hachage(h) & 0xFFFFu) / 65535.0;
+                let t = fract(temps * 1.2 + hz);
+                let dv = p - (vec2<f32>(c) + vec2<f32>(hx, hy));
+                let r = length(dv);
+                let anneau = r - t * 0.9;
+                let onde = sin(anneau * 40.0) * exp(-anneau * anneau * 400.0) * (1.0 - t) * (1.0 - t);
+                grad += dv / max(r, 1e-3) * onde;
+            }
+        }
+    }
+    return grad;
+}
+
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -334,6 +360,12 @@ fn fragment(
         let pellicule = (1.0 - smoothstep(0.0, 0.6, eau)) * 0.35 * lace;
         ecume_bord = max(lisere, max(nappe, pellicule)) * riv.poids;
     }
+    // Pluie : ronds d'impact près de la caméra (au-delà, ils sont plus petits qu'un pixel : la rugosité prend
+    // le relais, plus bas).
+    let pres_pluie = ocean.pluie * (1.0 - smoothstep(18.0, 40.0, distance));
+    if (pres_pluie > 0.01) {
+        pente += ronds_pluie(monde.xz, ocean.temps) * pres_pluie * 0.9;
+    }
     var n = normalize(vec3<f32>(-pente.x, 1.0, -pente.y));
     // Lissage lointain : la normale moyenne d'un pixel lointain tend vers le haut.
     n = normalize(mix(n, vec3<f32>(0.0, 1.0, 0.0), saturate(distance / 12000.0)));
@@ -341,7 +373,9 @@ fn fragment(
     pbr_input.world_normal = n;
 
     // Rugosité : un peu plus forte au loin et par vent fort.
-    pbr_input.material.perceptual_roughness = mix(0.04, 0.16, saturate(distance / 3000.0)) + ocean.vent * 0.003;
+    // Sous la pluie, des milliers d'impacts dépolissent la surface : la mer devient plus mate.
+    pbr_input.material.perceptual_roughness = mix(0.04, 0.16, saturate(distance / 3000.0)) + ocean.vent * 0.003
+        + ocean.pluie * 0.07;
 
     // Eau peu profonde : on voit le fond à travers une couche absorbante (le rouge est absorbé d'abord).
     if (eau < 1e3) {

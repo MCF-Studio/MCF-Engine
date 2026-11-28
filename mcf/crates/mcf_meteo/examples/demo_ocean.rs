@@ -4,8 +4,8 @@
 //! `cargo run -p mcf_meteo --example demo_ocean`
 //! Touches : 1 Clair, 2 Nuageux, 3 Pluie, 4 Tempête, 5 Neige (transition de 10 s) ; flèches haut / bas : monter
 //! ou descendre (400 m/s, pour traverser la couche de nuages).
-//! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair` (nuageux par défaut).
-//! `MCF_CAMERA=ciel` (regard vers le haut), `MCF_CAMERA=nuages` (dans la couche, à 2 500 m),
+//! `MCF_CAPTURE=fichier.png` : capture puis quitte. `MCF_PRESET=tempete|clair|pluie` (nuageux par défaut).
+//! `MCF_CAMERA=ciel` (regard vers le haut), `MCF_CAMERA=eau` (près de la surface, impacts de la pluie), `MCF_CAMERA=nuages` (dans la couche, à 2 500 m),
 //! `MCF_CAMERA=dessus` (au-dessus, à 5 000 m), `MCF_CAMERA=survol` (à 1 200 m, regard plongeant vers la mer).
 //! `MCF_REPROJECTION=0` : nuages marchés en pleine résolution chaque image (sans reprojection temporelle).
 //! `MCF_MOUVEMENT=1` : la caméra tourne de 0,5° par image (30°/s à 60 i/s), pour juger les traînées.
@@ -26,9 +26,9 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use mcf_meteo::ombre_nuages::TAILLE_OMBRE;
 use mcf_meteo::rivage::{hauteur_eau, params_bord};
 use mcf_meteo::{
-    CarteRivage, ChangerMeteo, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
-    McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, OmbreNuages, ParametresRivage,
-    PresetMeteo, ReglagesOmbreNuages,
+    CarteRivage, ChangerMeteo, EclaboussuresPluie, EtatMeteo, McfMeteoPlugin, McfNuagesPlugin,
+    McfOceanPlugin, McfPrecipitationsPlugin, MerDuVent, NuagesVolumetriques, Ocean, OmbreNuages,
+    ParametresRivage, PresetMeteo, ReglagesOmbreNuages,
 };
 
 fn main() {
@@ -76,6 +76,8 @@ fn scene(
     ));
     let transformation = match std::env::var("MCF_CAMERA").as_deref() {
         Ok("ciel") => Transform::from_xyz(0.0, 6.0, 20.0).looking_at(Vec3::new(0.0, 40.0, -60.0), Vec3::Y),
+        // Près de l'eau, regard vers la surface : les impacts de la pluie sur la mer.
+        Ok("eau") => Transform::from_xyz(0.0, 2.2, 20.0).looking_at(Vec3::new(0.0, 0.0, 12.0), Vec3::Y),
         Ok("nuages") => {
             Transform::from_xyz(0.0, 2500.0, 0.0).looking_at(Vec3::new(200.0, 2450.0, -1000.0), Vec3::Y)
         }
@@ -108,6 +110,7 @@ fn scene(
         },
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
+        EclaboussuresPluie,
     ));
     // Une bouée qui flotte grâce à `Ocean::hauteur`.
     commandes.spawn((
@@ -119,6 +122,7 @@ fn scene(
     let preset = match std::env::var("MCF_PRESET").as_deref() {
         Ok("tempete") => PresetMeteo::Tempete,
         Ok("clair") => PresetMeteo::Clair,
+        Ok("pluie") => PresetMeteo::Pluie,
         _ => PresetMeteo::Nuageux,
     };
     demandes.write(ChangerMeteo {

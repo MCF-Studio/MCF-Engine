@@ -32,8 +32,8 @@ use bevy::window::{PresentMode, WindowResolution};
 use mcf_bench::{BenchCamera, BenchPlugin, BenchSettings, CameraKey, CameraPath};
 use mcf_meteo::bruit::perlin3;
 use mcf_meteo::{
-    AuditeurMeteo, ChangerMeteo, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin, McfPrecipitationsPlugin,
-    McfSonPlugin, NuagesVolumetriques, PresetMeteo, SourceFond,
+    AuditeurMeteo, ChangerMeteo, EclaboussuresPluie, McfMeteoPlugin, McfNuagesPlugin, McfOceanPlugin,
+    McfPrecipitationsPlugin, McfSonPlugin, NuagesVolumetriques, PresetMeteo, SourceFond,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -306,6 +306,10 @@ fn scene(
             ciel: std::env::var("MCF_CIEL").as_deref() != Ok("0"),
             ..default()
         });
+    }
+    // `MCF_ECLABOUSSURES=0` : pluie sans éclaboussures, pour mesurer leur coût (variante complet seulement).
+    if args.variante >= Variante::Complet && std::env::var("MCF_ECLABOUSSURES").as_deref() != Ok("0") {
+        camera.insert(EclaboussuresPluie);
     }
     demandes.write(ChangerMeteo {
         cible: args.preset.etat(),

@@ -104,8 +104,9 @@ impl Material for MateriauPrecipitations {
         chemin_shader()
     }
 
+    // Prémultiplié : le shader choisit par particule entre ajouter de la lumière (goutte) et cacher (flocon).
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        AlphaMode::Premultiplied
     }
 
     fn enable_prepass() -> bool {
@@ -183,9 +184,11 @@ impl Plugin for McfPrecipitationsPlugin {
                     .chain()
                     .after(MiseAJourMeteo),
             );
+        crate::eclaboussures::construire(app);
     }
 
     fn finish(&self, app: &mut App) {
+        crate::eclaboussures::finir(app);
         abris::creer_carte_abris(app.world_mut());
     }
 }
@@ -282,7 +285,7 @@ impl EtatPrecipitations {
     }
 }
 
-fn mettre_a_jour_precipitations(
+pub(crate) fn mettre_a_jour_precipitations(
     meteo: Res<EtatMeteo>,
     champ: Res<ChampVent>,
     reglages: Res<ReglagesPrecipitations>,

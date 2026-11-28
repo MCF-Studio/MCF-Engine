@@ -10,7 +10,7 @@
 import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
-    mesh_view_bindings::globals,
+    mesh_view_bindings::{globals, view},
 };
 
 @if(PREPASS_PIPELINE)
@@ -120,6 +120,23 @@ fn ondulations(xz: vec2<f32>, temps: f32, intensite: f32) -> vec3<f32> {
     return normalize(vec3<f32>(-grad.x, 1.0, -grad.y));
 }
 
+// Ruissellement sur les faces raides (murs, carrosseries, poteaux) : des filets d'eau verticaux, légèrement
+// sinueux, parcourus par des gouttes qui descendent. Renvoie (intensité, écart au centre du filet).
+fn ruissellement(p: vec3<f32>, tangente: vec3<f32>, temps: f32) -> vec2<f32> {
+    let u = dot(p, tangente) * 22.0;   // filets tous les ~4,5 cm
+    let colonne = i32(floor(u));
+    let h = hachage33(vec3<i32>(colonne, 91, 13));
+    if (h.x > 0.4) {
+        return vec2<f32>(0.0);
+    }
+    let sinuosite = (bruit_valeur(vec2<f32>(f32(colonne) * 7.3, p.y * 2.5)) - 0.5) * 0.5;
+    let ecart = fract(u) - 0.5 - sinuosite;
+    let filet = 1.0 - smoothstep(0.1, 0.28, abs(ecart));
+    // Goutte qui descend le filet : tête nette en bas, traînée qui s'efface au-dessus.
+    let s = fract(-p.y * 0.7 - temps * (0.5 + 0.8 * h.y) + h.z);
+    return vec2<f32>(filet * (0.2 + 0.8 * smoothstep(0.55, 1.0, s)), ecart);
+}
+
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -157,8 +174,35 @@ fn fragment(
             pbr_input.material.base_color.a,
         );
         pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.02, flaque);
-        let n_flaque = ondulations(p.xz, globals.time, meteo.pluie);
-        pbr_input.N = normalize(mix(pbr_input.N, n_flaque, flaque));
+        // L'eau d'une flaque est plane, quel que soit le relief dessous.
+        pbr_input.N = normalize(mix(pbr_input.N, vec3<f32>(0.0, 1.0, 0.0), flaque));
+    }
+    // Ronds d'impact : pleinement dans les flaques, plus discrets sur le film d'eau de tout sol mouillé exposé
+    // à la pluie. Seulement près de la caméra (plus loin, ils sont plus petits qu'un pixel).
+    let distance = length(view.world_position - p);
+    let pres = 1.0 - smoothstep(18.0, 35.0, distance);
+    let film = mouillage * smoothstep(0.85, 0.97, n.y) * expose * 0.4;
+    let ronds = max(flaque, film) * step(0.01, meteo.pluie) * pres;
+    if (ronds > 0.01) {
+        let n_ronds = ondulations(p.xz, globals.time, meteo.pluie);
+        pbr_input.N = normalize(mix(pbr_input.N, n_ronds, ronds));
+    }
+
+    // Ruissellement sur les faces raides exposées, tant qu'il pleut ou que la surface est encore mouillée.
+    // Moins visible sur un matériau poreux, qui boit l'eau.
+    let raide = (1.0 - smoothstep(0.55, 0.8, abs(n.y))) * expose * pres;
+    let force = raide * max(meteo.pluie, meteo.mouillage * 0.3) * (1.0 - 0.6 * porosite);
+    if (force > 0.01) {
+        let tangente = normalize(cross(n, vec3<f32>(0.0, 1.0, 0.0)));
+        let r = ruissellement(p, tangente, globals.time);
+        let eau = r.x * force;
+        pbr_input.material.base_color = vec4<f32>(
+            pbr_input.material.base_color.rgb * mix(1.0, 0.72, eau),
+            pbr_input.material.base_color.a,
+        );
+        pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.04, eau);
+        // Filet bombé : la normale penche de part et d'autre de son centre.
+        pbr_input.N = normalize(pbr_input.N + tangente * r.y * 2.0 * eau);
     }
 
     // 4. Neige : recouvre les faces tournées vers le ciel, bord irrégulier.
