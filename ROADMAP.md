@@ -278,6 +278,7 @@ Portage de SkyForge (C++ / DX12) en plugin Bevy, en petites PR. Ne passe pas dev
 - ✅ Étape 21 : ronds d'impact de la pluie sur la mer et sur tout sol mouillé, ruissellement sur les faces raides ; coût invisible au banc (à isoler au ras du sol).
 - ✅ Étape 22 : gouttes de pluie plus fines (2,5–4,5 mm, tête nette, traînée), ajoutées en lumière au lieu de masquer.
 - ✅ Étape 23 : son d'ambiance moins fort (×0,2) et limiteur transparent sous 0,6 : plus de saturation mesurée, validé à l'écoute.
+- ✅ Étape 24 : écume du rivage en réseau de rubans blancs + bourrelet au front, exposition adaptée au ciel couvert (coût GPU non mesuré).
 
 ---
 

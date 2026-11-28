@@ -12,7 +12,7 @@ import bevy_pbr::render::{
     mesh_view_bindings::view,
 };
 import bevy_pbr::render::view_transformations::position_world_to_clip;
-import package::nuages_commun::{perlin3, worley3};
+import package::nuages_commun::{hachage33, perlin3, worley3};
 
 @if(PREPASS_PIPELINE)
 import bevy_pbr::{
@@ -162,6 +162,73 @@ fn dentelle_a(xz: vec2<f32>, t: f32) -> f32 {
 fn dentelle(xz: vec2<f32>) -> f32 {
     let f = ocean.temps / 200.0;
     return mix(dentelle_a(xz, ocean.temps), dentelle_a(xz, ocean.temps + 200.0), 1.0 - f);
+}
+
+// Worley 2D animé : distances au germe le plus proche (x) et au deuxième (y).
+fn aretes(p: vec2<f32>, t: f32, graine: i32) -> vec2<f32> {
+    let base = floor(p);
+    let i = vec2<i32>(base);
+    let f = p - base;
+    var d1 = 1e9;
+    var d2 = 1e9;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let h = hachage33(vec3<i32>(i.x + x, i.y + y, graine));
+            // Les germes oscillent lentement (nombre entier de cycles sur 200 s) : le réseau se déforme sans glisser.
+            let germe = vec2<f32>(0.5) + 0.38 * sin(vec2<f32>(t * (8.0 + floor(h.z * 8.0))) + h.xy * TAU);
+            let o = vec2<f32>(f32(x), f32(y)) + germe - f;
+            let d = dot(o, o);
+            if (d < d1) {
+                d2 = d1;
+                d1 = d;
+            } else if (d < d2) {
+                d2 = d;
+            }
+        }
+    }
+    return vec2<f32>(sqrt(d1), sqrt(d2));
+}
+
+// Trous d'un réseau d'écume : l'écume occupe ce qui est loin des germes (les trous sont ronds et de tailles
+// variées, les rubans s'épaississent aux jonctions), jusqu'à tout couvrir quand `couverture` vaut 1.
+fn rubans(d: vec2<f32>, couverture: f32, ondulation: f32) -> f32 {
+    let rayon = mix(0.66, 0.0, couverture) + ondulation;
+    // Un peu de l'écart entre les deux germes : les rubans suivent les frontières entre les trous.
+    let v = d.x - 0.35 * (d.y - d.x);
+    return smoothstep(rayon - 0.035, rayon + 0.035, v + 0.12);
+}
+
+// Réseau d'écume : rubans blancs autour de trous (mailles de ~70 cm et ~25 cm), étirés dans le sens du
+// va-et-vient de l'eau (la normale au rivage). Au loin, les rubans passent sous le pixel : on rend leur
+// couverture moyenne.
+fn reseau_ecume(xz: vec2<f32>, normale: vec2<f32>, couverture: f32, distance: f32) -> f32 {
+    if (couverture <= 0.02) {
+        return 0.0;
+    }
+    let loin = smoothstep(45.0, 140.0, distance);
+    let moyenne = couverture * couverture * 0.8;
+    if (loin >= 1.0) {
+        return moyenne;
+    }
+    var n = normale;
+    if (dot(n, n) < 1e-4) {
+        n = vec2<f32>(0.0, 1.0);
+    }
+    n = normalize(n);
+    // Déformation du repère : sans elle, les mailles ont toutes la même taille (aspect de boue craquelée).
+    let q = xz + 0.7 * vec2<f32>(
+        perlin3(vec3<f32>(xz.x * 0.5, 4.1, xz.y * 0.5), 0),
+        perlin3(vec3<f32>(xz.x * 0.5, 9.3, xz.y * 0.5), 0),
+    );
+    let p = vec2<f32>(dot(q, vec2<f32>(-n.y, n.x)), dot(q, n) * 0.55);
+    // Le temps de l'océan reboucle sur 200 s : phases entières sur cette durée.
+    let t = ocean.temps * (TAU / 200.0);
+    let ondulation = (bruit_valeur(xz * 2.7) - 0.5) * 0.16 + (bruit_valeur(xz * 9.0) - 0.5) * 0.06;
+    let a = rubans(aretes(p * 1.4, t, 7), couverture, ondulation);
+    let b = rubans(aretes(p * 4.0 + 5.0, t, 19), couverture * 0.9, ondulation) * smoothstep(0.2, 0.6, couverture);
+    // Grain de bulles.
+    let grain = mix(0.75, 1.0, bruit_valeur(xz * 21.0));
+    return mix(saturate(max(a, b * 0.85) * grain), moyenne, loin);
 }
 
 // Poids de la FFT selon la distance : x = plus petite cascade dans le déplacement, y = toutes les cascades.
@@ -355,10 +422,14 @@ fn fragment(
         // Pulsation quantifiée (29 cycles sur 200 s) pour boucler avec le temps de l'océan.
         let respiration = 0.55 + 0.45 * sin(ocean.temps * (29.0 * TAU / 200.0)
             + perlin3(vec3<f32>(monde.xz * 0.15, 0.7), 0) * 4.5);
-        let lisere = surf * respiration * mix(0.5, 1.0, lace);
-        let nappe = b.ecume * mix(0.25, 1.15, lace);
-        let pellicule = (1.0 - smoothstep(0.0, 0.6, eau)) * 0.35 * lace;
-        ecume_bord = max(lisere, max(nappe, pellicule)) * riv.poids;
+        // Écume du rivage, d'après l'observation d'une vraie plage : un réseau de filaments blancs autour de
+        // trous où l'on voit le fond, dense sur la lame d'eau mince qui court sur le sable, de plus en plus lâche
+        // vers le large ; un bourrelet blanc plein au front du jet de rive ; rien au-delà des vagues qui cassent.
+        // `couverture` dit quelle part de la surface l'écume occupe : elle règle la largeur des filaments.
+        let mince = 1.0 - smoothstep(0.0, 0.4, eau);
+        let couverture = saturate(max(max(mince * 0.66, surf * respiration * 0.35), b.ecume * (0.82 + 0.16 * lace)));
+        let bourrelet = 1.0 - smoothstep(0.008, 0.02 + 0.02 * lace, eau);
+        ecume_bord = max(reseau_ecume(monde.xz, riv.normale, couverture, distance), bourrelet) * riv.poids;
     }
     // Pluie : ronds d'impact près de la caméra (au-delà, ils sont plus petits qu'un pixel : la rugosité prend
     // le relais, plus bas).
@@ -392,7 +463,7 @@ fn fragment(
     let ecume = saturate(max(max(ecume_fft * mix(0.5, 1.2, motif), ecume_houle * smoothstep(0.35, 0.75, motif)), ecume_bord) * ocean.ecume);
     if (ecume > 0.0) {
         pbr_input.material.base_color = vec4<f32>(
-            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.85, 0.88, 0.9), ecume),
+            mix(pbr_input.material.base_color.rgb, vec3<f32>(0.93, 0.95, 0.96), ecume),
             1.0,
         );
         pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, 0.8, ecume);

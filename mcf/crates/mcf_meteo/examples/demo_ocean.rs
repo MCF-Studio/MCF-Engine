@@ -31,6 +31,13 @@ use mcf_meteo::{
     ParametresRivage, PresetMeteo, ReglagesOmbreNuages,
 };
 
+/// Exposition selon la couverture nuageuse (voir `EtatMeteo::exposition_ev100`).
+fn exposition(etat: Res<EtatMeteo>, mut cameras: Query<&mut Exposure>) {
+    for mut e in &mut cameras {
+        e.ev100 = etat.exposition_ev100();
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins((
@@ -46,7 +53,7 @@ fn main() {
             ..default()
         })
         .add_systems(Startup, scene)
-        .add_systems(Update, (touches, voler, bouee, capture))
+        .add_systems(Update, (touches, voler, bouee, exposition, capture))
         .run();
 }
 
