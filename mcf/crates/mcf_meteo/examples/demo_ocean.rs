@@ -11,6 +11,7 @@
 //! `MCF_MOUVEMENT=1` : la caméra tourne de 0,5° par image (30°/s à 60 i/s), pour juger les traînées.
 //! `MCF_SOLEIL=haut` : soleil haut (~55°) au lieu du soleil bas de fin d'après-midi.
 //! `MCF_CIEL=0` : reflets et lumière ambiante sans les nuages (comparaison).
+//! `MCF_MSAA=0` : sans anticrénelage MSAA (×4 par défaut).
 //! `MCF_OMBRE=0` : sans l'ombre des nuages au sol (comparaison).
 
 use bevy::camera::Exposure;
@@ -99,6 +100,12 @@ fn scene(
         },
         AtmosphereSettings::default(),
         Exposure { ev100: 13.0 },
+        // `MCF_MSAA=0` : sans anticrénelage (MSAA ×4 par défaut, comme toute caméra Bevy).
+        if std::env::var("MCF_MSAA").as_deref() == Ok("0") {
+            Msaa::Off
+        } else {
+            Msaa::Sample4
+        },
         Tonemapping::AcesFitted,
         AtmosphereEnvironmentMapLight::default(),
     ));
