@@ -126,7 +126,12 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   Options : `--preset clair|nuageux|pluie|tempete|neige`, `--duree <s>`, `--largeur`, `--hauteur` (1920×1080
   par défaut). Résultats dans `mcf/bench/results/<date>_meteo_<variante>/`.
 
-  Seule mesure faite ici : GPU **logiciel** (llvmpipe, 640×360, profil dev, tempête). Elle prouve que l'outil
+  **Mesure sur vrai GPU (2026-11-28, RTX 3070, 1920 × 1080, tempête, MSAA ×4, commit `ed04e3832`)** : le
+  module coûte ~0,8 ms GPU en moyenne en variante complet (`nuages_marche` 0,34 ms, `nuages_ciel` 0,20 ms,
+  `ocean_fft` 0,15 ms, pluie et composition 0,08 ms, reste < 0,04 ms chacun), sous le budget de 4 ms ; 270 FPS
+  moyens, GPU 2,4 ms par image. Tableau brut et anomalies (variante ocean à 66 FPS pour 3 ms de GPU, p99 vers
+  17 ms partout) dans `bancs-essai.md`.
+  Première mesure, faite ici : GPU **logiciel** (llvmpipe, 640×360, profil dev, tempête). Elle prouve que l'outil
   fonctionne, elle ne dit rien du coût réel. À titre brut : 7,7 / 5,2 / 4,4 / 4,2 images/s pour base / ocean
   / nuages / complet ; passes les plus lourdes en variante complet (moyenne GPU) : `nuages_marche` 32,8 ms,
   `atmosphere_luts` 32,2 ms, `ocean_fft` 31,3 ms, `lightprobe_irradiance_map` 31,2 ms. La cuisson du bruit des
