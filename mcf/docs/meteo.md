@@ -257,7 +257,8 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   demande maintenant la grille (`CarteRivage::demande`), la construit sur l'`AsyncComputeTaskPool` et garde
   l'ancienne, qui couvre encore la caméra, jusqu'à la fin (`CarteRivage::installer`). Première grille et
   changement de source ou de réglages : toujours construites tout de suite. `CarteRivage::mettre_a_jour`
-  (calcul sur place) est inchangé pour le serveur et les tests. 1 test. **Effet non encore mesuré sur vrai GPU.**
+  (calcul sur place) est inchangé pour le serveur et les tests. 1 test. Vérifié sur RTX 3070 (`bancs-essai.md`, 2026-11-28 (3)) : plus aucune image au-dessus de 10 ms, pire
+  image 16,6 → 5,9 ms (ocean) et 16,5 → 6,8 ms (complet), coût GPU inchangé.
   Limite : à plus de ~100 m/s près d'une côte, la nouvelle grille arrive une ou deux images après le passage
   du quart de grille (sans effet visible attendu : l'ancienne couvre encore 128 m de marge).
 

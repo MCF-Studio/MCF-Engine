@@ -161,3 +161,22 @@ Constats :
   10,75 / 12,06 s…), 17,5 à 23,6 ms chacune sur la machine de développement (le fond du banc appelle un bruit de
   Perlin par case ; l'étape 6 annonçait 2,8 ms pour un fond simple). Corrigé à l'étape 19 de `meteo.md`
   (construction en tâche de fond) : **à remesurer**.
+
+### 2026-11-28 (3) — après l'étape 19 (grille du rivage en tâche de fond)
+
+- Branche `meteo/rivage-arriere-plan` (commit `3cd9d365b`), même machine, mêmes réglages, 0 image sans focus.
+  Fenêtre réelle 1920 × 1080 cette fois (1920 × 1009 aux mesures précédentes : ~7 % de pixels en plus).
+
+| Variante | Images | FPS moyen | FPS 1 % low | ms moyen | ms p50 | ms p99 | ms pire | GPU moyen | GPU p99 | GPU pic |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ocean | 18 735 | 468,4 | 217,7 | 2,135 | 1,989 | 4,149 | 5,890 | 1,680 | 3,359 | 4,925 |
+| complet | 13 630 | 340,7 | 183,9 | 2,935 | 2,800 | 4,983 | 6,778 | 2,347 | 4,042 | 5,497 |
+
+Constats :
+- **Les 45 à-coups ont disparu** : plus aucune image au-dessus de 10 ms (45 avant dans chaque variante), rien aux
+  instants 7,02 / 9,23 / 10,77 s. Pire image 16,6 → 5,9 ms (ocean) et 16,5 → 6,8 ms (complet) ; 1 % low
+  140 → 218 FPS et 119 → 184 FPS. Coût GPU moyen inchangé (1,72 → 1,68 ms et 2,33 → 2,35 ms).
+- Images restantes au-dessus de 5 ms (30 en ocean, 131 en complet, toutes ≤ 6,8 ms) : groupées à 0–0,7 s, vers
+  8 s et à 39,6–40 s, avec un GPU à 3,4–5,5 ms. Ce sont des vues chargées du parcours, pas des à-coups CPU.
+- base et nuages non remesurées sur cette branche.
+
