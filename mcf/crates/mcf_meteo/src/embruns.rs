@@ -63,10 +63,10 @@ impl Default for ReglagesEmbruns {
     fn default() -> Self {
         Self {
             active: true,
-            rayon: 110.0,
-            essais_par_s: 3000.0,
-            taille: 0.28,
-            opacite: 0.5,
+            rayon: 60.0,
+            essais_par_s: 6000.0,
+            taille: 0.42,
+            opacite: 0.85,
             albedo: 0.9,
         }
     }

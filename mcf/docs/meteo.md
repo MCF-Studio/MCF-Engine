@@ -408,6 +408,16 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
     couverture, bords des trous deux fois plus doux ; embruns : 3 à 9 bouffées par point (au lieu de 1 à 3),
     jets de 1,6 à 4,2 m/s quelle que soit la météo ; capture : 90 images de marge avant de quitter.
     **La crête ne bascule toujours pas** (le maillage ne se replie pas) : limite connue. À recontrôler sur GPU.
+  - **Troisième contrôle sur GPU réel (afcfee7)** : crête plus blanche et moins tachetée par beau temps, plus
+    de capture vide ; mais masse d'écume lisse et mate, toujours aucun embrun visible, et recul sous la pluie et
+    en tempête : l'écume, devenue claire, couvrait presque tout le premier plan (« plâtre »).
+    Corrections : couverture du réseau d'écume abaissée partout (plafond 0,52 → 0,38, zone de déferlement
+    0,3 → 0,16, traînée 0,6 → 0,42) : à 0,5 le réseau couvrait en réalité près de 80 % de la surface ; masse du
+    rouleau : bosses claires dans des creux plus sombres (Worley à deux échelles, −28 %), visibles en lumière
+    plate ; embruns : ils faisaient 0,1 à 0,2 m, à 50 % d'opacité, 72 en vie par beau temps sur 220 m de rivage,
+    donc invisibles : taille 0,42 m, opacité 0,85, 6 000 essais/s dans un rayon de 60 m, gouttelettes plus
+    denses à la naissance. Captures llvmpipe : réseau ajouré au premier plan, gerbes visibles derrière la
+    crête, rouleau blanc bosselé sous la pluie. À recontrôler sur GPU (risque : gerbes trop « fumée »).
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.

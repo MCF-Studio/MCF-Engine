@@ -82,9 +82,9 @@ fn fragment(i: VersFragment) -> @location(0) vec4<f32> {
     let echelle = 9.0 * (1.0 + 2.2 * age);
     let g1 = bruit(uv * echelle + graine * 3.1);
     let g2 = bruit(uv * echelle * 2.3 + graine * 5.7);
-    let seuil = mix(0.52, 0.74, age);
+    let seuil = mix(0.42, 0.74, age);
     let gouttes = smoothstep(seuil, seuil + 0.12, g1) * 0.8 + smoothstep(seuil + 0.05, seuil + 0.15, g2) * 0.6;
-    let voile = 0.12;
+    let voile = 0.2;
     // Apparition rapide, disparition régulière.
     let vie = smoothstep(0.0, 0.1, age) * (1.0 - saturate(age));
     let a = saturate(enveloppe * (gouttes + voile) * vie * i.donnees.w * u.opacite) * i.proche;
