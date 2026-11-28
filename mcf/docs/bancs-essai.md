@@ -203,3 +203,18 @@ Constats :
 - Une image à 10,2 ms à 28,84 s dans le passage avec éclaboussures (GPU 2,1 ms : à-coup CPU isolé, absent de
   l'autre passage, non expliqué).
 
+### 2026-11-28 (5) : écume du rivage (étape 24)
+
+RTX 3070, Ryzen 9800X3D, Vulkan, 1920 × 1080, sans vsync, MSAA ×4, preset tempête, 40 s, fenêtre au premier plan
+(0 image sans focus, 0 fenêtre masquée). Avant = `meteo/son-niveau` (e52e852), après = `meteo/ecume-rivage`
+(3ec4ddc). Un seul run par cas.
+
+| Mesure | FPS moyen | GPU moyen | GPU p99 | Image p99 | Pire image | Images > 10 ms | FPS 1 % bas |
+|---|---|---|---|---|---|---|---|
+| océan avant | 453,5 | 1,748 ms | 3,469 ms | 4,282 ms | 10,199 ms | 1 | 208,9 |
+| océan après | 458,1 | 1,730 ms | 3,646 ms | 4,411 ms | 6,364 ms | 0 | 203,4 |
+| complet avant | 333,1 | 2,393 ms | 4,232 ms | 5,183 ms | 6,204 ms | 0 | 182,3 |
+| complet après | 332,2 | 2,421 ms | 4,536 ms | 5,422 ms | 7,245 ms | 0 | 170,9 |
+
+Moyenne : écart dans le bruit. p99 GPU en hausse de 0,18 et 0,30 ms, non attribuable avec un seul run. Le trajet
+du banc passe peu de temps près du rivage : le coût au bord de l'eau, caméra au sol, n'est pas isolé.

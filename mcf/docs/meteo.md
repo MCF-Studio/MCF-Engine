@@ -325,8 +325,12 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
   de Monahan) n'est pas modifiée. Mesurée au passage sur RTX 3070 avec `mesurer_ecume` : 0,99 % / 1,78 % /
   16,6 % de la mer couverte (nuageux / pluie / tempête) pour 0,69 % / 1,37 % / 14,5 % visés : un peu trop, la
   table `persistance_ecume` est à recaler. Vue `MCF_CAMERA=ecume` dans `demo_plage`. 1 test.
-  Coût : **non mesuré** (captures faites sur llvmpipe) ; le réseau n'est évalué que sur l'eau proche du rivage
-  (2 × 9 cellules par pixel). À mesurer sur GPU réel. En tempête le sable reste très sombre.
+  Coût mesuré sur RTX 3070 (Vulkan, 1080p, tempête, 40 s, fenêtre au premier plan, un run par cas) : océan
+  1,748 → 1,730 ms GPU (453,5 → 458,1 FPS), complet 2,393 → 2,421 ms GPU (333,1 → 332,2 FPS) : écart moyen dans
+  le bruit entre deux runs. Le p99 GPU monte de 3,47 → 3,65 ms (océan) et 4,23 → 4,54 ms (complet) : avec un
+  seul run, impossible de dire si c'est l'écume ou la variation. Aucune image au-dessus de 10 ms après. Réserve :
+  le trajet du banc survole surtout le large, il passe peu de temps près du rivage. En tempête le sable reste
+  très sombre.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
