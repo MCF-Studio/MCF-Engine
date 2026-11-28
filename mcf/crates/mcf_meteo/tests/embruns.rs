@@ -58,11 +58,18 @@ fn embruns_surtout_en_tempete() {
         assert!(b.age < b.vie && (0.0..=1.0).contains(&b.force) && b.taille > 0.0);
     }
     let clair = simuler(PresetMeteo::Clair, 8.0);
+    // Par beau temps le rouleau casse aussi (il fait déjà 1 m) : des embruns, mais moins marqués qu'en tempête.
     assert!(
-        clair.bouffees().len() * 2 < tempete.bouffees().len(),
-        "{} par temps clair, {} en tempête",
-        clair.bouffees().len(),
-        tempete.bouffees().len()
+        clair.bouffees().len() > 20,
+        "{} bouffées par temps clair",
+        clair.bouffees().len()
+    );
+    let force = |e: &Embruns| e.bouffees().iter().map(|b| b.force).sum::<f32>() / e.bouffees().len() as f32;
+    assert!(
+        force(&clair) < force(&tempete) * 0.9,
+        "force moyenne {} par temps clair, {} en tempête",
+        force(&clair),
+        force(&tempete)
     );
 }
 

@@ -244,10 +244,10 @@ fn rubans(d: vec2<f32>, couverture: f32, ondulation: f32) -> f32 {
     let rayon = mix(0.66, 0.0, couverture) + ondulation;
     // Un peu de l'écart entre les deux germes : les rubans suivent les frontières entre les trous.
     let v = d.x - 0.35 * (d.y - d.x);
-    return smoothstep(rayon - 0.07, rayon + 0.07, v + 0.12);
+    return smoothstep(rayon - 0.1, rayon + 0.1, v + 0.12);
 }
 
-// Réseau d'écume : rubans blancs autour de trous (mailles de ~70 cm et ~25 cm), étirés dans le sens du
+// Réseau d'écume : rubans blancs autour de trous (mailles de ~45 cm et ~18 cm), étirés dans le sens du
 // va-et-vient de l'eau (la normale au rivage). Au loin, les rubans passent sous le pixel : on rend leur
 // couverture moyenne.
 fn reseau_ecume(xz: vec2<f32>, normale: vec2<f32>, couverture: f32, distance: f32) -> f32 {
@@ -272,12 +272,14 @@ fn reseau_ecume(xz: vec2<f32>, normale: vec2<f32>, couverture: f32, distance: f3
     let p = vec2<f32>(dot(q, vec2<f32>(-n.y, n.x)), dot(q, n) * 0.55);
     // Le temps de l'océan reboucle sur 200 s : phases entières sur cette durée.
     let t = ocean.temps * (TAU / 200.0);
-    let ondulation = (bruit_valeur(xz * 2.7) - 0.5) * 0.16 + (bruit_valeur(xz * 9.0) - 0.5) * 0.06;
-    let a = rubans(aretes(p * 1.4, t, 7), couverture, ondulation);
-    let b = rubans(aretes(p * 4.0 + 5.0, t, 19), couverture * 0.9, ondulation) * smoothstep(0.2, 0.6, couverture);
+    let ondulation = (bruit_valeur(xz * 2.7) - 0.5) * 0.26 + (bruit_valeur(xz * 9.0) - 0.5) * 0.12;
+    let a = rubans(aretes(p * 2.2, t, 7), couverture, ondulation);
+    let b = rubans(aretes(p * 5.5 + 5.0, t, 19), couverture * 0.9, ondulation) * smoothstep(0.08, 0.3, couverture);
     // Grain de bulles.
     let grain = mix(0.75, 1.0, bruit_valeur(xz * 21.0));
-    return mix(saturate(max(a, b * 0.85) * grain), moyenne, loin);
+    // La mousse se défait par endroits : les veines s'effacent par plaques au lieu de former un filet régulier.
+    let defait = mix(0.25, 1.0, smoothstep(0.3, 0.65, bruit_valeur(xz * 0.8 + 31.0) * 0.6 + bruit_valeur(xz * 2.1) * 0.4));
+    return mix(saturate(max(a, b * 0.85) * grain * defait), moyenne, loin);
 }
 
 // Poids de la FFT selon la distance : x = plus petite cascade dans le déplacement, y = toutes les cascades.
@@ -359,7 +361,7 @@ fn vertex(s: Sommet) -> VertexOutput {
         depl = depl * mix(1.0, attenuation_houle(profondeur), riv.poids) + b.deplacement;
         // Bouillonnement : la masse d'écume du rouleau est bosselée (grandes bosses seulement, à l'échelle de la
         // grille). Seulement à l'image : la bouée et le son suivent la vague lisse.
-        depl.y += b.crete * 0.22 * (bruit_valeur(xz * 0.8 + vec2<f32>(0.0, ocean.temps * 1.5)) - 0.3);
+        depl.y += b.crete * 0.38 * (bruit_valeur(xz * 0.8 + vec2<f32>(0.0, ocean.temps * 1.5)) - 0.3);
     }
     let monde = vec3<f32>(xz.x, ocean.niveau, xz.y) + depl;
     out.world_position = vec4<f32>(monde, 1.0);
@@ -479,7 +481,7 @@ fn fragment(
             let h0 = bruit_valeur(q0) + 0.5 * bruit_valeur(q0 * 2.7);
             let hx = bruit_valeur(q0 + vec2<f32>(pas, 0.0)) + 0.5 * bruit_valeur((q0 + vec2<f32>(pas, 0.0)) * 2.7);
             let hz = bruit_valeur(q0 + vec2<f32>(0.0, pas)) + 0.5 * bruit_valeur((q0 + vec2<f32>(0.0, pas)) * 2.7);
-            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.25 * b.crete;
+            pente += vec2<f32>(hx - h0, hz - h0) / pas * 0.35 * b.crete;
             // Aspect « chou-fleur » : des bosses rondes claires dans des creux plus sombres (cellules de Worley à
             // deux échelles, qui bouillonnent), visibles même quand la lumière est plate.
             let t_b = ocean.temps * (TAU / 200.0) * 6.0;
@@ -508,7 +510,9 @@ fn fragment(
         let residu = max(max(mince * 0.38 * plaques, surf * respiration * 0.22), max(b.ecume * (0.42 + 0.14 * lace), b.zone * 0.16));
         let couverture = saturate(min(residu, 0.38));
         // Masse blanche du rouleau : pleine, sans trous, avec un bord déchiqueté.
-        let masse = smoothstep(0.3, 0.55, b.crete + (lace - 0.5) * 0.3);
+        // Bord déchiqueté : des langues d'écume descendent sur la face, des trous s'ouvrent à l'arrière.
+        let dechire = (lace - 0.5) * 0.3 + (bruit_valeur(repos * 1.6 + vec2<f32>(0.0, ocean.temps * 0.9)) - 0.5) * 0.5;
+        let masse = smoothstep(0.3, 0.5, b.crete + dechire);
         let bourrelet = 1.0 - smoothstep(0.004, 0.012 + 0.01 * lace, eau);
         // Motif posé sur la surface au repos : sur la face dressée du rouleau, les coordonnées du monde ne varient
         // presque plus avec la hauteur et le motif s'étirerait en rayures verticales.

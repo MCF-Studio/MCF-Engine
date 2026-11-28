@@ -180,7 +180,7 @@ impl Embruns {
         }
         let crete = vagues_bord(p, &e, profondeur, bord, ocean.temps()).crete;
         // Seul le sommet de la crête projette de l'eau, et d'autant plus souvent que la vague est forte.
-        if crete < 0.7 || self.hasard() > crete * force_vagues.max(0.35) {
+        if crete < 0.7 || self.hasard() > crete * 0.6 {
             return 0;
         }
         let d = deplacement_total(ocean, mer, carte, bord, p);
@@ -191,7 +191,7 @@ impl Embruns {
         // La crête avance vers la terre à la célérité de la vague.
         let celerite = bord.omega * bord.longueur / std::f32::consts::TAU;
         let avant = Vec3::new(e.normale.x, 0.0, e.normale.y);
-        let nombre = 3 + (self.hasard() * 4.0 * (0.5 + force_vagues)) as u32;
+        let nombre = 3 + (self.hasard() * 3.0) as u32;
         let mut nes = 0;
         for _ in 0..nombre {
             if self.bouffees.len() >= MAX_EMBRUNS {

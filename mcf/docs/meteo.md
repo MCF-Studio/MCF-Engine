@@ -418,6 +418,14 @@ sans toucher à `crates/bevy_*`. Repère MCF : Y vers le haut, main droite, avan
     donc invisibles : taille 0,42 m, opacité 0,85, 6 000 essais/s dans un rayon de 60 m, gouttelettes plus
     denses à la naissance. Captures llvmpipe : réseau ajouré au premier plan, gerbes visibles derrière la
     crête, rouleau blanc bosselé sous la pluie. À recontrôler sur GPU (risque : gerbes trop « fumée »).
+  - **Quatrième contrôle sur GPU réel (4b5e3ae)** : embruns enfin visibles (jets en éventail par beau temps,
+    brume fine sous la pluie), premier plan ajouré sous la pluie et en tempête. Restent : masse du rouleau lisse
+    et molle (« talus de neige »), mailles d'écume grandes, nettes et régulières (« taches de girafe »), surtout
+    par beau temps, brume d'embruns trop dense en tempête, embruns rares par beau temps, crête qui ne bascule pas.
+    Corrections : mailles de 45 et 18 cm (au lieu de 70 et 25), bords plus doux et plus irréguliers, veines
+    effacées par plaques ; bord de la masse du rouleau déchiqueté (bruit ±0,25 sur le seuil), bosses du
+    maillage 0,22 → 0,38 m ; embruns : même cadence par tous les temps (probabilité 0,6 × crête, 3 à 5 bouffées),
+    seule leur force dépend de la météo. À recontrôler sur GPU.
 
 Ce travail est **hors feuille de route** : il ne passe pas devant la phase 2. Le crate n'est branché ni au client
 ni à l'éditeur tant que l'équipe ne l'a pas décidé.
